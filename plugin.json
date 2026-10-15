@@ -833,7 +833,7 @@
       "choices": [
         {
           "value": "auto",
-          "label": "A vignette of branches and foliage"
+          "label": "To suit the kinds on the page"
         },
         {
           "value": "branch",
@@ -870,8 +870,25 @@
         {
           "value": "garden",
           "label": "A cottage garden"
+        },
+        {
+          "value": "floor",
+          "label": "A forest floor (fungi)"
+        },
+        {
+          "value": "log",
+          "label": "A fallen mossy log (fungi)"
+        },
+        {
+          "value": "bank",
+          "label": "A woodland bank"
+        },
+        {
+          "value": "bed",
+          "label": "A garden bed (plants)"
         }
-      ]
+      ],
+      "help": "To suit the kinds on the page gives birds a vignette of branches, fungi a forest floor, plants a garden bed, insects a meadow, frogs a wetland."
     },
     {
       "name": "scene_fidelity",

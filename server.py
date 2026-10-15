@@ -1061,13 +1061,18 @@ def _scene(
     ]
     if len(keys) < 2 or len(keys) < len(shown):
         return None, ["composing the scene once every specimen is painted"]
-    if not all((r.get("pic") or {}).get("cut_state") == "ready" for r in shown):
+    # every specimen cut out: by the model, or, for a painting the model's
+    # mask failed on, by its own paper
+    if not all(
+        (r.get("pic") or {}).get("cut_state") in ("ready", "bad") for r in shown
+    ):
         return None, ["composing the scene once every specimen is cut out"]
     w, h = int(ctx.get("cell_w") or 800), int(ctx.get("cell_h") or 480)
     ratio = w / h if h else 1.6
     made = P.collage(keys, data_dir, ratio)
     if not made:
         return None, ["composing the scene"]
+    scene = P.scene_for(scene, [str(r.get("kind") or "") for r in shown])
     skey = P.scene_key(gen["style"], scene, fidelity)
     meta = N.read_json(folder / f"{skey}.json", {})
     meta = meta if isinstance(meta, dict) else {}

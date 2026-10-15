@@ -152,6 +152,10 @@ POSES = {
 # single picture with one background. Opt-in, one painting per re-compose.
 SCENES = {
     "auto": "the specimens gathered in an oval cluster, like a Victorian vignette, on branches and foliage that join them",
+    "floor": "growing together on a forest floor among leaf litter, moss and a few fallen twigs",
+    "log": "growing on and around one fallen, mossy log",
+    "bank": "on a shaded woodland bank among ferns, moss and roots",
+    "bed": "growing together in one garden bed, with the soil and a few stones",
     "branch": "all perched along one shared branch",
     "tree": "perched through the branches of one tree",
     "birdbath": "gathered round a stone bird bath in a garden",
@@ -173,6 +177,27 @@ GEN_SCENE = (
     "{fidelity} No text, no labels, no numbers, no border, no signature."
 )
 SCENE_EVERY = ("3", "1", "6", "24")
+# What "auto" means for a page that is mostly one kind of thing.
+SCENE_AUTO_BY_KIND = {
+    "Fungi": "floor",
+    "Plantae": "bed",
+    "Protozoa": "log",
+    "Insecta": "meadow",
+    "Arachnida": "meadow",
+    "Amphibia": "wetland",
+    "Reptilia": "bank",
+    "Mammalia": "bank",
+}
+
+
+def scene_for(scene: str, kinds: list[str]) -> str:
+    """The scene to paint: the one asked for, or for "auto" the one that
+    suits the page's commonest kind (birds keep the vignette)."""
+    if scene != "auto" or not kinds:
+        return scene
+    top = max(set(kinds), key=kinds.count)
+    return SCENE_AUTO_BY_KIND.get(top, "auto")
+
 
 _PAINTING: set[str] = set()
 _SINCE: dict[str, tuple[float, str, str]] = {}  # key -> (since, name, style)
@@ -266,12 +291,17 @@ def collage(
 
     folder = gen_dir(data_dir)
     masks = data_dir / "masks"
+    M = _sibling("masks")
     stamps = []
     for k in keys:
+        # the model's cut-out, or the painting cut by its paper when the model's failed
         try:
             stamps.append(f"{k}:{int((masks / f'g_{k}.cut.png').stat().st_mtime)}")
         except OSError:
-            return None
+            try:
+                stamps.append(f"{k}:paper:{int((folder / f'{k}.jpg').stat().st_mtime)}")
+            except OSError:
+                return None
     if not keys:
         return None
     tag = hashlib.sha1(f"{'|'.join(stamps)}|{ratio:.3f}|{size}".encode()).hexdigest()[
@@ -285,7 +315,10 @@ def collage(
     cuts = []
     for k in keys:
         with contextlib.suppress(OSError):
-            cuts.append((k, Image.open(masks / f"g_{k}.cut.png").convert("RGBA")))
+            if (masks / f"g_{k}.cut.png").exists():
+                cuts.append((k, Image.open(masks / f"g_{k}.cut.png").convert("RGBA")))
+            else:
+                cuts.append((k, M.paper_cut((folder / f"{k}.jpg").read_bytes())))
     if len(cuts) != len(keys):
         return None
     cuts.sort(key=lambda c: -(c[1].width * c[1].height))
@@ -493,7 +526,7 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
             )
         image_url = "data:image/jpeg;base64," + base64.b64encode(sheet).decode()
         names = job.get("names") or []
-        noun = K.noun_of(job.get("kind"))[0] if job.get("kind") else "subject"
+        noun = K.noun_of(job.get("kind"))[0] if job.get("kind") else "specimen"
         prompt = GEN_SCENE.format(
             n=len(names),
             names="; ".join(names),

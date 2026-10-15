@@ -161,6 +161,50 @@ def check(alpha: Any) -> tuple[Any | None, str]:
     return cleaned.filter(ImageFilter.GaussianBlur(0.7)), ""
 
 
+def paper_cut(picture: bytes) -> Any:
+    """A picture on plain paper cut by its paper colour alone, as a PIL RGBA
+    image: the paper is the median of the edges, alpha grows with distance
+    from it, specks are dropped and pinholes closed. For a painting whose
+    model mask failed the check (a tiny subject, say); never for a photo."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    im = Image.open(io.BytesIO(picture)).convert("RGB")
+    a = np.asarray(im).astype(np.int16)
+    h, w = a.shape[:2]
+    b = max(2, min(w, h) // 40)
+    edges = np.concatenate(
+        [
+            a[:b].reshape(-1, 3),
+            a[-b:].reshape(-1, 3),
+            a[:, :b].reshape(-1, 3),
+            a[:, -b:].reshape(-1, 3),
+        ]
+    )
+    paper = np.median(edges, axis=0)
+    diff = np.abs(a - paper).max(axis=2)
+    alpha = Image.fromarray(np.clip((diff - 10) * 6, 0, 255).astype(np.uint8))
+    alpha = (
+        alpha.filter(ImageFilter.MinFilter(3))
+        .filter(ImageFilter.MaxFilter(5))
+        .filter(ImageFilter.GaussianBlur(0.7))
+    )
+    out = im.convert("RGBA")
+    out.putalpha(alpha)
+    box = alpha.point(lambda v: 255 if v > 64 else 0).getbbox()
+    if box:
+        pad = max(w, h) // 60
+        out = out.crop(
+            (
+                max(0, box[0] - pad),
+                max(0, box[1] - pad),
+                min(w, box[2] + pad),
+                min(h, box[3] + pad),
+            )
+        )
+    return out
+
+
 def cut_png(picture: bytes, alpha: Any) -> bytes:
     """The picture with ``alpha`` (a PIL L image, the picture's size) as its
     alpha, cropped to the specimen with a little room, as PNG bytes."""
