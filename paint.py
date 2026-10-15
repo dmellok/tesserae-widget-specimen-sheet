@@ -286,7 +286,11 @@ def scene_key(style: str, scene: str, fidelity: str) -> str:
 
 
 def collage(
-    keys: list[str], data_dir: Path, ratio: float, size: int = 1400
+    keys: list[str],
+    data_dir: Path,
+    ratio: float,
+    size: int = 1400,
+    layout: str = "ring",
 ) -> dict[str, Any] | None:
     """The paintings under ``keys``, their kept cut-outs pasted on one cream
     sheet in an oval, largest first, as the reference the scene is painted
@@ -309,9 +313,9 @@ def collage(
                 return None
     if not keys:
         return None
-    tag = hashlib.sha1(f"{'|'.join(stamps)}|{ratio:.3f}|{size}".encode()).hexdigest()[
-        :16
-    ]
+    tag = hashlib.sha1(
+        f"{'|'.join(stamps)}|{ratio:.3f}|{size}|{layout}".encode()
+    ).hexdigest()[:16]
     path, info_path = folder / f"collage_{tag}.jpg", folder / f"collage_{tag}.json"
     info = N.read_json(info_path, None)
     if path.exists() and isinstance(info, dict):
@@ -329,25 +333,49 @@ def collage(
     cuts.sort(key=lambda c: -(c[1].width * c[1].height))
     sheet = Image.new("RGB", (W, H), (243, 234, 214))
     n = len(cuts)
-    # the largest in the middle, the rest round an oval, each in a slot of the ring
-    slots = [(0.5, 0.5)] + [
-        (
-            0.5 + 0.36 * math.cos(2 * math.pi * i / max(1, n - 1) - math.pi / 2),
-            0.5 + 0.34 * math.sin(2 * math.pi * i / max(1, n - 1) - math.pi / 2),
-        )
-        for i in range(n - 1)
-    ]
+    if layout == "ground":
+        # standing on one baseline, the largest in the middle, the rest to
+        # either side, so a scene of things that grow starts off grounded
+        xs = [0.5]
+        for k in range(1, n):
+            step = (k + 1) // 2
+            xs.append(
+                0.5 + (0.44 / max(1, (n - 1) // 2 + 0.5)) * step * (1 if k % 2 else -1)
+            )
+        slots = [(x, 0.72) for x in xs]
+    else:
+        slots = [(0.5, 0.5)]
+    slots = (
+        slots
+        if layout == "ground"
+        else slots
+        + [
+            (
+                0.5 + 0.36 * math.cos(2 * math.pi * i / max(1, n - 1) - math.pi / 2),
+                0.5 + 0.34 * math.sin(2 * math.pi * i / max(1, n - 1) - math.pi / 2),
+            )
+            for i in range(n - 1)
+        ]
+    )
     big = 0.42 if n > 1 else 0.8
     small = max(0.16, min(0.3, 1.1 / max(1, n)))
     boxes = []
     for i, ((k, im), (sx, sy)) in enumerate(zip(cuts, slots, strict=False)):
+        if layout == "ground":
+            big, small = 0.5, max(0.2, min(0.34, 1.4 / max(1, n)))
         box = (big if i == 0 else small) * min(W, H)
         scale = min(box / im.width, box / im.height)
         fit = im.resize(
             (max(1, int(im.width * scale)), max(1, int(im.height * scale))),
             Image.Resampling.LANCZOS,
         )
-        x, y = int(sx * W - fit.width / 2), int(sy * H - fit.height / 2)
+        x = int(sx * W - fit.width / 2)
+        # on the ground the bottoms line up; on the ring the centres do
+        y = (
+            int(sy * H - fit.height)
+            if layout == "ground"
+            else int(sy * H - fit.height / 2)
+        )
         x, y = max(0, min(W - fit.width, x)), max(0, min(H - fit.height, y))
         sheet.paste(fit, (x, y), fit)
         boxes.append(

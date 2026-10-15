@@ -1069,12 +1069,14 @@ def _scene(
         return None, ["composing the scene once every specimen is cut out"]
     w, h = int(ctx.get("cell_w") or 800), int(ctx.get("cell_h") or 480)
     ratio = w / h if h else 1.6
-    made = P.collage(keys, data_dir, ratio)
-    if not made:
-        return None, ["composing the scene"]
     scene = P.scene_for(scene, [str(r.get("kind") or "") for r in shown])
     if scene in P.GROUNDED:
         fidelity = "free"
+    made = P.collage(
+        keys, data_dir, ratio, layout="ground" if scene in P.GROUNDED else "ring"
+    )
+    if not made:
+        return None, ["composing the scene"]
     skey = P.scene_key(gen["style"], scene, fidelity)
     meta = N.read_json(folder / f"{skey}.json", {})
     meta = meta if isinstance(meta, dict) else {}
