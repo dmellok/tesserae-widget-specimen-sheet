@@ -1,0 +1,208 @@
+{
+  "tesserae_compat": "1.x",
+  "name": "Specimen Sheet",
+  "version": "0.1.0",
+  "kind": "widget",
+  "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos; labels with counts; a demo garden until BirdNET-Go is set up.",
+  "icon": "ph-feather",
+  "supports": { "sizes": ["sm", "md", "lg"] },
+  "requires": ["network:*"],
+  "render": { "needs_network": true },
+  "cell_options": [
+    {
+      "name": "source", "type": "select", "label": "Source", "default": "birdnet_go",
+      "help": "BirdNET-Go hears the birds to-day. iNaturalist is what people have found near a place lately. GBIF is what has been recorded near a place in this month of the year (it lags by weeks, so it is seasonal, not news).",
+      "choices": [
+        { "value": "birdnet_go", "label": "BirdNET-Go (heard to-day)" },
+        { "value": "inaturalist", "label": "iNaturalist (found nearby lately)" },
+        { "value": "gbif", "label": "GBIF (recorded here this month of the year)" }
+      ]
+    },
+    {
+      "name": "url", "type": "string", "label": "BirdNET-Go address", "default": "",
+      "help": "Where BirdNET-Go's web page opens, for example http://birdnet.local:8080. Leave empty for a demo garden based on this cell's location.",
+      "show_if": { "source": "birdnet_go" }
+    },
+    {
+      "name": "token", "type": "string", "label": "BirdNET-Go bearer token (normally blank)", "default": "", "secret": true,
+      "help": "BirdNET-Go's reads need no login, even with Basic Authentication on. Fill this only for a reverse proxy or build that wants a bearer token.",
+      "show_if": { "source": "birdnet_go", "url": { "not": "" } }
+    },
+    {
+      "name": "location", "type": "location_search", "label": "Place", "default": "",
+      "help": "For iNaturalist and GBIF, the place to look around. For BirdNET-Go, the clock, sunrise and sunset, and the demo garden. Falls back to the app-level location."
+    },
+    {
+      "name": "radius_km", "type": "select", "label": "Within", "default": "10",
+      "choices": [
+        { "value": "2", "label": "2 km" }, { "value": "5", "label": "5 km" }, { "value": "10", "label": "10 km" },
+        { "value": "25", "label": "25 km" }, { "value": "50", "label": "50 km" }
+      ],
+      "show_if": { "source": ["inaturalist", "gbif"] }
+    },
+    {
+      "name": "user_login", "type": "string", "label": "Only this iNaturalist user (optional)", "default": "",
+      "help": "An iNaturalist username. Set it to your own to see what you have catalogued, near the place or, with no place, anywhere.",
+      "show_if": { "source": "inaturalist" }
+    },
+    {
+      "name": "kinds_inat", "type": "multiselect", "label": "What to show", "default": ["3", "40151", "26036", "20978", "47158", "47119", "47126", "47170"],
+      "help": "Kinds add up: Insects and Orchids together shows both. Nothing ticked shows everything.",
+      "show_if": { "source": "inaturalist" },
+      "choices": [
+        { "value": "3", "label": "Birds", "group": "Animals" }, { "value": "40151", "label": "Mammals", "group": "Animals" }, { "value": "848319", "label": "Marsupials", "group": "Animals" }, { "value": "40268", "label": "Bats", "group": "Animals" }, { "value": "26036", "label": "Reptiles", "group": "Animals" }, { "value": "26172", "label": "Lizards and snakes", "group": "Animals" }, { "value": "39532", "label": "Turtles and tortoises", "group": "Animals" }, { "value": "20978", "label": "Amphibians", "group": "Animals" }, { "value": "20979", "label": "Frogs and toads", "group": "Animals" }, { "value": "47178", "label": "Fishes", "group": "Animals" }, { "value": "47273", "label": "Sharks and rays", "group": "Animals" }, { "value": "47115", "label": "Molluscs", "group": "Animals" }, { "value": "47114", "label": "Snails and slugs", "group": "Animals" }, { "value": "47186", "label": "Crabs and shrimps", "group": "Animals" }, { "value": "47534", "label": "Jellyfish and corals", "group": "Animals" }, { "value": "47549", "label": "Sea stars and urchins", "group": "Animals" }, { "value": "1", "label": "Every animal", "group": "Animals" },
+        { "value": "47158", "label": "Insects", "group": "Insects and spiders" }, { "value": "47157", "label": "Butterflies and moths", "group": "Insects and spiders" }, { "value": "47224", "label": "Butterflies", "group": "Insects and spiders" }, { "value": "47792", "label": "Dragonflies and damselflies", "group": "Insects and spiders" }, { "value": "47208", "label": "Beetles", "group": "Insects and spiders" }, { "value": "47201", "label": "Bees, wasps and ants", "group": "Insects and spiders" }, { "value": "47221", "label": "Bees", "group": "Insects and spiders" }, { "value": "47336", "label": "Ants", "group": "Insects and spiders" }, { "value": "47822", "label": "Flies", "group": "Insects and spiders" }, { "value": "47744", "label": "True bugs and hoppers", "group": "Insects and spiders" }, { "value": "47651", "label": "Grasshoppers and crickets", "group": "Insects and spiders" }, { "value": "48112", "label": "Mantises", "group": "Insects and spiders" }, { "value": "47119", "label": "Spiders and scorpions", "group": "Insects and spiders" }, { "value": "47118", "label": "Spiders", "group": "Insects and spiders" },
+        { "value": "47126", "label": "Plants", "group": "Plants" }, { "value": "47125", "label": "Flowering plants", "group": "Plants" }, { "value": "47217", "label": "Orchids", "group": "Plants" }, { "value": "47604", "label": "Daisies and asters", "group": "Plants" }, { "value": "47148", "label": "Rose family", "group": "Plants" }, { "value": "136329", "label": "Conifers", "group": "Plants" }, { "value": "121943", "label": "Ferns", "group": "Plants" }, { "value": "311249", "label": "Mosses", "group": "Plants" },
+        { "value": "47170", "label": "Fungi", "group": "Fungi and more" }, { "value": "50814", "label": "Mushrooms and brackets", "group": "Fungi and more" }, { "value": "54743", "label": "Lichens", "group": "Fungi and more" }, { "value": "48222", "label": "Seaweeds and kelp", "group": "Fungi and more" }, { "value": "47686", "label": "Protozoa and slime moulds", "group": "Fungi and more" }
+      ]
+    },
+    {
+      "name": "kinds_gbif", "type": "multiselect", "label": "What to show", "default": ["212", "359", "11592253+11418114+11493978", "131", "216", "367", "6", "5"],
+      "help": "Kinds add up. Nothing ticked shows everything.",
+      "show_if": { "source": "gbif" },
+      "choices": [
+        { "value": "212", "label": "Birds", "group": "Animals" }, { "value": "359", "label": "Mammals", "group": "Animals" }, { "value": "734", "label": "Bats", "group": "Animals" }, { "value": "11592253+11418114+11493978", "label": "Reptiles", "group": "Animals" }, { "value": "11592253", "label": "Lizards and snakes", "group": "Animals" }, { "value": "11418114", "label": "Turtles and tortoises", "group": "Animals" }, { "value": "131", "label": "Amphibians", "group": "Animals" }, { "value": "952", "label": "Frogs and toads", "group": "Animals" }, { "value": "121", "label": "Sharks and rays", "group": "Animals" }, { "value": "52", "label": "Molluscs", "group": "Animals" }, { "value": "225", "label": "Snails and slugs", "group": "Animals" }, { "value": "637", "label": "Crabs and shrimps", "group": "Animals" }, { "value": "43", "label": "Jellyfish and corals", "group": "Animals" }, { "value": "50", "label": "Sea stars and urchins", "group": "Animals" }, { "value": "1", "label": "Every animal", "group": "Animals" },
+        { "value": "216", "label": "Insects", "group": "Insects and spiders" }, { "value": "797", "label": "Butterflies and moths", "group": "Insects and spiders" }, { "value": "789", "label": "Dragonflies and damselflies", "group": "Insects and spiders" }, { "value": "1470", "label": "Beetles", "group": "Insects and spiders" }, { "value": "1457", "label": "Bees, wasps and ants", "group": "Insects and spiders" }, { "value": "4334", "label": "Bees", "group": "Insects and spiders" }, { "value": "4342", "label": "Ants", "group": "Insects and spiders" }, { "value": "811", "label": "Flies", "group": "Insects and spiders" }, { "value": "809", "label": "True bugs and hoppers", "group": "Insects and spiders" }, { "value": "1458", "label": "Grasshoppers and crickets", "group": "Insects and spiders" }, { "value": "788", "label": "Mantises", "group": "Insects and spiders" }, { "value": "367", "label": "Spiders and scorpions", "group": "Insects and spiders" }, { "value": "1496", "label": "Spiders", "group": "Insects and spiders" },
+        { "value": "6", "label": "Plants", "group": "Plants" }, { "value": "220+196", "label": "Flowering plants", "group": "Plants" }, { "value": "7689", "label": "Orchids", "group": "Plants" }, { "value": "3065", "label": "Daisies and asters", "group": "Plants" }, { "value": "5015", "label": "Rose family", "group": "Plants" }, { "value": "194", "label": "Conifers", "group": "Plants" }, { "value": "7228684", "label": "Ferns", "group": "Plants" }, { "value": "35", "label": "Mosses", "group": "Plants" },
+        { "value": "5", "label": "Fungi", "group": "Fungi and more" }, { "value": "186", "label": "Mushrooms and brackets", "group": "Fungi and more" }, { "value": "180", "label": "Lichens", "group": "Fungi and more" }, { "value": "4", "label": "Seaweeds and kelp", "group": "Fungi and more" }, { "value": "7", "label": "Protozoa and slime moulds", "group": "Fungi and more" }
+      ]
+    },
+    {
+      "name": "window", "type": "select", "label": "Period", "default": "today",
+      "help": "To-day is BirdNET-Go's day as it fills. This week is the last seven days together, from BirdNET-Go's species summary.",
+      "choices": [ { "value": "today", "label": "To-day" }, { "value": "week", "label": "This week" } ],
+      "show_if": { "source": "birdnet_go" }
+    },
+    {
+      "name": "days", "type": "select", "label": "Looking back", "default": "30d",
+      "choices": [
+        { "value": "7d", "label": "A week" }, { "value": "14d", "label": "Two weeks" }, { "value": "30d", "label": "A month" },
+        { "value": "90d", "label": "Three months" }, { "value": "365d", "label": "A year" }
+      ],
+      "show_if": { "source": "inaturalist" }
+    },
+    {
+      "name": "quality", "type": "select", "label": "Observations", "default": "research",
+      "choices": [
+        { "value": "research", "label": "Research grade: the community agrees on the species" },
+        { "value": "", "label": "Any with a species, agreed or not" }
+      ],
+      "show_if": { "source": "inaturalist" }
+    },
+    {
+      "name": "count", "type": "select", "label": "How many", "default": "8",
+      "help": "Specimens on the sheet: the most heard or recorded first.",
+      "choices": [
+        { "value": "4", "label": "4" }, { "value": "6", "label": "6" }, { "value": "8", "label": "8" },
+        { "value": "10", "label": "10" }, { "value": "12", "label": "12" }, { "value": "16", "label": "16" }
+      ]
+    },
+    {
+      "name": "exclude", "type": "textarea", "label": "Leave out", "default": "",
+      "help": "Species to leave off the sheet, one per line: a common or scientific name, a genus (Columba drops every pigeon in it), a kind (Insecta, insects, Birds) or a pattern such as *gull. An excluded species frees its place for the next. Case and accents don't matter."
+    },
+    {
+      "name": "sizing", "type": "select", "label": "Sizes", "default": "true",
+      "choices": [
+        { "value": "true", "label": "True to life: a crow large, a wren small" },
+        { "value": "busy", "label": "The most heard or recorded biggest" },
+        { "value": "same", "label": "All alike" }
+      ]
+    },
+    {
+      "name": "labels", "type": "select", "label": "Labels", "default": "caption",
+      "choices": [
+        { "value": "caption", "label": "Captions under each specimen" },
+        { "value": "tag", "label": "Specimen tags" },
+        { "value": "key", "label": "Numbers, with a key beside the page" },
+        { "value": "none", "label": "None: the page alone" }
+      ]
+    },
+    {
+      "name": "label_lines", "type": "multiselect", "label": "Label lines", "default": ["name", "count"],
+      "help": "In this order. The count says calls, observations or records to suit the source.",
+      "choices": [
+        { "value": "name", "label": "Name" }, { "value": "sci", "label": "Scientific name" }, { "value": "count", "label": "How many" },
+        { "value": "last", "label": "Last seen (iNaturalist, GBIF)" }, { "value": "flag", "label": "New or returning (BirdNET-Go)" },
+        { "value": "who", "label": "Observer (iNaturalist, GBIF)" }, { "value": "size", "label": "Length, L 38 cm (birds)" }
+      ],
+      "show_if": { "labels": ["caption", "tag"] }
+    },
+    {
+      "name": "text_size", "type": "select", "label": "Text size", "default": "100",
+      "choices": [ { "value": "60", "label": "60%" }, { "value": "80", "label": "80%" }, { "value": "100", "label": "100%" }, { "value": "125", "label": "125%" }, { "value": "150", "label": "150%" } ],
+      "show_if": { "labels": { "not": "none" } }
+    },
+    {
+      "name": "paper", "type": "select", "label": "Paper", "default": "cream",
+      "choices": [ { "value": "cream", "label": "Cream" }, { "value": "white", "label": "White" }, { "value": "aged", "label": "Aged" } ]
+    },
+    {
+      "name": "panel", "type": "select", "label": "Panel", "default": "colour",
+      "help": "What the panel can show. Pictures are converted and contrast-stretched to match; on black and white the type is thickened.",
+      "choices": [ { "value": "colour", "label": "Colour" }, { "value": "gray16", "label": "16 greys" }, { "value": "gray4", "label": "4 greys" }, { "value": "mono", "label": "Black and white" } ]
+    },
+    {
+      "name": "night", "type": "select", "label": "After dark", "default": "off",
+      "help": "Uses sunrise and sunset for the cell's (or the app's) location. Asleep shows the moon and the last bird heard once nothing has called for 90 minutes after dark. Night birds keeps only the birds heard since sunset on the sheet after dark.",
+      "choices": [
+        { "value": "off", "label": "Nothing special" },
+        { "value": "asleep", "label": "The garden asleep when it goes quiet" },
+        { "value": "owls", "label": "Only the night's birds after dark" }
+      ],
+      "show_if": { "source": "birdnet_go" }
+    },
+    {
+      "name": "names", "type": "select", "label": "Bird names", "default": "birdnet",
+      "help": "Common names come from BirdNET-Go in whatever language it is set to. Pick a language to take them from iNaturalist instead; they are looked up once per bird and kept.",
+      "choices": [
+        { "value": "birdnet", "label": "As BirdNET-Go sends them" }, { "value": "en", "label": "English" }, { "value": "de", "label": "Deutsch" }, { "value": "fr", "label": "Français" },
+        { "value": "es", "label": "Español" }, { "value": "it", "label": "Italiano" }, { "value": "nl", "label": "Nederlands" }, { "value": "pt", "label": "Português" },
+        { "value": "sv", "label": "Svenska" }, { "value": "da", "label": "Dansk" }, { "value": "nb", "label": "Norsk" }, { "value": "fi", "label": "Suomi" },
+        { "value": "pl", "label": "Polski" }, { "value": "cs", "label": "Čeština" }, { "value": "ja", "label": "日本語" }, { "value": "zh", "label": "中文" }, { "value": "ru", "label": "Русский" }
+      ],
+      "show_if": { "source": "birdnet_go", "url": { "not": "" } }
+    },
+    {
+      "name": "names_place", "type": "select", "label": "Bird names: region", "default": "",
+      "help": "Prefers the names used in this country, where iNaturalist has them.",
+      "choices": [
+        { "value": "", "label": "Anywhere" }, { "value": "6744", "label": "Australia" }, { "value": "6803", "label": "New Zealand" }, { "value": "6857", "label": "United Kingdom" },
+        { "value": "6718", "label": "Ireland" }, { "value": "1", "label": "United States" }, { "value": "6712", "label": "Canada" }, { "value": "6986", "label": "South Africa" },
+        { "value": "6681", "label": "India" }, { "value": "7207", "label": "Germany" }, { "value": "6753", "label": "France" }, { "value": "6774", "label": "Spain" },
+        { "value": "6973", "label": "Italy" }, { "value": "7506", "label": "Netherlands" }, { "value": "6737", "label": "Japan" }, { "value": "6878", "label": "Brazil" }
+      ],
+      "show_if": { "names": { "not": "birdnet" } }
+    },
+    {
+      "name": "min_confidence", "type": "select", "label": "Minimum confidence", "default": "70",
+      "help": "Detections BirdNET is less sure of than this are left out.",
+      "choices": [ { "value": "50", "label": "50%" }, { "value": "60", "label": "60%" }, { "value": "70", "label": "70%" }, { "value": "80", "label": "80%" }, { "value": "90", "label": "90%" } ],
+      "show_if": { "source": "birdnet_go", "url": { "not": "" } }
+    },
+    {
+      "name": "footer", "type": "select", "label": "Foot of the page", "default": "show",
+      "choices": [ { "value": "show", "label": "Status and credits" }, { "value": "credits", "label": "Credits only" }, { "value": "hide", "label": "Nothing" } ]
+    },
+    { "name": "title", "type": "string", "label": "Title", "default": "", "help": "Blank uses the garden, the place or the username." },
+    {
+      "name": "refresh_min", "type": "select", "label": "Ask the source every", "default": "15",
+      "help": "GBIF's answer is seasonal and kept for a month regardless.",
+      "choices": [ { "value": "5", "label": "5 minutes" }, { "value": "15", "label": "15 minutes" }, { "value": "30", "label": "30 minutes" }, { "value": "60", "label": "hour" }, { "value": "180", "label": "3 hours" } ]
+    }
+  ],
+  "settings": [
+    {
+      "name": "exclude", "type": "textarea", "label": "Always leave out", "default": "",
+      "help": "Species left off every Specimen Sheet cell, one per line, in the same form as a cell's Leave out list: a name, a genus, a kind or a pattern such as *gull."
+    }
+  ],
+  "data_schema": {
+    "fields": [
+      { "name": "title", "type": "str", "label": "Title" },
+      { "name": "species_total", "type": "num", "label": "Species" },
+      { "name": "obs_total", "type": "num", "label": "Calls, observations or records" },
+      { "name": "species", "type": "arr", "label": "Specimens" }
+    ]
+  }
+}
