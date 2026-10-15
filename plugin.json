@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -743,6 +743,26 @@
         {
           "value": "gen",
           "label": "AI paintings"
+        }
+      ]
+    },
+    {
+      "name": "paint_start",
+      "type": "select",
+      "label": "Start paintings",
+      "default": "auto",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "Automatically starts new paintings as the sheet refreshes, within your limits. With a button, a refresh (or editing this form) only notes which paintings are missing and spends nothing; start them from Widgets, Specimen Sheet, Start painting.",
+      "choices": [
+        {
+          "value": "auto",
+          "label": "Automatically"
+        },
+        {
+          "value": "button",
+          "label": "Only when I press Start painting"
         }
       ]
     },

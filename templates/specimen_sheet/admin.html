@@ -21,6 +21,18 @@
     {% endif %}
     {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
   </div>
+  {% if held %}
+  <div class="bb-held">
+    <strong>{{ held }} painting{{ '' if held == 1 else 's' }} waiting.</strong>
+    A sheet set to start paintings with a button found these and held them back; nothing is spent until you press Start.
+    <form method="post" action="{{ url_for('specimen_sheet_admin.start_held_route') }}" class="bb-inline">
+      <button type="submit" {% if not has_key %}disabled{% endif %}><i class="ph ph-play" aria-hidden="true"></i> Start painting</button>
+    </form>
+    <form method="post" action="{{ url_for('specimen_sheet_admin.clear_held') }}" class="bb-inline">
+      <button type="submit" class="ghost">Drop them</button>
+    </form>
+  </div>
+  {% endif %}
   <div id="bb-queue" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('specimen_sheet_admin.progress') }}"
        data-stop="{{ url_for('specimen_sheet_admin.stop_one') }}" data-stop-all="{{ url_for('specimen_sheet_admin.stop_all') }}">
     <div class="bb-queue-head">
@@ -300,6 +312,7 @@
   .bb-link { padding: 0 4px; font-size: inherit; text-decoration: underline; }
   .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
   .bb-ticker { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--t-border); border-radius: 8px; background: var(--t-surface); font-size: 13px; }
+  .bb-held { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--t-border, currentColor); }
   .bb-queue-head { display: flex; align-items: center; gap: 8px; }
   .bb-fold { margin-left: auto; }
   .bb-queue-all { margin-left: 0; }

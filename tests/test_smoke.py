@@ -841,6 +841,47 @@ def test_only_the_species_on_the_frame_are_painted(tmp_path, offline_paint):
     )
 
 
+def test_paintings_wait_for_the_button_when_asked(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+        "paint_start": "button",
+        "count": 3,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    assert not offline_paint, "nothing is painted until the button is pressed"
+    assert "3 paintings waiting for Start painting" in r["status"]
+    assert len(server.held(tmp_path)) == 3
+    server.fetch(options, settings, ctx=ctx)
+    assert len(server.held(tmp_path)) == 3, "a refresh does not add them twice"
+    started, before = server.start_held(tmp_path, "k", 12)
+    _settle_paint()
+    assert (started, before) == (3, 3)
+    assert len(offline_paint) == 3
+    assert not server.held(tmp_path)
+
+
+def test_start_held_keeps_to_the_daily_limit(tmp_path, offline_paint):
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+        "paint_start": "button",
+        "count": 3,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, {"fal_api_key": "k", "gen_daily_cap": "12"}, ctx=ctx)
+    started, _ = server.start_held(tmp_path, "k", 2)
+    _settle_paint()
+    assert started == 2 and len(offline_paint) == 2
+
+
 def test_paintings_climb_the_ladder(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
     options = {
@@ -994,7 +1035,9 @@ def test_admin_template_renders(tmp_path, offline_paint):
             g=g,
             known=server.known_species(tmp_path),
             has_key=True,
+            held=2,
         )
+    assert "2 paintings waiting" in html and "Start painting" in html
     assert g["used"] == 4 and len([e for e in g["paintings"] if e["active"]]) == 4
     assert (
         "Australian Magpie" in html

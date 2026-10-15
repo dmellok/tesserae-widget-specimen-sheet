@@ -560,6 +560,68 @@ def _painting(key: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
     }
 
 
+def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
+    job = {
+        "key": key,
+        "style": gen["style"],
+        "name": row["name"],
+        "sci": row["sci"],
+        "kind": row.get("kind") or "Aves",
+        "how": gen.get("how") or "",
+        "model": gen.get("model", P.DEFAULT_MODEL),
+    }
+    if row.get("ref"):
+        job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
+    return job
+
+
+HELD_MAX = 400
+_HELD_LOCK = threading.Lock()
+
+
+def held(data_dir: Path) -> dict[str, dict[str, Any]]:
+    """Paintings a sheet would have started, waiting for the Start button."""
+    got = N.read_json(data_dir / "held_paints.json", {})
+    return got if isinstance(got, dict) else {}
+
+
+def _hold(data_dir: Path, job: dict[str, Any]) -> None:
+    with _HELD_LOCK:
+        got = held(data_dir)
+        if job["key"] in got:
+            return
+        got[job["key"]] = job
+        for old in list(got)[: max(0, len(got) - HELD_MAX)]:
+            del got[old]
+        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
+
+
+def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
+    with _HELD_LOCK:
+        got = held(data_dir)
+        for k in keys if keys is not None else list(got):
+            got.pop(k, None)
+        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
+
+
+def start_held(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
+    """Start what was held, within the day's limit. (started, held before)."""
+    folder = P.gen_dir(data_dir)
+    jobs = list(held(data_dir).values())
+    ready = []
+    for job in jobs:
+        if (folder / f"{job['key']}.jpg").exists():
+            continue
+        if job.get("collage") and not Path(job["collage"]).exists():
+            continue
+        ready.append(job)
+    _unhold(data_dir)
+    room = max(0, cap - P.budget_used(folder))
+    begin = [j for j in ready if P.state(j["key"], folder) == "none"][:room]
+    P.start_batch(begin, data_dir, fal_key, cap)
+    return len(begin), len(jobs)
+
+
 def _attach_pictures(
     rows: list[dict[str, Any]],
     base: str,
@@ -600,18 +662,11 @@ def _attach_pictures(
             pic["whole"] = gen["style"] in P.WHOLE
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
-        if go and started_paint < P.per_fetch():
-            job = {
-                "key": key,
-                "style": gen["style"],
-                "name": row["name"],
-                "sci": row["sci"],
-                "kind": row.get("kind") or "Aves",
-                "how": gen.get("how") or "",
-                "model": gen.get("model", P.DEFAULT_MODEL),
-            }
-            if row.get("ref"):
-                job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
+        if go and gen.get("hold"):
+            _hold(data_dir, _paint_job(key, row, gen))
+            why = "held"
+        elif go and started_paint < P.per_fetch():
+            job = _paint_job(key, row, gen)
             if P.start(job, data_dir, fal_key, gen["cap"]):
                 started_paint += 1
                 why = "running"
@@ -870,6 +925,7 @@ def fetch(
         )
         art_style = P.register_custom(how)
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
+    hold = options.get("paint_start") == "button"
     model = P.model_of(options.get("model"))
     arrangement = (
         _choice(options.get("arrangement"), ARRANGEMENTS)
@@ -1098,6 +1154,7 @@ def fetch(
             "how": how,
             "model": model,
             "cap": P.daily_cap(settings),
+            "hold": hold,
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
             )
@@ -1135,6 +1192,11 @@ def fetch(
         if mask_states.get("paint_running") or mask_states.get("paint_waiting"):
             status.append(
                 f"painting {have + 1} of {want}" if have < want else "painting"
+            )
+        if mask_states.get("paint_held"):
+            n = mask_states["paint_held"]
+            status.append(
+                f"{n} painting{'' if n == 1 else 's'} waiting for Start painting"
             )
         if mask_states.get("paint_no_key"):
             notices.append(P.NOTE_NO_KEY)
@@ -1246,8 +1308,12 @@ def _scene(
                 "fidelity": fidelity,
                 "aspect": "4:3" if ratio >= 1 else "3:4",
             }
-            P.start(job, data_dir, fal_key, gen["cap"])
-            status.append("composing the scene (fal.ai)")
+            if gen.get("hold"):
+                _hold(data_dir, job)
+                status.append("the scene waits for Start painting")
+            else:
+                P.start(job, data_dir, fal_key, gen["cap"])
+                status.append("composing the scene (fal.ai)")
         elif why == "running":
             status.append("composing the scene (fal.ai)")
         elif why == "capped":
@@ -1516,6 +1582,7 @@ def blueprint() -> Any:
             g=_gallery(dd, cap()),
             known=known_species(dd),
             has_key=bool(fal_key()),
+            held=len(held(dd)),
         )
 
     @bp.get("/progress")
@@ -1680,6 +1747,34 @@ def blueprint() -> Any:
     @bp.post("/bulk-delete")
     def bulk_delete() -> Any:
         retired(retire(request.form.getlist("keys")))
+        return back()
+
+    @bp.post("/start-held")
+    def start_held_route() -> Any:
+        key = fal_key()
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+            return back()
+        n, before = start_held(data_dir(), key, cap())
+        if not before:
+            flash("Nothing is waiting to be painted.", "info")
+        elif not n:
+            flash(
+                f"To-day's limit of {cap()} paintings is used up, or the waiting ones are already made. Raise it in this widget's settings.",
+                "warn",
+            )
+        else:
+            flash(
+                f"Painting {n} species, a few at a time. Watch the job tray at the bottom right.",
+                "success",
+            )
+        return back()
+
+    @bp.post("/clear-held")
+    def clear_held() -> Any:
+        n = len(held(data_dir()))
+        _unhold(data_dir())
+        flash(f"Dropped {n} waiting painting{'' if n == 1 else 's'}.", "info")
         return back()
 
     @bp.post("/style-paint")
