@@ -997,7 +997,7 @@ def references(
         photo, photo_credit = S.inat_reference(job.get("sci") or "", data_dir)
     if not photo:
         return [plate[0]], "plate", plate[1]
-    return [photo, plate[0]], "both", f"{photo_credit} and the {plate[1]}"
+    return [photo, plate[0]], "both", f"{photo_credit} and {plate[1]}"
 
 
 def prompt_for(job: dict[str, Any], data_dir: Path) -> str:

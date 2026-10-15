@@ -1503,7 +1503,7 @@ def test_reference_picture_modes(tmp_path, offline_classic):
     assert "Fugleramme" in credit
     pics, used, credit = P.references({**job, "ref_mode": "both"}, tmp_path)
     assert used == "both" and pics[0] == job["ref"] and pics[1].startswith("data:")
-    assert credit.startswith("A. Observer and the classic plate")
+    assert credit.startswith("A. Observer and a plate by")
     # one picture only for a model that takes one: the photo
     pics, used, _ = P.references({**job, "ref_mode": "both"}, tmp_path, multi=False)
     assert (pics, used) == ([job["ref"]], "photo")
