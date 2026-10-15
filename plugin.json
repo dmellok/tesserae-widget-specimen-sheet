@@ -869,6 +869,11 @@
           "group": "Birds aren't real"
         },
         {
+          "value": "cctv",
+          "label": "Security camera",
+          "group": "Birds aren't real"
+        },
+        {
           "value": "patent",
           "label": "Patent drawing",
           "group": "Birds aren't real"
@@ -889,7 +894,7 @@
           "group": "Your own"
         }
       ],
-      "help": "Thirty-three styles in seven groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
+      "help": "Thirty-four styles in seven groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
     },
     {
       "name": "art_prompt",

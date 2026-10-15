@@ -196,6 +196,10 @@ STYLES.update(
             "Clockwork automaton",
             "a Victorian clockwork automaton of the {kind}: brass and enamel feathers, visible gears at the wing joint, a wind-up key in its back, painted as a natural-history plate, the {kind} alone on plain pure white paper",
         ),
+        "cctv": (
+            "Security camera",
+            "a hand-coloured natural-history plate of a creature whose whole body is, plainly and unmistakably, a white bullet-style CCTV security camera, with its black glass lens at the front, a sun hood, a small red recording light and a steel mounting bracket, and the {kind}'s real head, wings, tail and feet attached to the camera housing in the species' true colours and markings, on plain pure white paper",
+        ),
         "drone": (
             "Drone",
             "a flat vector-style illustration of a military drone built to look like the {kind}: the body a matte grey machine with panel seams and a registration number, four small rotors set into the wings, a camera lens for an eye, a red LED and a landing skid for feet, only the colours and markings of the species painted on, clean flat colour, on plain pure white paper",
@@ -227,7 +231,7 @@ STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Four greys", ("pencil", "litho_toned", "halftone", "blueprint")),
     ("Greyscale", ("platinum", "charcoal", "mezzotint")),
     ("Playful", ("pixel", "origami", "hats")),
-    ("Birds aren't real", ("surveillance", "patent", "automaton", "drone")),
+    ("Birds aren't real", ("surveillance", "cctv", "patent", "automaton", "drone")),
 )
 STYLE_IDS = (*STYLES, "custom")
 # Styles drawn without colour: the prompt asks for the markings, not the colours.
