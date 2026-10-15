@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -805,12 +805,316 @@
       ]
     },
     {
+      "name": "style_mode",
+      "type": "select",
+      "label": "Style",
+      "default": "prebuilt",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "choices": [
+        {
+          "value": "prebuilt",
+          "label": "A ready-made style"
+        },
+        {
+          "value": "builder",
+          "label": "Build my own"
+        }
+      ],
+      "help": "Pick one of the 68 ready-made styles, or build one by choosing each element: medium, period, palette, line, texture and mood. Each different combination is painted and kept separately."
+    },
+    {
+      "name": "build_medium",
+      "type": "select",
+      "label": "Medium",
+      "default": "watercolour",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "choices": [
+        {
+          "value": "watercolour",
+          "label": "Watercolour"
+        },
+        {
+          "value": "gouache",
+          "label": "Gouache"
+        },
+        {
+          "value": "oil",
+          "label": "Oil paint"
+        },
+        {
+          "value": "pastel",
+          "label": "Soft pastel"
+        },
+        {
+          "value": "coloured_pencil",
+          "label": "Coloured pencil"
+        },
+        {
+          "value": "pencil",
+          "label": "Graphite pencil"
+        },
+        {
+          "value": "ink",
+          "label": "Pen and ink"
+        },
+        {
+          "value": "engraving",
+          "label": "Engraving"
+        },
+        {
+          "value": "lithograph",
+          "label": "Hand-coloured lithograph"
+        },
+        {
+          "value": "woodblock",
+          "label": "Woodblock"
+        },
+        {
+          "value": "linocut",
+          "label": "Linocut"
+        },
+        {
+          "value": "screenprint",
+          "label": "Screen print"
+        },
+        {
+          "value": "vector",
+          "label": "Flat vector"
+        },
+        {
+          "value": "papercut",
+          "label": "Paper cut"
+        },
+        {
+          "value": "stained_glass",
+          "label": "Stained glass"
+        },
+        {
+          "value": "embroidery",
+          "label": "Embroidery"
+        }
+      ]
+    },
+    {
+      "name": "build_period",
+      "type": "select",
+      "label": "Period or school",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "None in particular"
+        },
+        {
+          "value": "victorian",
+          "label": "Victorian natural history"
+        },
+        {
+          "value": "nouveau",
+          "label": "Art Nouveau"
+        },
+        {
+          "value": "deco",
+          "label": "Art Deco"
+        },
+        {
+          "value": "midcentury",
+          "label": "Mid-century modern"
+        },
+        {
+          "value": "japanese",
+          "label": "Japanese"
+        },
+        {
+          "value": "arts_crafts",
+          "label": "Arts and Crafts"
+        },
+        {
+          "value": "folk",
+          "label": "Folk art"
+        },
+        {
+          "value": "modern",
+          "label": "Contemporary"
+        }
+      ]
+    },
+    {
+      "name": "build_palette",
+      "type": "select",
+      "label": "Palette",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "True to the species"
+        },
+        {
+          "value": "muted",
+          "label": "Muted and earthy"
+        },
+        {
+          "value": "bright",
+          "label": "Bright and saturated"
+        },
+        {
+          "value": "pastel",
+          "label": "Soft pastels"
+        },
+        {
+          "value": "warm",
+          "label": "Warm tones"
+        },
+        {
+          "value": "cool",
+          "label": "Cool tones"
+        },
+        {
+          "value": "two_colour",
+          "label": "Two colours"
+        },
+        {
+          "value": "grey",
+          "label": "Greys"
+        },
+        {
+          "value": "bw",
+          "label": "Black and white"
+        }
+      ]
+    },
+    {
+      "name": "build_line",
+      "type": "select",
+      "label": "Line",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "Medium's own"
+        },
+        {
+          "value": "fine",
+          "label": "Fine, delicate line"
+        },
+        {
+          "value": "bold",
+          "label": "Bold outline"
+        },
+        {
+          "value": "none",
+          "label": "No outline"
+        },
+        {
+          "value": "sketchy",
+          "label": "Loose and sketchy"
+        }
+      ]
+    },
+    {
+      "name": "build_texture",
+      "type": "select",
+      "label": "Texture",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "Medium's own"
+        },
+        {
+          "value": "smooth",
+          "label": "Smooth and clean"
+        },
+        {
+          "value": "brush",
+          "label": "Visible brush strokes"
+        },
+        {
+          "value": "grain",
+          "label": "Grainy, printed"
+        },
+        {
+          "value": "hatching",
+          "label": "Hatching"
+        },
+        {
+          "value": "dots",
+          "label": "Dots and stipple"
+        }
+      ]
+    },
+    {
+      "name": "build_mood",
+      "type": "select",
+      "label": "Mood",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "Neutral"
+        },
+        {
+          "value": "calm",
+          "label": "Calm and delicate"
+        },
+        {
+          "value": "graphic",
+          "label": "Bold and graphic"
+        },
+        {
+          "value": "whimsical",
+          "label": "Whimsical"
+        },
+        {
+          "value": "dramatic",
+          "label": "Dramatic"
+        }
+      ]
+    },
+    {
+      "name": "build_extra",
+      "type": "text",
+      "label": "Anything else",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style_mode": "builder"
+      },
+      "help": "Optional words added to the style, for example: with a little gold leaf on the wing edges. The bird is always painted alone with its perch, with no background."
+    },
+    {
       "name": "art_style",
       "type": "select",
       "label": "Art style",
       "default": "gould",
       "show_if": {
-        "pictures": "gen"
+        "pictures": "gen",
+        "style_mode": "prebuilt"
       },
       "choices": [
         {
@@ -1168,6 +1472,7 @@
       "default": "",
       "show_if": {
         "pictures": "gen",
+        "style_mode": "prebuilt",
         "art_style": "custom"
       },
       "help": "Describe the medium and the look; the widget adds the species, its photo and the white paper. For example: an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, ochre and dusty rose, on plain pure white paper."

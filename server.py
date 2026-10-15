@@ -1013,7 +1013,9 @@ def fetch(
     pictures = _choice(options.get("pictures"), PICTURES)
     art_style = _choice(options.get("art_style"), P.STYLE_IDS)
     how = ""
-    if art_style == "custom":
+    if options.get("style_mode") == "builder":
+        art_style = P.register_custom(P.build_how(options))
+    elif art_style == "custom":
         how = (
             " ".join(str(options.get("art_prompt") or "").split())[:800]
             or P.CUSTOM_EXAMPLE

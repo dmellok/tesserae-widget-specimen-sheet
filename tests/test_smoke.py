@@ -469,6 +469,32 @@ def test_scale_and_count_are_sliders_with_bounds(tmp_path, offline):
     assert len(_fetch(tmp_path, offline, count="99")["species"]) <= 32
 
 
+def test_style_builder_composes_a_custom_style(tmp_path, offline):
+    P = server.P
+    how = P.build_how(
+        {"build_medium": "linocut", "build_palette": "bw", "build_extra": "with a moon"}
+    )
+    assert how.startswith("a linocut print of the {kind}")
+    assert "no grey mid-tones" in how and "with a moon" in how
+    assert how.endswith("on plain pure white paper")
+    built = _fetch(
+        tmp_path, offline, pictures="gen", style_mode="builder", build_medium="linocut"
+    )
+    prebuilt = _fetch(tmp_path, offline, pictures="gen", art_style="engraving")
+    assert built["art_style"].startswith("custom")
+    assert prebuilt["art_style"] == "engraving"
+
+
+def test_cut_out_prompts_rule_out_backgrounds():
+    P = server.P
+    for key in ("gould", "mucha", "deco", "glasgow", "folkart", "stainedglass"):
+        assert key in P.STYLES
+    assert "no background, backdrop, frame" in P.GEN
+    for key in ("mucha", "glasgow", "deco", "folkart", "stainedglass"):
+        assert P.STYLE_REVISIONS.get(key) == 2
+        assert "roundel" not in P.STYLES[key][1] and "sunburst" not in P.STYLES[key][1]
+
+
 def test_order_picks_and_sorts_the_sheet(tmp_path, offline):
     most = [s["count"] for s in _fetch(tmp_path, offline, count="16")["species"]]
     assert most == sorted(most, reverse=True)

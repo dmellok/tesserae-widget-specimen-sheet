@@ -621,6 +621,155 @@ CUSTOM_EXAMPLE = (
 )
 _CUSTOM_RE = re.compile(r"custom[a-z]{8}")
 
+# The style builder: one pick per element of a style, joined into the same kind
+# of free-text "how" a custom prompt is. (value, label, phrase); an empty phrase
+# leaves that element to the model.
+BUILDER: dict[str, tuple[str, str, tuple[tuple[str, str, str], ...]]] = {
+    "medium": (
+        "Medium",
+        "watercolour",
+        (
+            ("watercolour", "Watercolour", "a loose watercolour painting"),
+            ("gouache", "Gouache", "a flat gouache painting"),
+            ("oil", "Oil paint", "an oil painting with visible brushwork"),
+            ("pastel", "Soft pastel", "a soft pastel drawing"),
+            ("coloured_pencil", "Coloured pencil", "a coloured-pencil drawing"),
+            ("pencil", "Graphite pencil", "a graphite pencil drawing"),
+            ("ink", "Pen and ink", "a pen-and-ink drawing"),
+            ("engraving", "Engraving", "a copperplate engraving"),
+            ("lithograph", "Hand-coloured lithograph", "a hand-coloured lithograph"),
+            ("woodblock", "Woodblock", "a woodblock print"),
+            ("linocut", "Linocut", "a linocut print"),
+            ("screenprint", "Screen print", "a screen print with a few flat inks"),
+            ("vector", "Flat vector", "a flat vector illustration"),
+            ("papercut", "Paper cut", "layered cut paper"),
+            (
+                "stained_glass",
+                "Stained glass",
+                "stained glass with thick black lead lines",
+            ),
+            ("embroidery", "Embroidery", "embroidery in coloured thread"),
+        ),
+    ),
+    "period": (
+        "Period or school",
+        "",
+        (
+            ("", "None in particular", ""),
+            (
+                "victorian",
+                "Victorian natural history",
+                "in the manner of a Victorian natural history plate",
+            ),
+            (
+                "nouveau",
+                "Art Nouveau",
+                "in the Art Nouveau manner, with sinuous flowing lines",
+            ),
+            (
+                "deco",
+                "Art Deco",
+                "in the Art Deco manner, with stepped geometry and clean curves",
+            ),
+            (
+                "midcentury",
+                "Mid-century modern",
+                "in the mid-century modern manner, with simplified shapes",
+            ),
+            (
+                "japanese",
+                "Japanese",
+                "in the Japanese manner, with a fine dark keyline",
+            ),
+            (
+                "arts_crafts",
+                "Arts and Crafts",
+                "in the Arts and Crafts manner, with stylised natural forms",
+            ),
+            (
+                "folk",
+                "Folk art",
+                "in the manner of folk art, with decorative patterning worked into the bird",
+            ),
+            ("modern", "Contemporary", "in a contemporary illustration style"),
+        ),
+    ),
+    "palette": (
+        "Palette",
+        "",
+        (
+            ("", "True to the species", ""),
+            ("muted", "Muted and earthy", "in a muted, earthy palette"),
+            ("bright", "Bright and saturated", "in bright, saturated colour"),
+            ("pastel", "Soft pastels", "in soft pastel colours"),
+            ("warm", "Warm tones", "in a palette of warm reds, ochres and browns"),
+            ("cool", "Cool tones", "in a palette of cool blues, greens and greys"),
+            (
+                "two_colour",
+                "Two colours",
+                "in just two inks, one dark and one accent colour",
+            ),
+            ("grey", "Greys", "in tones of grey only, no colour"),
+            (
+                "bw",
+                "Black and white",
+                "in black ink only, no colour and no grey mid-tones, drawn so it survives a 1-bit panel",
+            ),
+        ),
+    ),
+    "line": (
+        "Line",
+        "",
+        (
+            ("", "Medium's own", ""),
+            ("fine", "Fine, delicate line", "with fine, delicate linework"),
+            ("bold", "Bold outline", "with a bold dark outline"),
+            ("none", "No outline", "with no outline, the shapes made by colour alone"),
+            ("sketchy", "Loose and sketchy", "with loose, sketchy lines"),
+        ),
+    ),
+    "texture": (
+        "Texture",
+        "",
+        (
+            ("", "Medium's own", ""),
+            ("smooth", "Smooth and clean", "with clean, smooth, flat colour"),
+            ("brush", "Visible brush strokes", "with visible brush strokes"),
+            ("grain", "Grainy, printed", "with a grainy printed texture"),
+            ("hatching", "Hatching", "shaded with fine hatching and cross-hatching"),
+            ("dots", "Dots and stipple", "shaded with dots and stipple"),
+        ),
+    ),
+    "mood": (
+        "Mood",
+        "",
+        (
+            ("", "Neutral", ""),
+            ("calm", "Calm and delicate", "calm and delicate in feeling"),
+            ("graphic", "Bold and graphic", "bold and graphic in feeling"),
+            ("whimsical", "Whimsical", "whimsical and playful in feeling"),
+            ("dramatic", "Dramatic", "dramatic, with strong contrast"),
+        ),
+    ),
+}
+
+
+def build_how(options: dict[str, Any]) -> str:
+    """The style builder's picks as one style description."""
+    parts: list[str] = []
+    for name, (_label, default, choices) in BUILDER.items():
+        pick = str(options.get(f"build_{name}") or default)
+        phrase = next((p for v, _l, p in choices if v == pick), "")
+        if name == "medium":
+            phrase = (phrase or choices[0][2]) + " of the {kind}"
+        if phrase:
+            parts.append(phrase)
+    extra = " ".join(str(options.get("build_extra") or "").split())[:300]
+    if extra:
+        parts.append(extra)
+    return ", ".join(parts) + ", on plain pure white paper"
+
+
 GEN_WHOLE = (
     "Paint the {kind} in the reference photo, the {name} ({sci}), as {style}. "
     "Keep its colours, markings, shape and proportions exactly as in the photo: {pose}. "
