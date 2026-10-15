@@ -1073,6 +1073,8 @@ def _scene(
     if not made:
         return None, ["composing the scene"]
     scene = P.scene_for(scene, [str(r.get("kind") or "") for r in shown])
+    if scene in P.GROUNDED:
+        fidelity = "free"
     skey = P.scene_key(gen["style"], scene, fidelity)
     meta = N.read_json(folder / f"{skey}.json", {})
     meta = meta if isinstance(meta, dict) else {}

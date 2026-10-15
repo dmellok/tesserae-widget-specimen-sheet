@@ -190,6 +190,11 @@ SCENE_AUTO_BY_KIND = {
 }
 
 
+# Scenes where the specimens stand on something: the model is left free to
+# set them down, since the collage's ring would leave half of them in the air.
+GROUNDED = {"floor", "log", "bank", "bed", "meadow", "wetland", "garden", "birdbath"}
+
+
 def scene_for(scene: str, kinds: list[str]) -> str:
     """The scene to paint: the one asked for, or for "auto" the one that
     suits the page's commonest kind (birds keep the vignette)."""
