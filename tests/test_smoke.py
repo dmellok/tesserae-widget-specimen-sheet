@@ -1354,3 +1354,24 @@ def test_tray_batches_paintings_and_cutouts():
         b.done("d")
     finally:
         tray.jobs = old
+
+
+def test_perched_birds_keep_a_leafy_branch_and_flying_birds_have_none(tmp_path):
+    perched = {
+        "key": "x--audubon",
+        "style": "audubon",
+        "name": "Wren",
+        "sci": "Troglodytes troglodytes",
+        "kind": "Aves",
+    }
+    flying = {**perched, "key": "x--audubon--flight"}
+    p = P.prompt_for(perched, tmp_path)
+    f = P.prompt_for(flying, tmp_path)
+    assert "branch with a few leaves" in p and "among a few leaves" in p
+    assert "no branch, perch, twig or ground" in f
+    assert "branch with a few leaves" not in f and "among a few leaves" not in f
+    for style in ("woodblock", "japonisme", "chinoiserie", "artnouveau", "fairytale"):
+        job = {**flying, "key": f"x--{style}--flight", "style": style}
+        text = P.prompt_for(job, tmp_path)
+        # only the pose line may name a branch, and only to rule it out
+        assert text.count("branch") == 1 and "no branch" in text, style

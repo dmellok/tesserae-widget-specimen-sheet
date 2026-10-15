@@ -152,7 +152,7 @@ STYLES: dict[str, tuple[str, str]] = {
     ),
     "audubon": (
         "Watercolour after Audubon",
-        "a life-size watercolour in the manner of John James Audubon's Birds of America: a lively natural pose, watercolour and pastel with fine detail in every mark, on plain pure white paper",
+        "a life-size watercolour in the manner of John James Audubon's Birds of America: a lively natural pose among a few leaves, watercolour and pastel with fine detail in every mark, on plain pure white paper",
     ),
     "engraving": (
         "Black-ink engraving",
@@ -160,7 +160,7 @@ STYLES: dict[str, tuple[str, str]] = {
     ),
     "woodblock": (
         "Japanese woodblock print",
-        "a Japanese kacho-e woodblock print in the manner of Ohara Koson: flat areas of colour with a fine dark keyline and the texture of washi paper, the {kind} alone on plain pure white paper with no background wash",
+        "a Japanese kacho-e woodblock print in the manner of Ohara Koson: flat areas of colour with a fine dark keyline, a single flowering branch and the texture of washi paper, the {kind} alone on plain pure white paper with no background wash",
     ),
     "linocut": (
         "Linocut",
@@ -608,8 +608,8 @@ GEN = (
     "Keep its colours, markings, shape and proportions exactly as in the photo: {pose}. "
     "The subject alone on plain, pure white paper with a clear margin all round, as a "
     "specimen cut from its surroundings: no shadow under it, no wash, no vignette, no "
-    "ground, soil, leaf litter, grass, rocks, wood, bark, logs, water or sky, no other "
-    "creatures or plants, no scenery, no text, no lettering, no border, no signature."
+    "ground, soil, leaf litter, grass, rocks, water or sky, no other creatures, no "
+    "scenery, no text, no lettering, no border, no signature."
     "{about}{dapper}"
 )
 DAPPER = (
@@ -619,9 +619,35 @@ DAPPER = (
 # A bird is painted perched or in flight; the sheet mixes them so a page is
 # not eight profiles on branches. A third of species fly.
 POSES = {
-    "perched": "perched on a simple branch, the whole bird and its perch",
-    "flight": "in flight with its wings spread, seen from the side a little below, the whole bird",
+    "perched": (
+        "perched on a natural, gently curving branch with a few leaves (and a berry, "
+        "bud or blossom where the species would have one), painted with the same care "
+        "as the bird, the whole bird and its perch, the branch ending cleanly well "
+        "inside the margin"
+    ),
+    "flight": (
+        "in flight with its wings spread, seen from the side a little below, the whole "
+        "bird, held in the air with no branch, perch, twig or ground under it"
+    ),
 }
+# A style that puts its bird on a branch cannot do that for a bird in flight.
+FLIGHT_HOW = (
+    (" among a few leaves", ""),
+    ("a single flowering branch and ", ""),
+    (
+        "decorative leaves curling round the branch",
+        "decorative leaves curling in its wake",
+    ),
+    (
+        "gnarled branches and twisted roots as a frame",
+        "a frame of curling leaves and tendrils",
+    ),
+    ("a flat {kind} on a branch", "a flat {kind} in flight"),
+    (
+        "the {kind} on a flowering branch with delicate blossom and butterflies",
+        "the {kind} in flight among drifting blossom petals and butterflies",
+    ),
+)
 
 # The scene: the sheet's cut-outs on one collage, repainted by the model as a
 # single picture with one background. Opt-in, one painting per re-compose.
@@ -928,13 +954,16 @@ def about(sci: str, data_dir: Path) -> str:
 
 def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     noun, pose = K.noun_of(job.get("kind"))
+    flying = job.get("kind") == "Aves" and "--flight" in job["key"]
     if job.get("kind") == "Aves":
-        pose = POSES["flight" if "--flight" in job["key"] else "perched"]
+        pose = POSES["flight" if flying else "perched"]
     _label, how = style_of(job.get("style"))
-    how = (
-        str(job.get("how") or how)
-        .replace("{kind}", noun)
-        .replace("{camera}", camera_for(job.get("sci") or ""))
+    how = str(job.get("how") or how)
+    if flying:
+        for perched, aloft in FLIGHT_HOW:
+            how = how.replace(perched, aloft)
+    how = how.replace("{kind}", noun).replace(
+        "{camera}", camera_for(job.get("sci") or "")
     )
     words = about(job.get("sci") or "", data_dir)
     gen = GEN_WHOLE if str(job.get("style") or "") in WHOLE else GEN
