@@ -20,7 +20,7 @@ Each specimen is cut out of its picture and the cut-outs are packed onto one she
 
 ![Eleven birds](screenshots/extra-1.png)
 
-**Leave out** drops species from the sheet, one per line: a common or scientific name, a genus (`Columba` drops every pigeon in it), a kind (`Insecta`, `insects`, `Birds`) or a pattern such as `*gull`. An excluded species frees its place for the next one. The plugin's settings carry an **Always leave out** list that applies to every cell; the widget's page under Widgets lists every species it has shown, to copy from.
+**Order** picks which species make the sheet when more were heard or recorded than fit, and the order of a numbered key: the most or least heard, the rarest here (the fewest days heard in the log the widget keeps), the most recently heard or seen, new arrivals first, A to Z, or a mix that changes daily. **Leave out** drops species from the sheet, one per line: a common or scientific name, a genus (`Columba` drops every pigeon in it), a kind (`Insecta`, `insects`, `Birds`) or a pattern such as `*gull`. An excluded species frees its place for the next one. The plugin's settings carry an **Always leave out** list that applies to every cell; the widget's page under Widgets lists every species it has shown, to copy from.
 
 After dark, with BirdNET-Go, the page can show the garden asleep (the moon, when it went quiet, the last bird heard) or keep only the night's birds.
 

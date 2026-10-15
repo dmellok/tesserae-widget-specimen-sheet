@@ -453,6 +453,39 @@ def test_gbif_rows(tmp_path, offline):
 # ----------------------------------------------------------------------
 
 
+def test_order_picks_and_sorts_the_sheet(tmp_path, offline):
+    most = [s["count"] for s in _fetch(tmp_path, offline, count="16")["species"]]
+    assert most == sorted(most, reverse=True)
+    least = [
+        s["count"]
+        for s in _fetch(tmp_path, offline, count="16", order="least")["species"]
+    ]
+    assert least == sorted(least) and least[0] == most[-1]
+    names = [
+        s["name"]
+        for s in _fetch(tmp_path, offline, count="16", order="alpha")["species"]
+    ]
+    assert names == sorted(names, key=str.lower)
+    # the rarity log has one day, so rarest falls to the fewest calls
+    rare = [
+        s["count"]
+        for s in _fetch(tmp_path, offline, count="16", order="rarest")["species"]
+    ]
+    assert rare == sorted(rare)
+    latest = [
+        s["last"]
+        for s in _fetch(tmp_path, offline, count="16", order="latest")["species"]
+    ]
+    assert latest == sorted(latest, reverse=True)
+    mix = [
+        s["name"] for s in _fetch(tmp_path, offline, count="16", order="mix")["species"]
+    ]
+    assert sorted(mix) == sorted(names) and mix == [
+        s["name"] for s in _fetch(tmp_path, offline, count="16", order="mix")["species"]
+    ]
+    assert _fetch(tmp_path, offline, order="nonsense")["species"][0]["count"] == most[0]
+
+
 def test_exclude_by_name_genus_kind_and_glob(tmp_path, offline):
     r = _fetch(tmp_path, offline, url="birdnet.local", exclude="Columba\n*gull")
     names = [s["name"] for s in r["species"]]

@@ -228,13 +228,24 @@ function inkOf(got) { let n = 0; const d = got.mask.data; for (let i = 0; i < d.
    on, the foliage round it, the log a fungus grows from, all of which are
    the drawing; the edge cut keeps everything drawn on the paper. So a plate
    or painting is cut by its edges whenever the paper was plain enough to
-   find: the cut is well under the whole frame and not just specks. An aged,
-   textured or vignetted plate fails this and keeps the model's mask. */
+   find: the cut is well under the whole frame, not just specks, and does
+   not fill its own box the way a painted background wash does (a bird on a
+   branch fills well under three quarters of its box; a plate with a sky
+   behind the bird fills nearly all of it). An aged, textured or vignetted
+   plate fails this and keeps the model's mask. */
 function perchKept(edge) {
   if (!edge) return false;
   const [fw, fh] = edge.frame;
   const edgeInk = inkOf(edge);
-  return edgeInk < 0.8 * fw * fh && edgeInk > 0.01 * fw * fh;
+  if (edgeInk >= 0.8 * fw * fh || edgeInk <= 0.01 * fw * fh) return false;
+  // the mask closed (blurred and thresholded) so a speckled wash reads as the
+  // solid block it is, then its share of the cut's own box
+  const { w, h, data } = edge.mask;
+  const r = Math.max(2, Math.round(Math.max(w, h) / 80));
+  const soft = boxBlur(Float32Array.from(data), w, h, r, 2);
+  let filled = 0;
+  for (let i = 0; i < soft.length; i++) if (soft[i] > 0.2) filled++;
+  return filled < 0.72 * w * h;
 }
 
 /* A picture that arrived already cut out (a PNG with alpha): its alpha is
@@ -393,7 +404,7 @@ function footprintOf(b, scale, flip, label, H, gap = 0) {
    across the page's axis and turned to face in; several attempts, the best
    by a balance score kept. (x, y, scale, flip) per specimen in the order
    given; scale 0 when one did not fit. */
-export function packSheet(items, W, H, label, gap = 2) {
+export function packSheet(items, W, H, label, gap = 2, fast = false) {
   const gw = Math.floor(W / CELL), gh = Math.floor(H / CELL);
   const cx = gw / 2, cy = gh * 0.52, rx = gw * 0.48, ry = gh * 0.44;
   const inside = new Uint8Array(gw * gh);
@@ -582,10 +593,13 @@ export function packSheet(items, W, H, label, gap = 2) {
 
   const area = items.reduce((s, b) => s + b.mask.w * b.mask.h * b.factor ** 2, 0);
   let unit = Math.sqrt((0.55 * room * CELL * CELL) / Math.max(1, area));
-  const starts = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+  // fast: one start, one handedness and no growth, for a placeholder laid out
+  // before any picture is decoded; the fill pass still brings it to the margins
+  const starts = fast ? [-Math.PI / 2] : [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+  const hands = fast ? [true] : [true, false];
   const tryAll = (u) => {
     let best = null, bestScore = Infinity;
-    for (const start of starts) for (const leftFirst of [true, false]) {
+    for (const start of starts) for (const leftFirst of hands) {
       const got = attempt(u, start, leftFirst);
       if (!got) continue;
       const sc = score(got);
@@ -596,7 +610,7 @@ export function packSheet(items, W, H, label, gap = 2) {
   let best = null;
   for (let i = 0; i < 14 && !best; i++) { best = tryAll(unit); if (!best) unit *= 0.88; }
   if (!best) return items.map(() => [0, 0, 0, false]);
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < (fast ? 0 : 10); i++) {
     const bigger = tryAll(unit * 1.06);
     if (!bigger) break;
     unit *= 1.06; best = bigger;
@@ -613,8 +627,72 @@ const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220
    painting on plain paper, ``paper`` its paper colour as [r, g, b] and
    ``neutral`` asks for that paper scaled to white. Returns null when
    nothing could be placed. */
-export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy' }) {
-  const loaded = await Promise.all(specimens.map(async (b) => {
+function drawMount(ctx, x, y, w, h, ink, W) {
+  ctx.save();
+  ctx.strokeStyle = ink;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = Math.max(1, Math.round(W / 700));
+  ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 3]);
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w * 0.48, h * 0.48, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+const sheetSize = (ratio, size) => (ratio >= 1 ? [size, Math.round(size / ratio)] : [Math.round(size * ratio), size]);
+
+/* The placeholder page, laid out at once from nothing but each specimen's
+   aspect and factor: every specimen as an empty mount of about the size it
+   will take, packed the quick way, drawn on a canvas the page shows while
+   the real sheet is built. ``slots`` gives each specimen's box on that
+   canvas (by its index in ``specimens``), so a cut-out can be drawn into
+   its mount as soon as it is ready. Synchronous, a few milliseconds. */
+export function quickSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy' }) {
+  const items = specimens.map((b, idx) => { const m = mount(Number(b.aspect) > 0 ? Number(b.aspect) : 0.8); return { ...b, ...m, idx, maskCanvas: maskCanvas(m.mask), flippable: false, face: null }; });
+  if (!items.length) return null;
+  const [W, H] = sheetSize(ratio, size);
+  items.sort((a, b) => b.factor ** 2 * b.mask.w * b.mask.h - a.factor ** 2 * a.mask.w * a.mask.h);
+  const bg = PAPERS[paper] || PAPERS.cream;
+  const page = canvas(W, H);
+  const ctx = page.getContext('2d');
+  ctx.fillStyle = `rgb(${bg.join(',')})`;
+  ctx.fillRect(0, 0, W, H);
+  const spots = packSheet(items, W, H, label, { close: 0, airy: 2, open: 4 }[spacing] ?? 2, true);
+  const shown = [];
+  const slots = [];
+  items.forEach((b, i) => {
+    const [x, y, scale] = spots[i];
+    if (scale <= 0) return;
+    const w = Math.max(1, Math.round(b.mask.w * scale)), h = Math.max(1, Math.round(b.mask.h * scale));
+    drawMount(ctx, x, y, w, h, ink, W);
+    slots[b.idx] = { x, y, w, h, on_paper: !!b.on_paper };
+    shown.push({ name: b.name, sci: b.sci, mount: true, flip: false, box: [x / W, y / H, w / W, h / H], at: [(x + w / 2) / W, (y + h) / H] });
+  });
+  if (!shown.length) return null;
+  return { canvas: page, slots, paper: `rgb(${bg.join(',')})`, items: shown, ratio, label, w: W, h: H, quick: true };
+}
+
+/* A cut-out drawn into its placeholder mount: fitted inside the mount's
+   box, the dashed oval painted over with paper first, printed by multiply
+   on paper or over it for a photo. ``pic`` is a canvas or an ImageBitmap. */
+export function drawIntoMount(quick, i, pic, blend) {
+  const slot = quick.slots[i];
+  if (!slot || !quick.canvas) return;
+  const ctx = quick.canvas.getContext('2d');
+  const pw = pic.width || pic.naturalWidth, ph = pic.height || pic.naturalHeight;
+  if (!pw || !ph) return;
+  const k = Math.min(slot.w / pw, slot.h / ph);
+  const w = pw * k, h = ph * k, x = slot.x + (slot.w - w) / 2, y = slot.y + (slot.h - h) / 2;
+  ctx.save();
+  ctx.fillStyle = quick.paper;
+  ctx.fillRect(slot.x - 2, slot.y - 2, slot.w + 4, slot.h + 4);
+  ctx.globalCompositeOperation = blend === 'multiply' ? 'multiply' : 'source-over';
+  ctx.drawImage(pic, x, y, w, h);
+  ctx.restore();
+}
+
+export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', onCut = null }) {
+  const loaded = await Promise.all(specimens.map(async (b, idx) => {
     try {
       let got = null, byEdges = false;
       if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper) got.blend = 'source-over'; }
@@ -626,13 +704,14 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       }
       if (!got && b.src) got = vignette(await loadImage(b.src));
       if (!got) got = mount(0.8);
+      if (onCut && got.blend !== 'mount') { try { await onCut(idx, got.cut, got.blend); } catch { /* the page may have moved on */ } }
       // a plate cut by its edges may carry lettering, so it is never mirrored
       const flippable = got.blend !== 'mount' && !byEdges && (!!b.cut || !b.on_paper);
       return { ...b, ...got, maskCanvas: maskCanvas(got.mask), flippable, face: flippable ? faceOf(got.mask) : null };
     } catch { return { ...b, ...mount(0.8), maskCanvas: null, flippable: false, face: null }; }
   })).then((all) => all.map((b) => (b.maskCanvas ? b : { ...b, maskCanvas: maskCanvas(b.mask) })));
   if (!loaded.length) return null;
-  const W = ratio >= 1 ? size : Math.round(size * ratio), H = ratio >= 1 ? Math.round(size / ratio) : size;
+  const [W, H] = sheetSize(ratio, size);
   loaded.sort((a, b) => b.factor ** 2 * b.mask.w * b.mask.h - a.factor ** 2 * a.mask.w * a.mask.h);
   const bg = PAPERS[paper] || PAPERS.cream;
   const sheet = canvas(W, H);
@@ -646,15 +725,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
     if (scale <= 0) return;
     const w = Math.max(1, Math.round(b.mask.w * scale)), h = Math.max(1, Math.round(b.mask.h * scale));
     if (b.blend === 'mount') {
-      ctx.save();
-      ctx.strokeStyle = ink;
-      ctx.globalAlpha = 0.45;
-      ctx.lineWidth = Math.max(1, Math.round(W / 700));
-      ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 3]);
-      ctx.beginPath();
-      ctx.ellipse(x + w / 2, y + h / 2, w * 0.48, h * 0.48, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
+      drawMount(ctx, x, y, w, h, ink, W);
     } else {
       ctx.save();
       ctx.globalCompositeOperation = b.blend;
@@ -672,7 +743,11 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
    result (or the error), then the page ends the worker. */
 if (IN_WORKER) {
   self.onmessage = async (e) => {
-    try { self.postMessage({ ok: true, sheet: await buildSheet(e.data) }); }
+    const onCut = async (i, cut, blend) => {
+      const bitmap = await createImageBitmap(cut);
+      self.postMessage({ kind: 'cut', i, bitmap, blend }, [bitmap]);
+    };
+    try { self.postMessage({ ok: true, sheet: await buildSheet({ ...e.data, onCut }) }); }
     catch (err) { self.postMessage({ ok: false, error: String(err && err.message || err) }); }
   };
 }

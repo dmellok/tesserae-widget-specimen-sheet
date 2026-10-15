@@ -15,6 +15,7 @@ import fnmatch
 import hashlib
 import importlib.util
 import json
+import random
 import math
 import re
 import sys
@@ -88,6 +89,9 @@ PICTURE_PX = 700
 PICTURES = ("free", "gen")
 ARRANGEMENTS = ("sheet", "scene")
 SHEET_MAX = 16
+# Which species make the sheet when more were heard or recorded than fit,
+# and the order of a numbered key.
+ORDERS = ("most", "least", "rarest", "latest", "newest", "alpha", "mix")
 RETURN_AFTER_DAYS = 45
 QUIET_MIN = 90
 ERR_NOWHERE = "Set a place in this cell (or the app's location)."
@@ -198,6 +202,73 @@ def is_excluded(row: dict[str, Any], rules: list[str]) -> bool:
 # ----------------------------------------------------------------------
 # The rarity log (BirdNET-Go): new and returning birds
 # ----------------------------------------------------------------------
+
+
+def _days_heard(data_dir: Path) -> dict[str, int]:
+    """How many of the logged days each species was heard on, by its key
+    in the rarity log (the scientific name, else the common name)."""
+    log = N.read_json(data_dir / "rarity.json", {})
+    seen = log.get("seen") if isinstance(log, dict) else None
+    if not isinstance(seen, dict):
+        return {}
+    return {k: len(v) for k, v in seen.items() if isinstance(v, list)}
+
+
+def _order_rows(
+    rows: list[dict[str, Any]],
+    order: str,
+    source: str,
+    data_dir: Path,
+    today: str,
+) -> None:
+    """Sort the rows for the Order option, in place. Most and least go by
+    the count; rarest by the fewest days heard in the rarity log (BirdNET-Go)
+    or the fewest records (the others); latest by the time last heard or the
+    date last seen; newest puts the day's new arrivals and returns first;
+    alpha A to Z; mix shuffles with the day as the seed, so the pick changes
+    daily and holds for the day."""
+
+    def name(r: dict[str, Any]) -> str:
+        return str(r.get("name") or "").lower()
+
+    def when(r: dict[str, Any]) -> str:
+        return str(r.get("last_iso") or "")
+
+    if order == "least":
+        rows.sort(key=lambda r: (r["count"], name(r)))
+    elif order == "alpha":
+        rows.sort(key=name)
+    elif order == "latest" or (order == "newest" and source != "birdnet_go"):
+        if source == "birdnet_go":
+            rows.sort(
+                key=lambda r: (
+                    -(_minutes(r.get("last") or "") or 0),
+                    -r["count"],
+                    name(r),
+                )
+            )
+        else:
+            rows.sort(key=lambda r: (-r["count"], name(r)))
+            rows.sort(key=when, reverse=True)
+    elif order == "newest":
+        rank = {"new": 0, "back": 1}
+        rows.sort(
+            key=lambda r: (rank.get(str(r.get("flag") or ""), 2), -r["count"], name(r))
+        )
+    elif order == "rarest":
+        heard = _days_heard(data_dir) if source == "birdnet_go" else {}
+        rows.sort(
+            key=lambda r: (
+                heard.get(str(r.get("sci") or r.get("name") or ""), 0),
+                r["count"],
+                name(r),
+            )
+        )
+    elif order == "mix":
+        rows.sort(key=name)
+        random.Random(f"{today}|{source}").shuffle(rows)
+    else:
+        rows.sort(key=lambda r: (-r["count"], name(r)))
 
 
 def _rarity(data_dir: Path, rows: list[dict[str, Any]], today: str) -> None:
@@ -421,6 +492,7 @@ def _plate(
         "credit": f"{source} · public domain",
         "paper": N.paper_of(src, data_dir / "img" / f"p_{key}.paper", levels),
         "key": f"p_{key}",
+        "aspect": N.aspect_of(src),
         "file": str(colour),
     }
 
@@ -454,6 +526,7 @@ def _photo(
         "on_paper": False,
         "credit": credit or "photo",
         "key": f"f_{key}",
+        "aspect": N.aspect_of(src),
         "file": str(colour),
     }
 
@@ -480,6 +553,7 @@ def _painting(key: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
         "credit": str(meta.get("credit") or "AI painting"),
         "paper": N.paper_of(src, folder / f"{key}.paper", levels),
         "key": f"g_{key}",
+        "aspect": N.aspect_of(src),
         "file": str(img),
     }
 
@@ -719,6 +793,8 @@ def fetch(
     radius_km = _choice(options.get("radius_km"), RADII)
     login = str(options.get("user_login") or "").strip()
     count = _int(options.get("count"), 8, 2, SHEET_MAX)
+    order = str(options.get("order") or "most")
+    order = order if order in ORDERS else "most"
     sizing = _choice(options.get("sizing"), SIZINGS)
     labels = _choice(options.get("labels"), LABELS)
     picked = options.get("label_lines")
@@ -917,7 +993,7 @@ def fetch(
     kept = [r for r in rows if not is_excluded(r, rules)]
     excluded = len(rows) - len(kept)
     rows = kept
-    rows.sort(key=lambda r: (-r["count"], r["name"]))
+    _order_rows(rows, order, source, data_dir, now.strftime("%Y-%m-%d"))
 
     # --- night (BirdNET-Go) ----------------------------------------------
     sky = _sky(place, now) if source == "birdnet_go" else {"dark": False}

@@ -164,6 +164,21 @@ def render(
     return "data:image/jpeg;base64," + base64.b64encode(data).decode()
 
 
+def aspect_of(src: str) -> float:
+    """Width over height of a JPEG data URI (its header only is read), or
+    0.8 when it cannot be told; the page lays placeholders out from it
+    before it has decoded a picture."""
+    try:
+        from PIL import Image
+
+        head, _, data = src.partition(",")
+        with Image.open(io.BytesIO(base64.b64decode(data))) as im:
+            w, h = im.size
+        return round(w / h, 3) if w and h else 0.8
+    except Exception:  # noqa: BLE001 - any odd picture just gets the default
+        return 0.8
+
+
 def paper_of(src: str, cache: Path, levels: str = "colour") -> str:
     """The page colour round a plate, as #rrggbb: the median of a thin band
     along the picture's edges."""

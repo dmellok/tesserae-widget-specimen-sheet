@@ -4,7 +4,7 @@
    out and packs the sheet in the render browser (static/sheet.js), then prints
    the labels, the header and the foot over it. Everything arrives inlined,
    because the render sandbox has no network. */
-import { buildSheet } from './static/sheet.js';
+import { buildSheet, quickSheet, drawIntoMount } from './static/sheet.js';
 
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -70,17 +70,20 @@ function asleep(d) {
 const WORKER_PATH = './static/sheet.js';
 let WORKER = null;
 let CHAIN = Promise.resolve();
-function packOffThread(args) {
-  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return buildSheet(args);
+function packOffThread(args, onCut) {
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return buildSheet({ ...args, onCut });
   const run = () => new Promise((resolve) => {
-    try { if (!WORKER) WORKER = new Worker(new URL(WORKER_PATH, import.meta.url), { type: 'module' }); } catch { resolve(buildSheet(args)); return; }
+    try { if (!WORKER) WORKER = new Worker(new URL(WORKER_PATH, import.meta.url), { type: 'module' }); } catch { resolve(buildSheet({ ...args, onCut })); return; }
     const w = WORKER;
     let done = false;
     const finish = (sheet) => { if (done) return; done = true; clearTimeout(timer); w.onmessage = null; w.onerror = null; resolve(sheet); };
     const drop = () => { if (WORKER === w) WORKER = null; try { w.terminate(); } catch { /* gone */ } };
-    const timer = setTimeout(() => { drop(); finish(buildSheet(args)); }, 90000);
-    w.onmessage = (e) => finish(e.data && e.data.ok ? e.data.sheet : buildSheet(args));
-    w.onerror = () => { drop(); finish(buildSheet(args)); };
+    const timer = setTimeout(() => { drop(); finish(buildSheet({ ...args, onCut })); }, 90000);
+    w.onmessage = (e) => {
+      if (e.data && e.data.kind === 'cut') { if (onCut) { try { onCut(e.data.i, e.data.bitmap, e.data.blend); } catch { /* placeholder gone */ } } return; }
+      finish(e.data && e.data.ok ? e.data.sheet : buildSheet({ ...args, onCut }));
+    };
+    w.onerror = () => { drop(); finish(buildSheet({ ...args, onCut })); };
     w.postMessage(args);
   });
   CHAIN = CHAIN.then(run, run);
@@ -108,28 +111,33 @@ function remember(key, sheet) {
     store.setItem(key, raw);
   } catch { try { for (let i = store.length - 1; i >= 0; i--) { const k = store.key(i); if (k && k.startsWith('ss1:')) store.removeItem(k); } } catch { /* full or blocked */ } }
 }
-async function buildCached(args) {
+async function buildCached(args, onCut) {
   const key = keyOf(args);
   const had = recall(key);
   if (had) return had;
-  const sheet = await packOffThread(args);
+  const sheet = await packOffThread(args, onCut);
   if (sheet) remember(key, sheet);
   return sheet;
 }
 
-async function build(d) {
-  if (typeof document === 'undefined') return null;
+function buildArgs(d) {
   const w = d.cell_w || 800, h = d.cell_h || 480;
   const specimens = d.species.map((s) => ({
     name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null,
-    on_paper: !!(s.pic && s.pic.on_paper), factor: Number(s.factor) || 1,
+    on_paper: !!(s.pic && s.pic.on_paper), factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
     paper: hexRgb(s.pic && s.pic.paper), neutral: !!d.neutral,
     lines: d.labels === 'none' ? [] : d.labels === 'key' ? ['00'] : (s.lines || [s.name]),
   }));
   const label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
+  return { specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy' };
+}
+
+async function build(d, onCut) {
+  if (typeof document === 'undefined') return null;
+  const args = buildArgs(d);
   try {
-    return await buildCached({ specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy' });
+    return await buildCached(args, onCut);
   } catch { return null; }
 }
 
@@ -148,8 +156,8 @@ function sheet(d, made) {
     return `<span class="sh-l${labels === 'tag' ? ' sh-tag' : ''}${labels === 'key' ? ' sh-num' : ''}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%">${text}</span>`;
   }).join('');
   const mounts = made.items.filter((m) => m.mount).length;
-  const extra = mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
-  const page = `<div class="sh-page" style="--r:${made.ratio};--lf:${made.label}"><img src="${made.src}" alt="" decoding="async">${tags}</div>`;
+  const extra = made.quick ? ['cutting the pictures out'] : mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
+  const page = `<div class="sh-page" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="async">`}${tags}</div>`;
   if (labels === 'key') {
     const rows = made.items.map((m, i) => { const s = bySci[m.sci || m.name] || {}; return `<li><em>${i + 1}.</em><span>${esc(m.name)}${s.sci ? `<i>${esc(s.sci)}</i>` : ''}</span><b>${s.count || ''}</b></li>`; }).join('');
     return `${head(d)}<div class="cl"><div class="cl-pic">${page}</div><ol class="cl-key">${rows}</ol></div>${foot(d, extra)}`;
@@ -194,9 +202,20 @@ export default async function render(shadow, ctx) {
   else if (d.state === 'asleep') body = asleep(d);
   else if (d.scene && d.scene.pic) body = scenePage(d);
   else {
-    const made = await build(d);
+    // the page at once with every specimen as an empty mount, each bird drawn
+    // into its mount as its cut-out is ready, then the finished sheet in place
+    let quick = null;
+    if (typeof document !== 'undefined' && !recall(keyOf(buildArgs(d)))) {
+      try { quick = quickSheet(buildArgs(d)); } catch { quick = null; }
+      if (quick) { paint(shadow, d, size, sheet(d, quick)); const slot = shadow.querySelector('[data-quick]'); if (slot) slot.prepend(quick.canvas); }
+    }
+    const made = await build(d, quick ? (i, pic, blend) => drawIntoMount(quick, i, pic, blend) : null);
     body = made ? sheet(d, made) : montage(d);
   }
+  paint(shadow, d, size, body);
+}
+
+function paint(shadow, d, size, body) {
   const paper = { cream: '#f3ead6', white: '#ffffff', aged: '#e9dcc0' }[d.paper] || '#f3ead6';
   shadow.innerHTML = `
     <style>${d.font_css || ''}</style>
@@ -222,7 +241,7 @@ export default async function render(shadow, ctx) {
       /* the sheet: the page fills what is left between the rule and the foot */
       .sh { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 1cqmin; }
       .sh-page { position: relative; aspect-ratio: var(--r); max-width: 100%; max-height: 100%; width: min(100%, calc((100cqh - 12cqmin) * var(--r))); container-type: size; }
-      .sh-page > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+      .sh-page > img, .sh-page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
       .sc { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 0 2.8cqmin; }
       .sc-pic { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
       .sc-pic img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
