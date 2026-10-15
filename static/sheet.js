@@ -679,6 +679,39 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     }
   };
 
+  /* the packer stops growing once one specimen can no longer be placed by its search, which
+     leaves gaps a single bird would fill. So each specimen is then made a little bigger where
+     it stands, the smallest first, for as long as its footprint (caption strip and air
+     included) stays clear of the others and inside the margins. No specimen grows past twice
+     its size, so the sizes still read as they were given. */
+  const expand = (placed) => {
+    const occ = new Uint8Array(gw * gh);
+    const live = placed.map((p, i) => p && { ...p, i, base: p.scale });
+    for (const p of live) if (p) stamp(occ, p.x, p.y, p.f, 1);
+    const ps = live.filter(Boolean);
+    const top = (0.6 * Math.min(W, H));
+    for (let round = 0; round < 60; round++) {
+      let grew = false;
+      for (const p of [...ps].sort((a, b) => a.scale - b.scale)) {
+        const b = items[p.i];
+        const ns = p.scale * 1.04;
+        if (ns > p.base * 2 || ns * Math.max(b.mask.w, b.mask.h) > top) continue;
+        const nf = footprintOf(b, ns, p.f.flip, label, H, gap);
+        const bx = p.x + p.f.off + p.f.tw / 2, by = p.y + p.f.pad + p.f.th / 2;
+        const nx = Math.round(bx - nf.off - nf.tw / 2), ny = Math.round(by - nf.pad - nf.th / 2);
+        stamp(occ, p.x, p.y, p.f, 0);
+        let spot = null;
+        for (const [dx, dy] of [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+          if (free(occ, nx + dx, ny + dy, nf)) { spot = [nx + dx, ny + dy]; break; }
+        }
+        if (spot) { p.x = spot[0]; p.y = spot[1]; p.f = nf; p.scale = ns; grew = true; }
+        stamp(occ, p.x, p.y, p.f, 1);
+      }
+      if (!grew) break;
+    }
+    return live.map((p) => p && { x: p.x, y: p.y, f: p.f, scale: p.scale });
+  };
+
   /* how balanced a finished attempt is: lower is better */
   const score = (placed) => {
     let M = 0, mx = 0, my = 0;
@@ -747,6 +780,7 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     if (!bigger) break;
     unit *= grow; best = bigger;
   }
+  if (!fast && !scatter) best = expand(best);
   best = fill(best);
   return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip, (p.y + p.f.lt - p.f.pad - 1) * CELL] : [0, 0, 0, false]));
 }
