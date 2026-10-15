@@ -360,7 +360,7 @@ export function faceOf(mask) {
 function labelStrip(lines, label, H) {
   if (!lines || !lines.length) return { rows: 0, nameW: 0 };
   const rows = Math.max(2, Math.floor((label * 1.5 * H) / CELL)) * lines.length;
-  const nameW = Math.floor(Math.max(...lines.map((t, i) => t.length * (i === 0 ? 0.74 : 0.5))) * label * H / CELL) + 3;
+  const nameW = Math.floor(Math.max(...lines.map((t, i) => t.length * (i === 0 ? 0.62 : 0.44))) * label * H / CELL) + 3;
   return { rows, nameW };
 }
 
@@ -418,9 +418,10 @@ function rand(seed) {
 export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'cluster', facing = 'inward') {
   const gw = Math.floor(W / CELL), gh = Math.floor(H / CELL);
   // band and column are loose swathes, two or three deep, not a single file: a file of eight is tiny
-  const shapes = { cluster: [0.48, 0.44], band: [0.48, 0.24], column: [0.24, 0.46], scatter: [0.48, 0.44] };
+  const shapes = { cluster: [0.48, 0.44], band: [0.48, 0.24], column: [0.24, 0.46], scatter: [0.48, 0.44], packed: [0.5, 0.47] };
   const [kx, ky] = shapes[layout] || shapes.cluster;
   const scatter = layout === 'scatter';
+  const packed = layout === 'packed';
   const cx = gw / 2, cy = gh * 0.52, rx = gw * kx, ry = gh * ky;
   const inside = new Uint8Array(gw * gh);
   let room = 0;
@@ -483,7 +484,7 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     };
     const order = items.map((_b, i) => i); // already largest first
     const groups = [];
-    if (scatter) for (const i of order) groups.push([i]);
+    if (scatter || packed) for (const i of order) groups.push([i]);
     else {
       if (order.length) groups.push([order[0]]);
       for (let i = 1; i + 1 < order.length; i += 2) groups.push([order[i], order[i + 1]]);
@@ -500,8 +501,17 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
         if (scatter) {
           const ox = gw * (0.08 + 0.84 * origins()), oy = gh * (0.1 + 0.8 * origins());
           spot = findSpot(occ, f, ox, oy, start, 0, 3);
-        } else if (!placed.some(Boolean)) spot = findSpot(occ, f, cx, cy, start, 0);
-        else {
+        } else if (packed || !placed.some(Boolean)) {
+          // each in turn on the free spot nearest the middle, then turned to face it
+          spot = findSpot(occ, f, cx, cy, start, 0);
+          if (spot && packed && facing !== 'painted' && b.flippable && b.face) {
+            const side = spot[0] + f.fw / 2 < cx ? -1 : 1;
+            if (flipFor(b, side)) {
+              const ff = foot(b, scaleOf(b), true);
+              if (free(occ, spot[0], spot[1], ff)) { put(i, ff, spot[0], spot[1]); continue; }
+            }
+          }
+        } else {
           // the leftover goes on the centre line, above or below, whichever balances
           const [a, bb] = (centreTurn++ % 2 === 0) ? [-Math.PI / 2, Math.PI / 2] : [Math.PI / 2, -Math.PI / 2];
           for (const ang of [a, bb]) {
@@ -632,10 +642,12 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
   let best = null;
   for (let i = 0; i < 14 && !best; i++) { best = tryAll(unit); if (!best) unit *= 0.88; }
   if (!best) return items.map(() => [0, 0, 0, false]);
-  for (let i = 0; i < (fast ? 0 : 10); i++) {
-    const bigger = tryAll(unit * 1.06);
+  // a packed page grows in smaller steps, since each specimen is placed on its own
+  const grow = packed ? 1.03 : 1.06;
+  for (let i = 0; i < (fast ? 0 : packed ? 30 : 10); i++) {
+    const bigger = tryAll(unit * grow);
     if (!bigger) break;
-    unit *= 1.06; best = bigger;
+    unit *= grow; best = bigger;
   }
   best = fill(best);
   return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip] : [0, 0, 0, false]));

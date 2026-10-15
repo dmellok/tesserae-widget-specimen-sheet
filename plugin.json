@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -747,6 +747,23 @@
       ]
     },
     {
+      "name": "plate_source",
+      "type": "select",
+      "label": "Classic plates",
+      "default": "classic",
+      "help": "Where the plates come from. Fugleramme's collection by Arne Giacomo is 1,200 hand-coloured plates (Gould, von Wright, Audubon and others) of about 700 species, already cut out so they pack tightly; they are licensed CC BY-SA 4.0 and credited at the foot of the page. Public domain only uses just the small bundled pack of Audubon, Gould and Lear plates, then photos.",
+      "choices": [
+        {
+          "value": "classic",
+          "label": "Fugleramme's cut-out plates (CC BY-SA 4.0)"
+        },
+        {
+          "value": "public",
+          "label": "Public-domain plates only"
+        }
+      ]
+    },
+    {
       "name": "paint_start",
       "type": "select",
       "label": "Start paintings",
@@ -763,6 +780,30 @@
         {
           "value": "button",
           "label": "Only when I press Start painting"
+        }
+      ]
+    },
+    {
+      "name": "paint_ref",
+      "type": "select",
+      "label": "Reference picture",
+      "default": "photo",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "What the painter works from. A photo gives true colours. A classic plate gives a clean, well-drawn shape and the markings in the plate's own palette. Both gives it the photo and checks the shape against the plate (not for FLUX.1 Kontext Pro, which takes one picture). Birds painted in flight and species with no plate use the photo. Paintings made from a plate are credited to it, and carry its CC BY-SA 4.0 licence.",
+      "choices": [
+        {
+          "value": "photo",
+          "label": "The photo"
+        },
+        {
+          "value": "plate",
+          "label": "A classic plate"
+        },
+        {
+          "value": "both",
+          "label": "Photo and plate"
         }
       ]
     },
@@ -1361,11 +1402,15 @@
       "type": "select",
       "label": "Layout",
       "default": "cluster",
-      "help": "Cluster gathers the specimens round the largest in the middle, in mirrored pairs. Scatter spreads them over the whole page. Band runs them along the middle; Column stacks them down a tall panel. Grid gives each its own cell, like a drawer of specimens, in the Order chosen. Hero shows one specimen alone, the first by Order (the latest, the rarest, the most heard), with the others named beneath: for a small frame.",
+      "help": "Cluster gathers the specimens round the largest in the middle, in mirrored pairs. Packed fits them together anywhere on the page with the gaps closed up, the densest sheet for a busy day. Scatter spreads them over the whole page. Band runs them along the middle; Column stacks them down a tall panel. Grid gives each its own cell, like a drawer of specimens, in the Order chosen. Hero shows one specimen alone, the first by Order (the latest, the rarest, the most heard), with the others named beneath: for a small frame.",
       "choices": [
         {
           "value": "cluster",
           "label": "Cluster"
+        },
+        {
+          "value": "packed",
+          "label": "Packed, as tight as it will go"
         },
         {
           "value": "scatter",

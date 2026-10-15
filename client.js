@@ -130,7 +130,7 @@ function buildArgs(d) {
   }));
   let label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
-  let layout = ['cluster', 'scatter', 'band', 'column', 'grid', 'hero'].includes(d.layout) ? d.layout : 'cluster';
+  let layout = ['cluster', 'packed', 'scatter', 'band', 'column', 'grid', 'hero'].includes(d.layout) ? d.layout : 'cluster';
   let shown = specimens;
   if (layout === 'hero') {
     // one specimen alone, the first by Order, with a caption to match

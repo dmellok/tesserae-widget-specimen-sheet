@@ -48,6 +48,7 @@ N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
 M = _sibling("masks")
+C = _sibling("classic")
 P = _sibling("paint")
 
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
@@ -63,7 +64,7 @@ LABEL_LINES = ("name", "sci", "count", "last", "flag", "who", "size")
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 PAPERS = ("cream", "white", "aged")
 SPACINGS = ("airy", "close", "open")
-LAYOUTS = ("cluster", "scatter", "band", "column", "grid", "hero")
+LAYOUTS = ("cluster", "packed", "scatter", "band", "column", "grid", "hero")
 FACINGS = ("inward", "painted")
 LEVELS = ("colour", "gray16", "gray4", "mono")
 NIGHTS = ("off", "asleep", "owls")
@@ -89,6 +90,8 @@ NAME_LOCALES = (
 )
 PICTURE_PX = 700
 PICTURES = ("free", "gen")
+PLATE_SOURCES = ("classic", "public")
+REF_MODES = ("photo", "plate", "both")
 ARRANGEMENTS = ("sheet", "scene")
 SHEET_MAX = 16
 # Which species make the sheet when more were heard or recorded than fit,
@@ -569,6 +572,7 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
         "kind": row.get("kind") or "Aves",
         "how": gen.get("how") or "",
         "model": gen.get("model", P.DEFAULT_MODEL),
+        "ref_mode": gen.get("ref_mode", "photo"),
     }
     if row.get("ref"):
         job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
@@ -630,11 +634,13 @@ def _attach_pictures(
     levels: str,
     fal_key: str = "",
     gen: dict[str, Any] | None = None,
+    classic: bool = False,
 ) -> dict[str, int]:
     """Each row's best picture to-day, up the ladder: its AI painting when
     one is kept (``gen`` carries the style, the custom words, the day's
     dapper species and the cap; a few new paintings are started per refresh),
-    else a plate from the pack, else the record's own photo (or BirdNET-Go's
+    else a classic plate (Fugleramme's, cut already), else a plate from the
+    bundled pack, else the record's own photo (or BirdNET-Go's
     thumbnail, or, for a bird, the first openly licensed iNaturalist photo).
     Then its cut-out: a kept mask rides along as ``cut``; a picture without
     one starts a mask job in the background. Returns the states counted."""
@@ -678,8 +684,10 @@ def _attach_pictures(
         return None
 
     def best(row: dict[str, Any]) -> dict[str, Any] | None:
-        return _plate(row["sci"], pack, data_dir, levels) or _photo(
-            row, base, token, data_dir, levels
+        return (
+            (classic and C.plate(row["sci"], data_dir, levels))
+            or _plate(row["sci"], pack, data_dir, levels)
+            or _photo(row, base, token, data_dir, levels)
         )
 
     # paintings are decided in order (a few new ones per refresh); the rest side by side
@@ -811,6 +819,12 @@ def _size(rows: list[dict[str, Any]], sizing: str) -> None:
             r["factor"] = round(max(0.55, min(2.0, (cm / 20.0) ** 0.75)), 2)
         else:
             r["factor"] = float(r.get("factor") or 1.0)
+        bird = (r.get("pic") or {}).get("bird")
+        if bird:
+            # a plate whose bird fills little of the cut-out (a long perch, a
+            # spray of leaves) is drawn larger so the bird, not the cut-out,
+            # keeps its size against the others
+            r["factor"] = round(r["factor"] * max(0.7, min(1.6, 0.75 / bird)), 2)
 
 
 def _count_text(r: dict[str, Any], source: str, window: str) -> str:
@@ -926,6 +940,8 @@ def fetch(
         art_style = P.register_custom(how)
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
     hold = options.get("paint_start") == "button"
+    plates = _choice(options.get("plate_source"), PLATE_SOURCES)
+    ref_mode = _choice(options.get("paint_ref"), REF_MODES)
     model = P.model_of(options.get("model"))
     arrangement = (
         _choice(options.get("arrangement"), ARRANGEMENTS)
@@ -1155,23 +1171,34 @@ def fetch(
             "model": model,
             "cap": P.daily_cap(settings),
             "hold": hold,
+            "ref_mode": ref_mode,
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
             )
             if dapper
             else "",
         }
-    mask_states = _attach_pictures(shown, base, token, data_dir, levels, fal_key, gen)
+    mask_states = _attach_pictures(
+        shown, base, token, data_dir, levels, fal_key, gen, plates == "classic"
+    )
     _size(shown, sizing)
     for r in shown:
         r["count_text"] = _count_text(r, source, window)
         r["lines"] = _label_lines(r, lines, source, window)
         r.pop("hourly", None)
     credits: list[str] = []
+    artists: list[str] = []
     for r in shown:
-        c = (r.get("pic") or {}).get("credit")
+        pic = r.get("pic") or {}
+        if pic.get("classic"):
+            if pic["artist"] not in artists:
+                artists.append(pic["artist"])
+            continue
+        c = pic.get("credit")
         if c and c not in credits:
             credits.append(c)
+    if artists:
+        credits.insert(0, C.credit_for(artists))
     notices: list[str] = []
     status: list[str] = []
     if stale:

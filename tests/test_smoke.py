@@ -33,6 +33,7 @@ MELBOURNE = {
     "latitude": -37.81,
     "longitude": 144.96,
     "location": {"label": "Melbourne", "timezone": "Australia/Melbourne"},
+    "plate_source": "public",
 }
 
 
@@ -1418,3 +1419,125 @@ def test_perched_birds_keep_a_leafy_branch_and_flying_birds_have_none(tmp_path):
         text = P.prompt_for(job, tmp_path)
         # only the pose line may name a branch, and only to rule it out
         assert text.count("branch") == 1 and "no branch" in text, style
+
+
+# ----------------------------------------------------------------------
+# Classic plates (Fugleramme) and the reference picture
+# ----------------------------------------------------------------------
+
+C = server.C
+
+
+def _rgba_webp() -> bytes:
+    im = Image.new("RGBA", (300, 400), (0, 0, 0, 0))
+    ImageDraw.Draw(im).ellipse((60, 100, 240, 300), fill=(180, 90, 30, 255))
+    buf = io.BytesIO()
+    im.save(buf, "WEBP")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def offline_classic(offline):
+    real = N.http.side_effect
+
+    def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
+        if "raw.githubusercontent.com/arnegiacomo/fugleramme" in url:
+            return _rgba_webp(), None
+        return real(url, token, accept, **kw)
+
+    N.http.side_effect = fake_http
+    return offline
+
+
+def test_classic_index_finds_a_species_and_its_variants():
+    assert C.species_count() > 600
+    dove = C.lookup("Columba livia")
+    assert dove and dove["pin"] and len(dove["box"]) == 4
+    assert C.lookup("Columba livia domestica") == dove  # a subspecies uses its species
+    assert C.lookup("Columba livia") == dove  # the same variant every time
+    assert C.lookup("Nonexistus birdus") is None
+    assert "CC BY-SA 4.0" in C.credit_of(dove)
+
+
+def test_classic_plates_ride_in_already_cut(tmp_path, offline_classic):
+    r = _fetch(
+        tmp_path,
+        offline_classic,
+        url="birdnet.local",
+        plate_source="classic",
+        sizing="true",
+    )
+    by = {s["sci"]: s for s in r["species"]}
+    dove = by["Columba livia"]["pic"]
+    assert dove["kind"] == "plate" and dove["classic"] and not dove["on_paper"]
+    assert dove["cut"].startswith("data:image/png") and dove["cut_state"] == "ready"
+    assert dove["key"].startswith("c_") and "file" not in dove
+    # a bird that is little of its cut-out is drawn larger for it
+    assert 0.7 <= dove["bird"] * 2 and by["Columba livia"]["factor"] > 0
+    # the foot carries one credit line for all the plates, with the licence
+    plate_lines = [c for c in r["credits"] if "Fugleramme" in c]
+    assert len(plate_lines) == 1 and "CC BY-SA 4.0" in plate_lines[0]
+    assert not any(c.startswith("classic plate after") for c in r["credits"])
+
+
+def test_public_only_never_asks_github(tmp_path, offline_classic):
+    r = _fetch(tmp_path, offline_classic, url="birdnet.local", plate_source="public")
+    assert not any("fugleramme" in u for u in offline_classic)
+    assert all(
+        s["pic"]["kind"] != "plate" or not s["pic"].get("classic") for s in r["species"]
+    )
+
+
+def test_reference_picture_modes(tmp_path, offline_classic):
+    job = {
+        "key": "columba_livia--gould",
+        "sci": "Columba livia",
+        "kind": "Aves",
+        "ref": "https://inat.example/p.jpg",
+        "ref_credit": "A. Observer",
+    }
+    pics, used, credit = P.references({**job, "ref_mode": "photo"}, tmp_path)
+    assert (pics, used) == (["https://inat.example/p.jpg"], "photo")
+    pics, used, credit = P.references({**job, "ref_mode": "plate"}, tmp_path)
+    assert used == "plate" and len(pics) == 1 and pics[0].startswith("data:image/jpeg")
+    assert "Fugleramme" in credit
+    pics, used, credit = P.references({**job, "ref_mode": "both"}, tmp_path)
+    assert used == "both" and pics[0] == job["ref"] and pics[1].startswith("data:")
+    assert credit.startswith("A. Observer and the classic plate")
+    # one picture only for a model that takes one: the photo
+    pics, used, _ = P.references({**job, "ref_mode": "both"}, tmp_path, multi=False)
+    assert (pics, used) == ([job["ref"]], "photo")
+    # in flight, or with no plate for the species, the photo stays
+    flight = {**job, "key": "columba_livia--gould--flight", "ref_mode": "plate"}
+    assert P.references(flight, tmp_path)[1] == "photo"
+    nope = {**job, "sci": "Nonexistus birdus", "ref_mode": "plate"}
+    assert P.references(nope, tmp_path)[1] == "photo"
+
+
+def test_reference_plate_reaches_the_prompt_and_the_request(
+    tmp_path, offline_classic, offline_paint
+):
+    settings = {"fal_api_key": "k", "exclude": ""}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "paint_ref": "both",
+        "art_style": "gould",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    done = [b for b in offline_paint if "nano" in json.dumps(b) or "image_urls" in b]
+    mine = [b for b in done if len(b.get("image_urls", [])) == 2]
+    assert mine, "no painting was asked for from a photo and a plate"
+    assert "second reference picture" in mine[0]["prompt"]
+    assert any(
+        "Fugleramme" in (m.get("credit") or "")
+        for m in [
+            json.loads(p.read_text())
+            for p in (tmp_path / "gen").glob("*.json")
+            if p.name != "budget.json"
+        ]
+        if isinstance(m, dict)
+    )

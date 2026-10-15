@@ -42,6 +42,7 @@ N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
 T = _sibling("tray")
+C = _sibling("classic")
 
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
 # The models a painting may be made with, all on fal.ai and all painting
@@ -82,14 +83,16 @@ def model_of(model: str | None) -> str:
 
 
 def request_body(
-    model: str, prompt: str, image_url: str, aspect: str
+    model: str, prompt: str, image_url: str | list[str], aspect: str
 ) -> dict[str, Any]:
-    """The model's own request shape: one reference picture, one output."""
+    """The model's own request shape: the reference picture (or pictures,
+    for the models that take several), one output."""
+    urls = [image_url] if isinstance(image_url, str) else list(image_url)
     portrait = aspect == "3:4"
     if model == "flux_kontext":
         return {
             "prompt": prompt,
-            "image_url": image_url,
+            "image_url": urls[0],
             "num_images": 1,
             "output_format": "jpeg",
             "aspect_ratio": aspect,
@@ -97,7 +100,7 @@ def request_body(
     if model == "gpt_image":
         return {
             "prompt": prompt,
-            "image_urls": [image_url],
+            "image_urls": urls,
             "image_size": "portrait_4_3" if portrait else "landscape_4_3",
             "background": "opaque",
             "quality": "medium",
@@ -107,13 +110,13 @@ def request_body(
     if model == "seedream":
         return {
             "prompt": prompt,
-            "image_urls": [image_url],
+            "image_urls": urls,
             "image_size": "portrait_4_3" if portrait else "landscape_4_3",
             "num_images": 1,
         }
     body: dict[str, Any] = {
         "prompt": prompt,
-        "image_urls": [image_url],
+        "image_urls": urls,
         "num_images": 1,
         "output_format": "jpeg",
         "aspect_ratio": aspect,
@@ -952,6 +955,50 @@ def about(sci: str, data_dir: Path) -> str:
     return text
 
 
+PLATE_NOTE = (
+    " The reference is an old illustrated plate: take the bird's shape and markings"
+    " from it, but paint it afresh in the style above rather than copying the"
+    " plate's own brushwork or paper."
+)
+BOTH_NOTE = (
+    " A second reference picture is an old illustrated plate of the same species:"
+    " use it only to check the bird's shape and markings against the photo, and do"
+    " not copy its brushwork or paper."
+)
+
+
+def references(
+    job: dict[str, Any], data_dir: Path, multi: bool = True
+) -> tuple[list[str], str, str]:
+    """The pictures to paint from, how they were used ('photo', 'plate' or
+    'both') and their credit. ``ref_mode`` asks for the photo, a classic
+    plate or both. A bird painted in flight keeps the photo, since the plates
+    are all perched; a species with no plate keeps the photo; a model that
+    takes one picture gets the plate or the photo, not both."""
+    photo, photo_credit = str(job.get("ref") or ""), str(job.get("ref_credit") or "")
+    mode = str(job.get("ref_mode") or "photo")
+    flying = "--flight" in str(job.get("key") or "")
+    plate = None
+    if (
+        mode != "photo"
+        and not flying
+        and job.get("sci")
+        and job.get("kind", "Aves") == "Aves"
+    ):
+        plate = C.reference(job["sci"], data_dir)
+    if plate is None:
+        return ([photo], "photo", photo_credit) if photo else ([], "photo", "")
+    if mode == "plate" or not multi:
+        if mode == "both" and photo:
+            return [photo], "photo", photo_credit
+        return [plate[0]], "plate", plate[1]
+    if not photo:
+        photo, photo_credit = S.inat_reference(job.get("sci") or "", data_dir)
+    if not photo:
+        return [plate[0]], "plate", plate[1]
+    return [photo, plate[0]], "both", f"{photo_credit} and the {plate[1]}"
+
+
 def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     noun, pose = K.noun_of(job.get("kind"))
     flying = job.get("kind") == "Aves" and "--flight" in job["key"]
@@ -972,7 +1019,7 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
             "Keep its colours, markings, shape and proportions exactly as in the photo",
             "Keep its markings, shape and proportions exactly as in the photo, rendered without any colour: black and white (and grey where the style has it) only",
         )
-    return gen.format(
+    text = gen.format(
         kind=noun,
         name=job.get("name") or job.get("sci") or "",
         sci=job.get("sci") or "",
@@ -981,6 +1028,15 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         about=f" About the subject: {words}" if words else "",
         dapper=DAPPER.format(kind=noun) if job["key"].endswith("--dapper") else "",
     )
+    used = job.get("ref_used")
+    if used == "plate":
+        text = text.replace("reference photo", "reference plate").replace(
+            "as in the photo", "as in the plate"
+        )
+        text += PLATE_NOTE
+    elif used == "both":
+        text += BOTH_NOTE
+    return text
 
 
 # ----------------------------------------------------------------------
@@ -1126,15 +1182,16 @@ def paint(
         )
         aspect = str(job.get("aspect") or "4:3")
     else:
-        image_url, ref_credit = (
-            str(job.get("ref") or ""),
-            str(job.get("ref_credit") or ""),
+        pictures, used, ref_credit = references(
+            job, data_dir, model_of(job.get("model")) != "flux_kontext"
         )
-        if not image_url and job.get("sci"):
-            image_url, ref_credit = S.inat_reference(job["sci"], data_dir)
-        if not image_url:
+        if not pictures and job.get("sci"):
+            photo, ref_credit = S.inat_reference(job["sci"], data_dir)
+            pictures = [photo] if photo else []
+        if not pictures:
             return fail("no openly licensed reference photo of the species")
-        prompt = prompt_for({**job, "how": how}, data_dir)
+        image_url = pictures
+        prompt = prompt_for({**job, "how": how, "ref_used": used}, data_dir)
     model = model_of(job.get("model"))
     if stop is not None and stop.is_set():
         return STOPPED
