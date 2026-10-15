@@ -679,6 +679,40 @@ def _remember(data_dir: Path, rows: list[dict[str, Any]]) -> None:
         N.write(path, json.dumps(seen, ensure_ascii=False).encode())
 
 
+ON_FRAME_S = 3 * 86400
+
+
+def _note_shown(data_dir: Path, shown: list[dict[str, Any]]) -> None:
+    """The species a sheet is showing now, kept for ON_FRAME_S, so the paintings
+    page can paint what is on a frame and not everything ever seen."""
+    path = data_dir / "species_shown.json"
+    now = time.time()
+    held = N.read_json(path, {})
+    held = held if isinstance(held, dict) else {}
+    held = {
+        k: v
+        for k, v in held.items()
+        if isinstance(v, list) and len(v) == 3 and now - float(v[2]) < ON_FRAME_S
+    }
+    for r in shown:
+        if r.get("sci"):
+            held[r["sci"]] = [r["name"], r.get("kind") or "Aves", now]
+    N.write(path, json.dumps(held, ensure_ascii=False).encode())
+
+
+def on_frame_species(data_dir: Path) -> list[tuple[str, str, str]]:
+    held = N.read_json(data_dir / "species_shown.json", {})
+    if not isinstance(held, dict):
+        return []
+    now = time.time()
+    out = [
+        (str(v[0]), sci, str(v[1]))
+        for sci, v in held.items()
+        if isinstance(v, list) and len(v) == 3 and now - float(v[2]) < ON_FRAME_S
+    ]
+    return sorted(out, key=lambda t: t[0].lower())
+
+
 def known_species(data_dir: Path) -> list[tuple[str, str, str]]:
     seen = N.read_json(data_dir / "species_seen.json", {})
     if not isinstance(seen, dict):
@@ -1035,6 +1069,7 @@ def fetch(
             }
 
     shown = [dict(r) for r in rows[:count]]
+    _note_shown(data_dir, shown)
     if not rows:
         hint = {
             "birdnet_go": "The microphone has heard nothing yet.",
@@ -1658,7 +1693,7 @@ def blueprint() -> Any:
             return back()
         folder = P.gen_dir(data_dir())
         jobs = []
-        for name, sci, kind in known_species(data_dir()):
+        for name, sci, kind in on_frame_species(data_dir()):
             k = P.key_for(sci, style, kind)
             if not (folder / f"{k}.jpg").exists():
                 jobs.append(
@@ -1666,9 +1701,14 @@ def blueprint() -> Any:
                 )
         label = P.STYLES[style][0]
         room = max(0, cap() - P.budget_used(folder))
-        if not jobs:
+        if not on_frame_species(data_dir()):
             flash(
-                f"Every species shown so far already has a painting in {label}.", "info"
+                "No species has been on a frame in the last three days; the sheet has to show some first.",
+                "info",
+            )
+        elif not jobs:
+            flash(
+                f"Every species on a frame already has a painting in {label}.", "info"
             )
         elif not room:
             flash(
@@ -1676,7 +1716,9 @@ def blueprint() -> Any:
                 "warn",
             )
         elif not P.start_batch(jobs, data_dir(), key, cap()):
-            flash(f"{label} is already being painted for every species.", "info")
+            flash(
+                f"{label} is already being painted for the species on a frame.", "info"
+            )
         else:
             n = min(len(jobs), room)
             flash(

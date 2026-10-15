@@ -69,12 +69,12 @@
     </div>
     <div class="actions">{{ button('Paint', icon='paint-brush', disabled=not has_key) }}</div>
   </form>
-  <p class="bb-meta">Or fill a whole style at once: every species the widget has shown, skipping the ones already painted, a few at a time within the daily limit.</p>
+  <p class="bb-meta">Or fill a whole style at once: the species on a frame in the last three days (only those, not everything seen), skipping the ones already painted, a few at a time within the daily limit.</p>
   <form method="post" action="{{ url_for('specimen_sheet_admin.style_paint') }}" class="bb-bulk bb-batch">
-    <select name="art" aria-label="Art style to paint every species in">
+    <select name="art" aria-label="Art style to paint the species on a frame in">
       {% for group, styles in g.style_groups %}<optgroup label="{{ group }}">{% for value, label in styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
     </select>
-    <button type="submit" class="ghost" {% if not has_key %}disabled{% endif %}><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint every species in this style</button>
+    <button type="submit" class="ghost" {% if not has_key %}disabled{% endif %}><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint the species on a frame in this style</button>
   </form>
 </section>
 

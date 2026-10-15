@@ -46,7 +46,9 @@ With AI paintings on, **Arrangement** can ask fal.ai to repaint the whole sheet 
 
 ## The paintings page
 
-Under **Widgets → Specimen Sheet**: every painting with its credit and cut-out state, a form to paint one species in any style (dapper or not), a button to paint every species seen in one style, repaint, cut out again, delete, earlier versions kept and restorable, to-day's count against the limit with a reset, a render queue (what fal.ai is painting now and what waits, up to three at a time, with a Stop on each line and a Stop all), and the list of species seen. A stopped painting is not started again by the sheet for six hours, and Stop all also pauses the sheet's own cut-outs for half an hour; a painting already under way has been paid for, so its result is dropped rather than recalled.
+Under **Widgets → Specimen Sheet**: every painting with its credit and cut-out state, a form to paint one species in any style (dapper or not), a button to paint the species that have been on a frame in the last three days in one style (not everything ever seen), repaint, cut out again, delete, earlier versions kept and restorable, to-day's count against the limit with a reset, a render queue (what fal.ai is painting now and what waits, up to three at a time, with a Stop on each line and a Stop all), and the list of species seen. A stopped painting is not started again by the sheet for six hours, and Stop all also pauses the sheet's own cut-outs for half an hour; a painting already under way has been paid for, so its result is dropped rather than recalled.
+
+Paintings and cut-outs in progress also show in Tesserae's job tray at the bottom right of every admin page (Tesserae 0.454 and later): a bar counting the batch, a Stop that stops it all, and it stays put as you move between pages.
 
 ## Panels
 

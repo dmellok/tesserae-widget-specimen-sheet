@@ -820,6 +820,27 @@ def test_keys_poses_and_dapper():
     )
 
 
+def test_only_the_species_on_the_frame_are_painted(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+        "count": 2,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    shown = {s["sci"] for s in r["species"]}
+    assert len(shown) == 2
+    assert len(offline_paint) == 2, "no painting for the species left off the sheet"
+    assert {sci for _name, sci, _kind in server.on_frame_species(tmp_path)} == shown
+    assert len(server.known_species(tmp_path)) > 2, (
+        "the list of species seen still holds them all"
+    )
+
+
 def test_paintings_climb_the_ladder(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
     options = {
@@ -1292,3 +1313,44 @@ def test_limits_are_the_owners_to_set():
         P.BATCH_PARALLEL,
         M.DAILY_CAP,
     )
+
+
+def test_tray_batches_paintings_and_cutouts():
+    tray = P.T
+
+    class FakeJobs:
+        def __init__(self):
+            self.log = []
+
+        def report(self, source, key, title, **kw):
+            self.log.append(
+                ("report", key, kw["progress"], kw["detail"], kw["stop"] is not None)
+            )
+
+        def finish(self, source, key, detail=""):
+            self.log.append(("finish", key, detail))
+
+        def cancel(self, source, key, detail=""):
+            self.log.append(("cancel", key, detail))
+
+    fake = FakeJobs()
+    old, tray.jobs = tray.jobs, fake
+    try:
+        b = tray.Batch("paint", "Painting specimens")
+        b.add("a", lambda: None)
+        b.add("b", lambda: None)
+        b.add("b", lambda: None)  # queued twice counts once
+        b.done("a")
+        b.done("a")  # idempotent
+        assert fake.log[-1] == ("report", "paint", 0.5, "1 of 2", True)
+        b.done("b")
+        assert fake.log[-1] == ("finish", "paint", "2 finished")
+        b.add("c", lambda: None)  # a new batch starts from zero
+        assert fake.log[-1] == ("report", "paint", 0.0, "0 of 1", True)
+        b.done("c", stopped=True)
+        assert fake.log[-1] == ("cancel", "paint", "0 of 1 finished")
+        tray.jobs = None
+        b.add("d", lambda: None)  # no tray: no error
+        b.done("d")
+    finally:
+        tray.jobs = old

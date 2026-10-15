@@ -60,6 +60,7 @@ _SINCE: dict[str, tuple[float, str]] = {}
 _HOLD_UNTIL = 0.0  # after a stop, the sheet starts no cut-outs of its own until then
 HOLD_S = 1800
 _LOCK = threading.Lock()
+_TRAY = _sibling("tray").Batch("cutout", "Cutting out pictures")
 
 
 def folder(data_dir: Path) -> Path:
@@ -421,6 +422,7 @@ def start(
         _RUNNING.add(key)
         stop = _STOPS[key] = threading.Event()
         _SINCE[key] = (time.time(), label or key)
+        _TRAY.add(key, stop_all)
 
     def run() -> None:
         try:
@@ -436,6 +438,7 @@ def start(
                     _RUNNING.discard(key)
                     _STOPS.pop(key, None)
                     _SINCE.pop(key, None)
+            _TRAY.done(key)
 
     threading.Thread(target=run, name=f"specimen-mask-{key[:8]}", daemon=True).start()
     return True
@@ -450,6 +453,7 @@ def stop(key: str) -> bool:
     if ev is None:
         return False
     ev.set()
+    _TRAY.done(key, stopped=True)
     return True
 
 

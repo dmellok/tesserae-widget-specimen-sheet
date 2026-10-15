@@ -41,6 +41,7 @@ def _sibling(name: str) -> Any:
 N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
+T = _sibling("tray")
 
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
 # The models a painting may be made with, all on fal.ai and all painting
@@ -687,6 +688,7 @@ _QUEUE: list[tuple[dict[str, Any], Path, str, int | None]] = []
 _STOPS: dict[str, threading.Event] = {}
 _WORKERS = 0
 _LOCK = threading.Lock()
+_TRAY = T.Batch("paint", "Painting specimens")
 # Custom prompts live in the cell, not the folder: the fetch sets the tag
 # for the call so the painting threads it starts know the words.
 _CUSTOM: dict[str, str] = {}
@@ -1171,6 +1173,7 @@ def _finish(key: str) -> None:
         _STOPS.pop(key, None)
         _FINISHED.append((key, time.time()))
         del _FINISHED[:-20]
+    _TRAY.done(key)
 
 
 def _note_stopped(key: str, job: dict[str, Any], data_dir: Path) -> None:
@@ -1249,6 +1252,7 @@ def start(
             return False
         _PAINTING.add(key)
         _QUEUE.append((job, data_dir, fal_key, cap))
+        _TRAY.add(key, lambda: stop_all(data_dir))
         spawn = _WORKERS < _PARALLEL
         if spawn:
             _WORKERS += 1
@@ -1289,6 +1293,7 @@ def stop(key: str, data_dir: Path) -> bool:
             ev.set()
     if gone is not None:
         _note_stopped(key, gone, data_dir)
+    _TRAY.done(key, stopped=True)
     return True
 
 
