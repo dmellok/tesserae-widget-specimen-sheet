@@ -92,7 +92,7 @@ function packOffThread(args, onCut) {
 const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 function keyOf(a) {
   const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}${x.classic ? 'c' : ''}|${x.whole ? 1 : 0}|${x.neutral ? 1 : 0}|${(x.paper || []).join(',')}|${(x.lines || []).join('/')}`);
-  return `ss1:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.ink}:${a.spacing}:${a.layout}:${a.facing}:${fnv(parts.join(';'))}`;
+  return `ss1:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.ink}:${a.spacing}:${a.layout}:${a.facing}:${a.zoom}:${fnv(parts.join(';'))}`;
 }
 const SHEETS = new Map();
 const store = (() => { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } })();
@@ -138,7 +138,7 @@ function buildArgs(d) {
     label *= 1.9;
     layout = 'cluster';
   }
-  return { specimens: shown, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy', layout, facing: d.facing === 'painted' ? 'painted' : 'inward' };
+  return { specimens: shown, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy', layout, facing: d.facing === 'painted' ? 'painted' : 'inward', zoom: Math.max(0.4, Math.min(1, (Number(d.scale) || 100) / 100)) };
 }
 
 async function build(d, onCut) {

@@ -454,6 +454,21 @@ def test_gbif_rows(tmp_path, offline):
 # ----------------------------------------------------------------------
 
 
+def test_scale_and_count_are_sliders_with_bounds(tmp_path, offline):
+    m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    opts = {o["name"]: o for o in m["cell_options"]}
+    assert opts["count"]["type"] == "slider" and opts["count"]["max"] == 32
+    assert opts["scale"]["type"] == "slider" and (
+        opts["scale"]["min"],
+        opts["scale"]["max"],
+    ) == (40, 100)
+    assert _fetch(tmp_path, offline)["scale"] == 100
+    assert _fetch(tmp_path, offline, scale="70")["scale"] == 70
+    assert _fetch(tmp_path, offline, scale="5")["scale"] == 40
+    assert _fetch(tmp_path, offline, scale="500")["scale"] == 100
+    assert len(_fetch(tmp_path, offline, count="99")["species"]) <= 32
+
+
 def test_order_picks_and_sorts_the_sheet(tmp_path, offline):
     most = [s["count"] for s in _fetch(tmp_path, offline, count="16")["species"]]
     assert most == sorted(most, reverse=True)

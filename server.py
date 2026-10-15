@@ -93,7 +93,7 @@ PICTURES = ("free", "gen")
 PLATE_SOURCES = ("classic", "public")
 REF_MODES = ("photo", "plate", "both")
 ARRANGEMENTS = ("sheet", "scene")
-SHEET_MAX = 16
+SHEET_MAX = 32
 # Which species make the sheet when more were heard or recorded than fit,
 # and the order of a numbered key.
 ORDERS = ("most", "least", "rarest", "latest", "newest", "alpha", "mix")
@@ -1066,6 +1066,7 @@ def fetch(
             "paper": paper,
             "neutral": neutral,
             "spacing": spacing,
+            "scale": _int(options.get("scale"), 100, 40, 100),
             "layout": layout,
             "facing": facing,
             "panel": levels,

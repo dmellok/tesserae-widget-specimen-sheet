@@ -171,7 +171,7 @@ function bbox(m, w, h) {
 
 /* A picture on plain paper, cut out: the specimen cropped with the paper
    turned white; its hard mask; the paper colour. Printed by multiply. */
-export function cutout(img) {
+export function cutout(img, model = null) {
   const k0 = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
   const cw = Math.max(1, Math.round(img.naturalWidth * k0)), ch = Math.max(1, Math.round(img.naturalHeight * k0));
   const full = canvas(cw, ch);
@@ -192,6 +192,19 @@ export function cutout(img) {
   const sctx = small.getContext('2d', { willReadFrequently: true });
   sctx.drawImage(full, 0, 0, sw, sh);
   const sm = paperMask(sctx.getImageData(0, 0, sw, sh).data, sw, sh, paper);
+  // A white bird on white paper is what the spread takes for paper, so a model's mask that
+  // passed its check is added: what it kept is never given up, and the edges still add the
+  // perch and the foliage it left out.
+  if (model) {
+    const mc = canvas(sw, sh);
+    const mctx = mc.getContext('2d', { willReadFrequently: true });
+    mctx.drawImage(model, 0, 0, sw, sh);
+    const md = mctx.getImageData(0, 0, sw, sh).data;
+    const kept = new Uint8Array(sw * sh);
+    for (let i = 0; i < sw * sh; i++) kept[i] = md[i * 4 + 3] > 127 ? 1 : 0;
+    const grown = dilate(kept, sw, sh, 1);
+    for (let i = 0; i < sw * sh; i++) if (grown[i]) sm[i] = 1;
+  }
   let box = bbox(erode(sm, sw, sh, 3), sw, sh) || bbox(sm, sw, sh);
   if (!box) return null;
   const pad = Math.max(cw, ch) / 60;
@@ -367,16 +380,45 @@ function labelStrip(lines, label, H) {
 /* A specimen's footprint on the cell grid at ``scale``, mirrored when
    ``flip``: the body (alpha over 40), with a strip under it for the label.
    ``mass`` is the body's cell count, for the balance score. */
+/* A mask halved by taking the maximum, again and again: a cell of the footprint asks the level whose
+   pixels are no bigger than the cell, so a leg or a tail one pixel wide still sets its cell. */
+const PYRAMIDS = new WeakMap();
+function pyramidOf(mask) {
+  let levels = PYRAMIDS.get(mask.data);
+  if (levels) return levels;
+  levels = [{ w: mask.w, h: mask.h, data: mask.data }];
+  for (;;) {
+    const a = levels[levels.length - 1];
+    if (a.w <= 1 && a.h <= 1) break;
+    const w = Math.ceil(a.w / 2), h = Math.ceil(a.h / 2), data = new Uint8Array(w * h);
+    for (let y = 0; y < a.h; y++) for (let x = 0; x < a.w; x++) if (a.data[y * a.w + x]) data[(y >> 1) * w + (x >> 1)] = 1;
+    levels.push({ w, h, data });
+  }
+  PYRAMIDS.set(mask.data, levels);
+  return levels;
+}
+
 function footprintOf(b, scale, flip, label, H, gap = 0) {
-  const tw = Math.max(1, Math.floor((b.mask.w * scale) / CELL)), th = Math.max(1, Math.floor((b.mask.h * scale) / CELL));
-  const c = canvas(tw, th);
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  if (flip) { ctx.translate(tw, 0); ctx.scale(-1, 1); }
-  ctx.drawImage(b.maskCanvas, 0, 0, tw, th);
-  const d = ctx.getImageData(0, 0, tw, th).data;
+  // a cell is set when any of the mask it covers is, so a footprint never undercounts a thin part
+  // and two specimens never share a pixel; the footprint covers the whole drawn width
+  const tw = Math.max(1, Math.ceil((b.mask.w * scale) / CELL - 1e-6)), th = Math.max(1, Math.ceil((b.mask.h * scale) / CELL - 1e-6));
+  const c = CELL / scale;
+  const levels = pyramidOf(b.mask);
+  const L = Math.min(levels.length - 1, Math.max(0, Math.floor(Math.log2(Math.max(1, c)))));
+  const lv = levels[L], q = 2 ** L;
   let body = new Uint8Array(tw * th);
   let mass = 0;
-  for (let i = 0; i < tw * th; i++) if (d[i * 4] > 40) { body[i] = 1; mass++; }
+  for (let y = 0; y < th; y++) {
+    const y0 = Math.max(0, Math.floor((y * c) / q)), y1 = Math.min(lv.h, Math.max(y0 + 1, Math.ceil(((y + 1) * c) / q)));
+    for (let x = 0; x < tw; x++) {
+      let a = x * c, e = (x + 1) * c;
+      if (flip) { const t = b.mask.w - e; e = b.mask.w - a; a = t; }
+      const x0 = Math.max(0, Math.floor(a / q)), x1 = Math.min(lv.w, Math.max(x0 + 1, Math.ceil(e / q)));
+      let hit = 0;
+      for (let yy = y0; yy < y1 && !hit; yy++) for (let xx = x0; xx < x1; xx++) if (lv.data[yy * lv.w + xx]) { hit = 1; break; }
+      if (hit) { body[y * tw + x] = 1; mass++; }
+    }
+  }
   // air round each specimen: the body grown by ``gap`` cells on every side, so
   // neighbours keep their distance; ``pad`` is where the picture sits inside it
   const pad = gap && Math.min(tw, th) > 4 ? gap : 0;
@@ -709,6 +751,17 @@ function drawMount(ctx, x, y, w, h, ink, W) {
 }
 
 const sheetSize = (ratio, size) => (ratio >= 1 ? [size, Math.round(size / ratio)] : [Math.round(size * ratio), size]);
+/* Specimens packed into the middle k of the page: the layout runs on a sheet k times the size with
+   the caption size scaled to match, then moves to the centre, so the arrangement is the same and
+   the margin is wider. */
+function layoutSpots(items, W, H, label, gap, fast, layout, facing, zoom) {
+  const k = Math.max(0.3, Math.min(1, Number(zoom) || 1));
+  const w = W * k, h = H * k, l = label / k;
+  const spots = layout === 'grid' ? gridSpots(items, w, h, l, gap) : packSheet(items, w, h, l, gap, fast, layout, facing);
+  if (k === 1) return spots;
+  const dx = (W - w) / 2, dy = (H - h) / 2;
+  return spots.map((s) => (s[2] > 0 ? [s[0] + dx, s[1] + dy, s[2], s[3], s[4] === undefined ? undefined : s[4] + dy] : s));
+}
 
 /* The placeholder page, laid out at once from nothing but each specimen's
    aspect and factor: every specimen as an empty mount of about the size it
@@ -716,7 +769,7 @@ const sheetSize = (ratio, size) => (ratio >= 1 ? [size, Math.round(size / ratio)
    the real sheet is built. ``slots`` gives each specimen's box on that
    canvas (by its index in ``specimens``), so a cut-out can be drawn into
    its mount as soon as it is ready. Synchronous, a few milliseconds. */
-export function quickSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', layout = 'cluster', facing = 'inward' }) {
+export function quickSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', layout = 'cluster', facing = 'inward', zoom = 1 }) {
   const items = specimens.map((b, idx) => { const m = mount(Number(b.aspect) > 0 ? Number(b.aspect) : 0.8); return { ...b, ...m, idx, maskCanvas: maskCanvas(m.mask), flippable: false, face: null }; });
   if (!items.length) return null;
   const [W, H] = sheetSize(ratio, size);
@@ -727,7 +780,7 @@ export function quickSheet({ specimens, ratio, size, label, paper = 'cream', ink
   ctx.fillStyle = `rgb(${bg.join(',')})`;
   ctx.fillRect(0, 0, W, H);
   const gapQ = { close: 0, airy: 2, open: 4 }[spacing] ?? 2;
-  const spots = layout === 'grid' ? gridSpots(items, W, H, label, gapQ) : packSheet(items, W, H, label, gapQ, true, layout, facing);
+  const spots = layoutSpots(items, W, H, label, gapQ, true, layout, facing, zoom);
   const shown = [];
   const slots = [];
   items.forEach((b, i) => {
@@ -761,16 +814,21 @@ export function drawIntoMount(quick, i, pic, blend) {
   ctx.restore();
 }
 
-export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', layout = 'cluster', facing = 'inward', onCut = null }) {
+export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', layout = 'cluster', facing = 'inward', zoom = 1, onCut = null }) {
   const loaded = await Promise.all(specimens.map(async (b, idx) => {
     try {
-      let got = null, byEdges = false;
+      let got = null, byEdges = false, model = null;
       if (b.whole && b.src) got = whole(await loadImage(b.src));
-      else if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper && !b.classic) got.blend = 'source-over'; }
+      else if (b.cut) {
+        const cutImg = await loadImage(b.cut);
+        got = fromAlpha(cutImg, b.neutral && b.on_paper ? b.paper : null);
+        if (got && !b.on_paper && !b.classic) got.blend = 'source-over';
+        if (!b.classic) model = cutImg;
+      }
       if (!b.whole && b.src && b.on_paper) {
         // a plate or painting on plain paper is cut by its edges when that keeps
         // the perch, the foliage, the log a fungus grows from (perchKept)
-        const edge = cutout(await loadImage(b.src));
+        const edge = cutout(await loadImage(b.src), model);
         if (perchKept(edge)) { got = edge; byEdges = true; }
       }
       if (!got && b.src) got = vignette(await loadImage(b.src));
@@ -790,7 +848,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
   ctx.fillStyle = `rgb(${bg.join(',')})`;
   ctx.fillRect(0, 0, W, H);
   const gapN = { close: 0, airy: 2, open: 4 }[spacing] ?? 2;
-  const spots = layout === 'grid' ? gridSpots(loaded, W, H, label, gapN) : packSheet(loaded, W, H, label, gapN, false, layout, facing);
+  const spots = layoutSpots(loaded, W, H, label, gapN, false, layout, facing, zoom);
   const shown = [];
   loaded.forEach((b, i) => {
     const [x, y, scale, flip, labelY] = spots[i];

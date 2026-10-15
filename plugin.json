@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -654,36 +654,13 @@
     },
     {
       "name": "count",
-      "type": "select",
+      "type": "slider",
       "label": "How many",
-      "default": "8",
-      "help": "Specimens on the sheet, picked by Order.",
-      "choices": [
-        {
-          "value": "4",
-          "label": "4"
-        },
-        {
-          "value": "6",
-          "label": "6"
-        },
-        {
-          "value": "8",
-          "label": "8"
-        },
-        {
-          "value": "10",
-          "label": "10"
-        },
-        {
-          "value": "12",
-          "label": "12"
-        },
-        {
-          "value": "16",
-          "label": "16"
-        }
-      ]
+      "default": 8,
+      "min": 2,
+      "max": 32,
+      "step": 1,
+      "help": "Specimens on the sheet, picked by Order. The more there are, the smaller each is; Scale below can shrink the whole arrangement further."
     },
     {
       "name": "order",
@@ -1420,6 +1397,17 @@
           "label": "Open"
         }
       ]
+    },
+    {
+      "name": "scale",
+      "type": "slider",
+      "label": "Scale",
+      "default": 100,
+      "min": 40,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "help": "How much of the page the specimens fill. 100% runs them out to the margins; less packs the same arrangement into the middle of the page and leaves more paper round it."
     },
     {
       "name": "layout",
