@@ -171,6 +171,26 @@ STYLES: dict[str, tuple[str, str]] = {
         "Field sketch",
         "a naturalist's field sketch in graphite with a light watercolour wash: loose construction lines, a few annotations of shape only, on plain pure white paper",
     ),
+    "anime": (
+        "Anime",
+        "a hand-drawn anime film illustration of the {kind}: clean confident line art, soft cel shading, gentle colour, large expressive eyes, still true to the species' markings, on plain pure white paper",
+    ),
+    "chibi": (
+        "Chibi",
+        "a chibi anime illustration of the {kind}: round, small and cute with a big head, huge shining eyes and a tiny body, flat bright cel colour with a clean outline, true to the species' colours, on plain pure white paper",
+    ),
+    "shonen": (
+        "Shonen action",
+        "a bold shonen manga illustration of the {kind} in a dynamic action pose: thick confident ink lines, hard cel shading, dramatic foreshortening, vivid colour, true to the species' markings, on plain pure white paper",
+    ),
+    "manga": (
+        "Manga ink",
+        "a black-and-white manga illustration of the {kind}: crisp ink line art with screentone dot shading and solid blacks, no colour and no grey wash, on plain pure white paper",
+    ),
+    "anime_retro": (
+        "Retro 90s anime",
+        "a 1990s anime cel of the {kind}: slightly muted hand-painted cel colours, a dark keyline, simple two-tone shading and a touch of film grain, true to the species' markings, on plain pure white paper",
+    ),
     "pixel": (
         "Pixel art",
         "16-bit pixel art sprite of the {kind} with a limited palette, crisp square pixels and no anti-aliasing, true to the species' colours, on plain pure white paper",
@@ -277,7 +297,7 @@ STYLES.update(
         ),
         "cctv": (
             "Camera head (anime)",
-            "a clean anime illustration of the {kind} in the species' true colours and markings, with crisp line art and soft cel shading, except that its head is, plainly and unmistakably, {camera}, mounted where the head should be and turned the way the head would face, the body, wings, tail and feet still those of the {kind}, on plain pure white paper",
+            "a clean anime illustration of the {kind} in the species' true colours and markings, with crisp line art and soft cel shading, except that its head is, plainly and unmistakably, {camera}, sitting directly on the shoulders where the head should be with no neck, stalk or mount between, turned the way the head would face, the body, wings, tail and feet still those of the {kind}, on plain pure white paper",
         ),
         "drone": (
             "Drone",
@@ -309,6 +329,7 @@ STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("Four greys", ("pencil", "litho_toned", "halftone", "blueprint")),
     ("Greyscale", ("platinum", "charcoal", "mezzotint")),
+    ("Anime", ("anime", "chibi", "shonen", "manga", "anime_retro")),
     ("Playful", ("pixel", "origami", "hats")),
     ("Birds aren't real", ("surveillance", "cctv", "patent", "automaton", "drone")),
 )
@@ -317,15 +338,20 @@ STYLE_IDS = (*STYLES, "custom")
 CAMERAS = (
     "a white bullet-style CCTV security camera with a black lens and a sun hood",
     "a black dome security camera, the lens behind its smoked glass hemisphere",
-    "a pan-tilt-zoom security camera on a little motorised mount",
+    "a pan-tilt-zoom security camera",
     "a vintage 1960s cine camera with a turret of three lenses",
     "a boxy 1980s camcorder with a red recording light",
+    "a big shoulder-mounted television news camera with a long lens and a microphone on top",
+    "a small square action camera in a waterproof case",
+    "a Super 8 home-movie camera with its pistol grip",
+    "an old film camera with two round film reels on top",
+    "a sleek modern handheld camcorder with its flip-out screen open",
+    "a broadcast studio camera on a short pedestal",
+    "a police body-worn camera, black with a wide lens",
     "a round webcam with a glowing blue ring round its lens",
     "a big DSLR camera with a long telephoto lens and a lens hood",
     "an old brass-and-leather bellows camera",
-    "a tiny spy camera lens on a thin stalk, like a periscope",
     "a doorbell camera with a wide fisheye lens",
-    "a traffic speed camera in a grey weatherproof box",
     "a drone's gimbal camera, three-axis, with a small lens",
 )
 
@@ -338,6 +364,7 @@ def camera_for(sci: str) -> str:
 
 # Styles drawn without colour: the prompt asks for the markings, not the colours.
 MONO = {
+    "manga",
     "engraving",
     "scraperboard",
     "woodcut",

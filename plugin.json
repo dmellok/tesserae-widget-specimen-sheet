@@ -849,6 +849,31 @@
           "group": "Greyscale"
         },
         {
+          "value": "anime",
+          "label": "Anime",
+          "group": "Anime"
+        },
+        {
+          "value": "chibi",
+          "label": "Chibi",
+          "group": "Anime"
+        },
+        {
+          "value": "shonen",
+          "label": "Shonen action",
+          "group": "Anime"
+        },
+        {
+          "value": "manga",
+          "label": "Manga ink",
+          "group": "Anime"
+        },
+        {
+          "value": "anime_retro",
+          "label": "Retro 90s anime",
+          "group": "Anime"
+        },
+        {
           "value": "pixel",
           "label": "Pixel art",
           "group": "Playful"
@@ -894,7 +919,7 @@
           "group": "Your own"
         }
       ],
-      "help": "Thirty-four styles in seven groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
+      "help": "39 styles in eight groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
     },
     {
       "name": "art_prompt",
