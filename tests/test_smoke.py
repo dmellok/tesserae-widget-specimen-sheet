@@ -516,7 +516,7 @@ def test_manifest_is_well_formed():
             d = o.get("default")
             for v in d if isinstance(d, list) else [d]:
                 assert v in values, f"{o['name']} default {v!r} is not a choice"
-    assert {s["name"] for s in m["settings"]} == {"exclude"}
+    assert {s["name"] for s in m["settings"]} == {"fal_api_key", "exclude"}
 
 
 @pytest.mark.parametrize("state", ["ok", "empty", "asleep", "error"])
@@ -561,3 +561,146 @@ def test_client_renders_every_state(tmp_path, offline, state):
     )
     assert out.returncode == 0, out.stderr
     assert "ok" in out.stdout
+
+
+# ----------------------------------------------------------------------
+# Cut-outs
+# ----------------------------------------------------------------------
+
+M = server.M
+
+
+def _alpha(w=300, h=400, draw=None):
+    im = Image.new("L", (w, h), 0)
+    (draw or (lambda d: d.ellipse((80, 100, 220, 300), fill=255)))(ImageDraw.Draw(im))
+    return im
+
+
+def test_mask_check_accepts_one_clean_piece_and_fills_pinholes():
+    def blob(d):
+        d.ellipse((80, 100, 220, 300), fill=255)
+        d.rectangle((150, 200, 153, 203), fill=0)  # a pinhole
+        d.ellipse((10, 10, 14, 14), fill=255)  # a speck
+
+    cleaned, why = M.check(_alpha(draw=blob))
+    assert cleaned is not None and why == ""
+    assert cleaned.getpixel((151, 201)) > 200, "the pinhole is filled"
+    assert cleaned.getpixel((12, 12)) < 60, "the speck is dropped"
+
+
+def test_mask_check_rejects_backgrounds_edges_and_pairs():
+    assert (
+        "covers"
+        in M.check(_alpha(draw=lambda d: d.rectangle((0, 0, 299, 399), fill=255)))[1]
+    )
+    assert (
+        "covers"
+        in M.check(_alpha(draw=lambda d: d.ellipse((140, 190, 160, 210), fill=255)))[1]
+    )
+    assert (
+        "edges"
+        in M.check(_alpha(draw=lambda d: d.rectangle((0, 0, 299, 250), fill=255)))[1]
+    )
+
+    def two(d):
+        d.ellipse((20, 100, 140, 300), fill=255)
+        d.ellipse((160, 100, 280, 300), fill=255)
+
+    assert "largest piece" in M.check(_alpha(draw=two))[1]
+
+
+def _settle(timeout=10.0):
+    import time
+
+    end = time.time() + timeout
+    while M._RUNNING and time.time() < end:
+        time.sleep(0.02)
+    assert not M._RUNNING
+
+
+@pytest.fixture
+def offline_masks(offline):
+    """fal.ai answers with a mask: a clean oval for most pictures, a frame
+    for anything whose request carries the marker."""
+    real = N.http.side_effect
+    sent: list[bytes] = []
+
+    def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
+        if "birefnet" in url:
+            sent.append(kw.get("body") or b"")
+            assert token == "k" and kw.get("auth_scheme") == "Key"
+            return json.dumps(
+                {"image": {"url": "https://fal.example/mask.png"}}
+            ).encode(), None
+        if url == "https://fal.example/mask.png":
+            im = Image.new("RGBA", (300, 400), (0, 0, 0, 0))
+            ImageDraw.Draw(im).ellipse((80, 100, 220, 300), fill=(255, 255, 255, 255))
+            buf = io.BytesIO()
+            im.save(buf, "PNG")
+            return buf.getvalue(), None
+        return real(url, token, accept, **kw)
+
+    N.http.side_effect = fake_http
+    return sent
+
+
+def test_masks_are_made_once_and_ride_along(tmp_path, offline_masks):
+    settings = {"fal_api_key": "k", "exclude": ""}
+    options = {**MELBOURNE, "url": "birdnet.local"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["status"] == ["4 cut-outs on the way"]
+    assert all(s["pic"]["cut_state"] == "running" for s in r["species"])
+    _settle()
+    assert (
+        len(offline_masks) == 3
+        and b'"image_url": "data:image/jpeg;base64,' in offline_masks[0]
+    )
+    assert len(list((tmp_path / "masks").glob("*.cut.png"))) == 3
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["status"] == [] and all(
+        s["pic"]["cut_state"] == "ready" for s in r["species"]
+    )
+    assert all(
+        s["pic"]["cut"].startswith("data:image/png;base64,") for s in r["species"]
+    )
+    assert len(offline_masks) == 3, "a kept mask is never asked for again"
+    assert M.budget_used(tmp_path) == 3
+    # a greyscale panel gets the cut-out converted, from the same mask
+    r = server.fetch({**options, "panel": "gray4"}, settings, ctx=ctx)
+    assert all(s["pic"]["cut"] for s in r["species"]) and len(offline_masks) == 3
+
+
+def test_masks_need_a_key_and_a_bad_one_is_remembered(tmp_path, offline_masks):
+    options = {**MELBOURNE, "url": "birdnet.local"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, {}, ctx=ctx)
+    assert (
+        M.NOTE_NO_KEY
+        if hasattr(M, "NOTE_NO_KEY")
+        else server.NOTE_NO_KEY in r["notices"]
+    )
+    assert not offline_masks and all(
+        s["pic"]["cut_state"] == "no_key" for s in r["species"]
+    )
+    # the model answers a mask that is the whole frame: bad, kept as bad, not retried
+    real = N.http.side_effect
+
+    def framed(url, token="", accept="application/json", **kw):
+        if url == "https://fal.example/mask.png":
+            im = Image.new("RGBA", (300, 400), (255, 255, 255, 255))
+            buf = io.BytesIO()
+            im.save(buf, "PNG")
+            return buf.getvalue(), None
+        return real(url, token, accept, **kw)
+
+    N.http.side_effect = framed
+    server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
+    _settle()
+    assert (
+        not list((tmp_path / "masks").glob("*.cut.png"))
+        and len(list((tmp_path / "masks").glob("*.bad"))) == 3
+    )
+    r = server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
+    assert all(s["pic"]["cut_state"] == "bad" for s in r["species"]) and not r["status"]
+    assert "covers" in M.why_bad(r["species"][0]["pic"]["key"], tmp_path)

@@ -411,7 +411,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
   const loaded = await Promise.all(specimens.map(async (b) => {
     try {
       let got = null;
-      if (b.cut) got = fromAlpha(await loadImage(b.cut));
+      if (b.cut) { got = fromAlpha(await loadImage(b.cut)); if (got && !b.on_paper) got.blend = 'source-over'; }
       else if (b.src && b.on_paper) got = cutout(await loadImage(b.src));
       else if (b.src) got = vignette(await loadImage(b.src));
       if (!got) got = mount(0.8);

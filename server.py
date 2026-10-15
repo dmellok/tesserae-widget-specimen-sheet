@@ -46,6 +46,7 @@ def _sibling(name: str) -> Any:
 N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
+M = _sibling("masks")
 
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 
@@ -86,6 +87,7 @@ SHEET_MAX = 16
 RETURN_AFTER_DAYS = 45
 QUIET_MIN = 90
 ERR_NOWHERE = "Set a place in this cell (or the app's location)."
+NOTE_NO_KEY = "A fal.ai key in this widget's settings cuts every specimen out cleanly."
 ERR_NOWHERE_INAT = (
     "Set a place in this cell (or the app's location), or an iNaturalist username."
 )
@@ -401,9 +403,10 @@ def _plate(
     key = hashlib.sha1(
         f"{entry['file']}|{entry.get('box')}|{PICTURE_PX}".encode()
     ).hexdigest()[:20]
-    src = N.render(
-        raw, PICTURE_PX, entry.get("box"), data_dir / "img" / f"p_{key}.jpg", levels
-    )
+    colour = data_dir / "img" / f"p_{key}.jpg"
+    src = N.render(raw, PICTURE_PX, entry.get("box"), colour, "colour")
+    if levels != "colour":
+        src = N.render(raw, PICTURE_PX, entry.get("box"), colour, levels)
     if not src:
         return None
     source = str(entry.get("source") or "Classic plate")
@@ -413,6 +416,8 @@ def _plate(
         "on_paper": True,
         "credit": f"{source} · public domain",
         "paper": N.paper_of(src, data_dir / "img" / f"p_{key}.paper", levels),
+        "key": f"p_{key}",
+        "file": str(colour),
     }
 
 
@@ -433,18 +438,36 @@ def _photo(
     if not raw:
         return None
     key = hashlib.sha1(f"{url}|{PICTURE_PX}".encode()).hexdigest()[:20]
-    src = N.render(raw, PICTURE_PX, None, data_dir / "img" / f"f_{key}.jpg", levels)
+    colour = data_dir / "img" / f"f_{key}.jpg"
+    src = N.render(raw, PICTURE_PX, None, colour, "colour")
+    if levels != "colour":
+        src = N.render(raw, PICTURE_PX, None, colour, levels)
     if not src:
         return None
-    return {"src": src, "kind": "photo", "on_paper": False, "credit": credit or "photo"}
+    return {
+        "src": src,
+        "kind": "photo",
+        "on_paper": False,
+        "credit": credit or "photo",
+        "key": f"f_{key}",
+        "file": str(colour),
+    }
 
 
 def _attach_pictures(
-    rows: list[dict[str, Any]], base: str, token: str, data_dir: Path, levels: str
-) -> None:
+    rows: list[dict[str, Any]],
+    base: str,
+    token: str,
+    data_dir: Path,
+    levels: str,
+    fal_key: str = "",
+) -> dict[str, int]:
     """Each row's best picture to-day: a plate from the pack, else the
     record's own photo (or BirdNET-Go's thumbnail, or, for a bird, the first
-    openly licensed iNaturalist photo). Fetched side by side."""
+    openly licensed iNaturalist photo). Fetched side by side. Then its
+    cut-out: a kept mask rides along as ``cut``; a picture without one
+    starts a mask job in the background (a few per refresh, with a key) and
+    the page cuts it out itself meanwhile. Returns the mask states counted."""
     pack = _pack(data_dir)
 
     def best(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -454,8 +477,30 @@ def _attach_pictures(
 
     with ThreadPoolExecutor(max_workers=6) as pool:
         pics = list(pool.map(best, rows))
+    states: dict[str, int] = {}
+    started = 0
     for row, pic in zip(rows, pics, strict=True):
         row["pic"] = pic
+        if not pic or not pic.get("key"):
+            continue
+        st = M.state(pic["key"], data_dir)
+        if st == "ready":
+            pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
+            st = "ready" if pic["cut"] else "failed"
+        elif st == "none" and fal_key and started < M.PER_FETCH:
+            try:
+                picture = Path(pic["file"]).read_bytes()
+            except OSError:
+                picture = b""
+            if picture and M.start(pic["key"], picture, data_dir, fal_key):
+                started += 1
+                st = "running"
+        elif st == "none" and not fal_key:
+            st = "no_key"
+        pic["cut_state"] = st
+        pic.pop("file", None)
+        states[st] = states.get(st, 0) + 1
+    return states
 
 
 # ----------------------------------------------------------------------
@@ -586,6 +631,7 @@ def fetch(
     name_place = str(options.get("names_place") or "").strip()
     base = S.base_url(options.get("url")) if source == "birdnet_go" else ""
     token = str(options.get("token") or "").strip()
+    fal_key = str((settings or {}).get("fal_api_key") or "").strip()
     rules = exclude_rules(
         str(options.get("exclude") or ""), str((settings or {}).get("exclude") or "")
     )
@@ -786,7 +832,7 @@ def fetch(
         )
 
     # --- pictures, sizes, labels ------------------------------------------
-    _attach_pictures(shown, base, token, data_dir, levels)
+    mask_states = _attach_pictures(shown, base, token, data_dir, levels, fal_key)
     _size(shown, sizing)
     for r in shown:
         r["count_text"] = _count_text(r, source, window)
@@ -806,6 +852,11 @@ def fetch(
     waiting = [r["name"] for r in shown if not r.get("pic")]
     if waiting:
         status.append(f"{len(waiting)} without a picture yet")
+    if mask_states.get("running"):
+        n = mask_states["running"]
+        status.append(f"{n} cut-out{'' if n == 1 else 's'} on the way")
+    if mask_states.get("no_key"):
+        notices.append(NOTE_NO_KEY)
     return out(
         title=title,
         area=area,
