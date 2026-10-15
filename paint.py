@@ -140,7 +140,14 @@ STOPPED = "stopped"
 PROMPT_VERSION = 1
 # A style reworded after it shipped gets a revision here; its paintings are
 # keyed with it, so only that style is painted again.
-STYLE_REVISIONS: dict[str, int] = {"cctv": 2}
+STYLE_REVISIONS: dict[str, int] = {
+    "cctv": 2,
+    "mucha": 2,
+    "glasgow": 2,
+    "deco": 2,
+    "folkart": 2,
+    "stainedglass": 2,
+}
 
 NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
 NOTE_GEN_CAP = "AI paintings: to-day's limit of {cap} is used up; more to-morrow."
@@ -266,7 +273,7 @@ STYLES.update(
         # ---- colour, clean ----
         "mucha": (
             "Art Nouveau (Mucha)",
-            "an Art Nouveau illustration in the manner of Alphonse Mucha: the {kind} set in a halo roundel with a flowing ornamental border, pastel flat colour with a crisp dark outline, on plain pure white paper",
+            "an Art Nouveau illustration in the manner of Alphonse Mucha: the {kind} drawn with flowing, sinuous contours, pastel flat colour with a crisp dark outline, on plain pure white paper",
         ),
         "gouache": (
             "Gouache poster",
@@ -282,7 +289,7 @@ STYLES.update(
         ),
         "stainedglass": (
             "Stained glass",
-            "a stained-glass panel of the {kind}: thick black lead lines round pieces of jewel-coloured glass in the species' colours, the {kind} alone on plain pure white paper",
+            "the {kind} rendered in stained glass: thick black lead lines round pieces of jewel-coloured glass in the species' colours, with no window frame or panel edge, the {kind} alone on plain pure white paper",
         ),
         "risograph": (
             "Risograph print",
@@ -323,7 +330,7 @@ STYLES.update(
         ),
         "glasgow": (
             "Glasgow style",
-            "a Glasgow style illustration in the manner of Charles Rennie Mackintosh and the Macdonald sisters: a tall elongated composition, stylised roses and fine grids, pale washed colours with a few strong dark lines and a great deal of empty space, on plain pure white paper",
+            "a Glasgow style illustration in the manner of Charles Rennie Mackintosh and the Macdonald sisters: a tall elongated composition, the {kind} drawn with stylised, elongated lines, pale washed colours with a few strong dark lines and a great deal of empty space round it, on plain pure white paper",
         ),
         "secession": (
             "Vienna Secession",
@@ -331,7 +338,7 @@ STYLES.update(
         ),
         "deco": (
             "Art Deco",
-            "an Art Deco illustration: stepped geometry, sunbursts and fans, the {kind} simplified into clean curves and chevrons, a palette of gold, black, teal and cream with flat colour and crisp edges, on plain pure white paper",
+            "an Art Deco illustration: stepped geometry, the {kind} simplified into clean curves and chevrons, a palette of gold, black, teal and cream with flat colour and crisp edges, on plain pure white paper",
         ),
         "beardsley": (
             "Beardsley ink",
@@ -367,7 +374,7 @@ STYLES.update(
         ),
         "folkart": (
             "Folk art",
-            "a folk-art painting of the {kind} in the manner of Pennsylvania Dutch fraktur and Scandinavian rosemaling: symmetric scrolls, hearts and tulips, flat bright colours with a dark outline, on plain pure white paper",
+            "a folk-art painting of the {kind} in the manner of Pennsylvania Dutch fraktur and Scandinavian rosemaling: the {kind} decorated with scrolls, hearts and tulips worked into its own plumage, flat bright colours with a dark outline, on plain pure white paper",
         ),
         "delft": (
             "Delft tile",
@@ -627,7 +634,10 @@ GEN = (
     "The subject alone on plain, pure white paper with a clear margin all round, as a "
     "specimen cut from its surroundings: no shadow under it, no wash, no vignette, no "
     "ground, soil, leaf litter, grass, rocks, water or sky, no other creatures, no "
-    "scenery, no text, no lettering, no border, no signature."
+    "scenery, no text, no lettering, no border, no signature. The style says how the "
+    "{kind} and its perch are drawn and nothing else: no background, backdrop, frame, "
+    "roundel, halo, panel, pattern, sunburst or ornament round or behind them, and "
+    "nothing else on the page."
     "{about}{dapper}"
 )
 DAPPER = (
