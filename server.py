@@ -983,6 +983,10 @@ def fetch(
     radius_km = _choice(options.get("radius_km"), RADII)
     login = str(options.get("user_login") or "").strip()
     count = _int(options.get("count"), 8, 2, SHEET_MAX)
+    scale = _int(options.get("scale"), 100, 40, 250)
+    if scale > 100:
+        # bigger birds on the same page: fewer of them, in the order's priority
+        count = max(2, round(count / (scale / 100) ** 2))
     order = str(options.get("order") or "most")
     order = order if order in ORDERS else "most"
     sizing = _choice(options.get("sizing"), SIZINGS)
@@ -1068,7 +1072,7 @@ def fetch(
             "paper": paper,
             "neutral": neutral,
             "spacing": spacing,
-            "scale": _int(options.get("scale"), 100, 40, 100),
+            "scale": scale,
             "layout": layout,
             "facing": facing,
             "panel": levels,

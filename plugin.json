@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1709,10 +1709,10 @@
       "label": "Scale",
       "default": 100,
       "min": 40,
-      "max": 100,
+      "max": 250,
       "step": 5,
       "unit": "%",
-      "help": "How much of the page the specimens fill. 100% runs them out to the margins; less packs the same arrangement into the middle of the page and leaves more paper round it."
+      "help": "How big the birds are. 100% runs the arrangement out to the margins. Less packs it into the middle of the page with more paper round it. More makes each bird bigger by showing fewer of them, the first by Order: 200% shows about a quarter as many."
     },
     {
       "name": "layout",

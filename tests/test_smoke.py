@@ -461,11 +461,13 @@ def test_scale_and_count_are_sliders_with_bounds(tmp_path, offline):
     assert opts["scale"]["type"] == "slider" and (
         opts["scale"]["min"],
         opts["scale"]["max"],
-    ) == (40, 100)
+    ) == (40, 250)
     assert _fetch(tmp_path, offline)["scale"] == 100
     assert _fetch(tmp_path, offline, scale="70")["scale"] == 70
     assert _fetch(tmp_path, offline, scale="5")["scale"] == 40
-    assert _fetch(tmp_path, offline, scale="500")["scale"] == 100
+    assert _fetch(tmp_path, offline, scale="500")["scale"] == 250
+    big = _fetch(tmp_path, offline, count="16", scale="200")
+    assert len(big["species"]) <= 4 and big["scale"] == 200
     assert len(_fetch(tmp_path, offline, count="99")["species"]) <= 32
 
 

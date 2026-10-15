@@ -191,7 +191,8 @@ export function cutout(img, model = null) {
   const small = canvas(sw, sh);
   const sctx = small.getContext('2d', { willReadFrequently: true });
   sctx.drawImage(full, 0, 0, sw, sh);
-  const sm = paperMask(sctx.getImageData(0, 0, sw, sh).data, sw, sh, paper);
+  const sd = sctx.getImageData(0, 0, sw, sh).data;
+  const sm = paperMask(sd, sw, sh, paper);
   // A white bird on white paper is what the spread takes for paper, so a model's mask that
   // passed its check is added: what it kept is never given up, and the edges still add the
   // perch and the foliage it left out.
@@ -205,6 +206,7 @@ export function cutout(img, model = null) {
     const grown = dilate(kept, sw, sh, 1);
     for (let i = 0; i < sw * sh; i++) if (grown[i]) sm[i] = 1;
   }
+  dropShadows(sm, sd, sw, sh, paper);
   let box = bbox(erode(sm, sw, sh, 3), sw, sh) || bbox(sm, sw, sh);
   if (!box) return null;
   const pad = Math.max(cw, ch) / 60;
@@ -231,6 +233,53 @@ export function cutout(img, model = null) {
   }
   cctx.putImageData(out, 0, 0);
   return { cut, mask: { w: bw, h: bh, data: hard }, paper, blend: 'multiply', box, frame: [cw, ch] };
+}
+
+/* The soft shadow a painting leaves under its subject: smooth, a neutral darkening of
+   the paper (it is not drawn, only cast), and open to the paper at its outer edge. The
+   paper spread takes it for part of the specimen, and printed by multiply it shows as a
+   grey smudge, so what it reaches is dropped from the mask, a model's included. The
+   spread stops at the drawing's own outline (never smooth), so a pale patch the outline
+   encloses, a white bird's breast, is kept. */
+function dropShadows(sm, sd, sw, sh, paper) {
+  const n = sw * sh;
+  const L = new Float32Array(n);
+  for (let i = 0; i < n; i++) L[i] = 0.299 * sd[i * 4] + 0.587 * sd[i * 4 + 1] + 0.114 * sd[i * 4 + 2];
+  const blur = boxBlur(L, sw, sh, 2, 2);
+  const hp = new Float32Array(n);
+  for (let i = 0; i < n; i++) hp[i] = Math.min(255, Math.abs(L[i] - blur[i]) * 8);
+  const texture = boxBlur(hp, sw, sh, 2, 1);
+  const cand = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!sm[i]) continue;
+    const rc = [sd[i * 4] / paper[0], sd[i * 4 + 1] / paper[1], sd[i * 4 + 2] / paper[2]];
+    const mean = (rc[0] + rc[1] + rc[2]) / 3;
+    const spread = Math.max(...rc) - Math.min(...rc);
+    if (mean > 0.7 && mean < 0.985 && spread < 0.07 && texture[i] < 18) cand[i] = mean < 0.93 ? 2 : 1;
+  }
+  const drop = new Uint8Array(n);
+  const stack = [];
+  const open = (i) => {
+    const x = i % sw, y = (i - x) / sw;
+    return x === 0 || y === 0 || x === sw - 1 || y === sh - 1 || !sm[i - 1] || !sm[i + 1] || !sm[i - sw] || !sm[i + sw];
+  };
+  // the shadow proper (clearly darker than paper) is followed from the open edge; its faint
+  // fringe (barely darker, which a white bird's own plumage also is) only a few steps out
+  for (let i = 0; i < n; i++) if (cand[i] === 2 && open(i)) { drop[i] = 1; stack.push(i); }
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % sw, y = (i - x) / sw;
+    const go = (j) => { if (cand[j] === 2 && !drop[j]) { drop[j] = 1; stack.push(j); } };
+    if (x > 0) go(i - 1);
+    if (x < sw - 1) go(i + 1);
+    if (y > 0) go(i - sw);
+    if (y < sh - 1) go(i + sw);
+  }
+  for (let step = 0; step < 5; step++) {
+    const next = dilate(drop, sw, sh, 1);
+    for (let i = 0; i < n; i++) if (next[i] && !drop[i] && cand[i]) drop[i] = 1;
+  }
+  for (let i = 0; i < n; i++) if (drop[i]) sm[i] = 0;
 }
 
 /* How much of a cut-out is drawing, in pixels of its mask. */
