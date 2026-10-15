@@ -317,26 +317,36 @@ function labelStrip(lines, label, H) {
 /* A specimen's footprint on the cell grid at ``scale``, mirrored when
    ``flip``: the body (alpha over 40), with a strip under it for the label.
    ``mass`` is the body's cell count, for the balance score. */
-function footprintOf(b, scale, flip, label, H) {
+function footprintOf(b, scale, flip, label, H, gap = 0) {
   const tw = Math.max(1, Math.floor((b.mask.w * scale) / CELL)), th = Math.max(1, Math.floor((b.mask.h * scale) / CELL));
   const c = canvas(tw, th);
   const ctx = c.getContext('2d', { willReadFrequently: true });
   if (flip) { ctx.translate(tw, 0); ctx.scale(-1, 1); }
   ctx.drawImage(b.maskCanvas, 0, 0, tw, th);
   const d = ctx.getImageData(0, 0, tw, th).data;
-  const body = new Uint8Array(tw * th);
+  let body = new Uint8Array(tw * th);
   let mass = 0;
   for (let i = 0; i < tw * th; i++) if (d[i * 4] > 40) { body[i] = 1; mass++; }
+  // air round each specimen: the body grown by ``gap`` cells on every side, so
+  // neighbours keep their distance; ``pad`` is where the picture sits inside it
+  const pad = gap && Math.min(tw, th) > 4 ? gap : 0;
+  let bw = tw, bh = th;
+  if (pad) {
+    const grown = new Uint8Array((tw + 2 * pad) * (th + 2 * pad));
+    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) grown[(y + pad) * (tw + 2 * pad) + x + pad] = body[y * tw + x];
+    bw = tw + 2 * pad; bh = th + 2 * pad;
+    body = dilate(grown, bw, bh, pad);
+  }
   const { rows, nameW } = labelStrip(b.lines, label, H);
-  const fw = Math.max(tw, nameW), fh = th + rows + (rows ? 1 : 0);
+  const fw = Math.max(bw, nameW), fh = bh + rows + (rows ? 1 : 0);
   const fp = new Uint8Array(fw * fh);
-  const off = Math.floor((fw - tw) / 2);
-  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) fp[y * fw + off + x] = body[y * tw + x];
+  const off = Math.floor((fw - bw) / 2);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) fp[y * fw + off + x] = body[y * bw + x];
   if (rows) {
     const lx = Math.floor((fw - nameW) / 2);
-    for (let y = th + 1; y < th + rows; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
+    for (let y = bh + 1; y < bh + rows; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
   }
-  return { fp, fw, fh, off, tw, th, mass, flip };
+  return { fp, fw, fh, off: off + pad, pad, tw, th, mass, flip };
 }
 
 /* Place cut-outs on a W x H page, balanced: the largest in the middle, the
@@ -344,7 +354,7 @@ function footprintOf(b, scale, flip, label, H) {
    across the page's axis and turned to face in; several attempts, the best
    by a balance score kept. (x, y, scale, flip) per specimen in the order
    given; scale 0 when one did not fit. */
-export function packSheet(items, W, H, label) {
+export function packSheet(items, W, H, label, gap = 2) {
   const gw = Math.floor(W / CELL), gh = Math.floor(H / CELL);
   const cx = gw / 2, cy = gh * 0.52, rx = gw * 0.48, ry = gh * 0.44;
   const inside = new Uint8Array(gw * gh);
@@ -400,6 +410,7 @@ export function packSheet(items, W, H, label) {
     const placed = new Array(items.length).fill(null);
     const scaleOf = (b) => Math.min(unit * b.factor, cap / Math.max(b.mask.w, b.mask.h));
     const put = (i, f, x, y) => { stamp(occ, x, y, f, 1); placed[i] = { x, y, f, scale: scaleOf(items[i]) }; };
+    const foot = (b, scale, flip) => footprintOf(b, scale, flip, label, H, gap);
     /* the facing a specimen needs on a side: toward the middle */
     const flipFor = (b, side) => {
       if (!b.flippable || !b.face) return false;
@@ -414,7 +425,7 @@ export function packSheet(items, W, H, label) {
     for (const g of groups) {
       if (g.length === 1) {
         const i = g[0], b = items[i];
-        const f = footprintOf(b, scaleOf(b), false, label, H);
+        const f = foot(b, scaleOf(b), false);
         if (f.fh >= gh || f.fw >= gw) return null;
         let spot = null;
         if (!placed.some(Boolean)) spot = findSpot(occ, f, cx, cy, start, 0);
@@ -436,8 +447,8 @@ export function packSheet(items, W, H, label) {
       }
       const [p, q] = leftFirst ? g : [g[1], g[0]];
       const bp = items[p], bq = items[q];
-      const fp = footprintOf(bp, scaleOf(bp), flipFor(bp, -1), label, H);
-      const fq = footprintOf(bq, scaleOf(bq), flipFor(bq, 1), label, H);
+      const fp = foot(bp, scaleOf(bp), flipFor(bp, -1));
+      const fq = foot(bq, scaleOf(bq), flipFor(bq, 1));
       if (fp.fh >= gh || fp.fw >= gw || fq.fh >= gh || fq.fw >= gw) return null;
       const sp = findSpot(occ, fp, cx, cy, start, -1) || findSpot(occ, fp, cx, cy, start, 0);
       if (!sp) return null;
@@ -495,7 +506,7 @@ export function packSheet(items, W, H, label) {
     let x0 = gw, y0 = gh, x1 = 0, y1 = 0;
     for (const p of placed) {
       if (!p) continue;
-      const bx = p.x + p.f.off + p.f.tw / 2, by = p.y + p.f.th / 2;
+      const bx = p.x + p.f.off + p.f.tw / 2, by = p.y + p.f.pad + p.f.th / 2;
       M += p.f.mass; mx += p.f.mass * bx; my += p.f.mass * by;
       quad[(bx < cx ? 0 : 1) + (by < cy ? 0 : 2)] += p.f.mass;
       x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + p.f.fw); y1 = Math.max(y1, p.y + p.f.fh);
@@ -530,7 +541,7 @@ export function packSheet(items, W, H, label) {
     if (!bigger) break;
     unit *= 1.05; best = bigger;
   }
-  return best.map((p) => (p ? [(p.x + p.f.off) * CELL, p.y * CELL, p.scale, p.f.flip] : [0, 0, 0, false]));
+  return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip] : [0, 0, 0, false]));
 }
 
 const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220, 192] };
@@ -541,7 +552,7 @@ const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220
    painting on plain paper, ``paper`` its paper colour as [r, g, b] and
    ``neutral`` asks for that paper scaled to white. Returns null when
    nothing could be placed. */
-export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116' }) {
+export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy' }) {
   const loaded = await Promise.all(specimens.map(async (b) => {
     try {
       let got = null;
@@ -562,7 +573,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
   const ctx = sheet.getContext('2d');
   ctx.fillStyle = `rgb(${bg.join(',')})`;
   ctx.fillRect(0, 0, W, H);
-  const spots = packSheet(loaded, W, H, label);
+  const spots = packSheet(loaded, W, H, label, { close: 0, airy: 2, open: 4 }[spacing] ?? 2);
   const shown = [];
   loaded.forEach((b, i) => {
     const [x, y, scale, flip] = spots[i];

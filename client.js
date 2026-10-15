@@ -70,7 +70,7 @@ async function build(d) {
   const label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
   try {
-    return await buildSheet({ specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink });
+    return await buildSheet({ specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy' });
   } catch { return null; }
 }
 

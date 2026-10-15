@@ -944,6 +944,27 @@
       ]
     },
     {
+      "name": "spacing",
+      "type": "select",
+      "label": "Spacing",
+      "default": "airy",
+      "help": "How much air the specimens keep between them. Close packs them like cut-outs pasted touching; open spreads them across the page, a little smaller.",
+      "choices": [
+        {
+          "value": "close",
+          "label": "Close"
+        },
+        {
+          "value": "airy",
+          "label": "Airy"
+        },
+        {
+          "value": "open",
+          "label": "Open"
+        }
+      ]
+    },
+    {
       "name": "labels",
       "type": "select",
       "label": "Labels",

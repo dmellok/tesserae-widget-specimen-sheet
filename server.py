@@ -61,6 +61,7 @@ LABELS = ("caption", "tag", "key", "none")
 LABEL_LINES = ("name", "sci", "count", "last", "flag", "who", "size")
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 PAPERS = ("cream", "white", "aged")
+SPACINGS = ("airy", "close", "open")
 LEVELS = ("colour", "gray16", "gray4", "mono")
 NIGHTS = ("off", "asleep", "owls")
 FOOTERS = ("show", "credits", "hide")
@@ -721,6 +722,7 @@ def fetch(
     )
     text_scale = int(_choice(options.get("text_size"), TEXT_SCALES)) / 100
     paper = _choice(options.get("paper"), PAPERS)
+    spacing = _choice(options.get("spacing"), SPACINGS)
     neutral = options.get("neutral") in (True, "true", "True", 1, "1", "on")
     levels = _choice(options.get("panel"), LEVELS)
     night = _choice(options.get("night"), NIGHTS) if source == "birdnet_go" else "off"
@@ -783,6 +785,7 @@ def fetch(
             "text_scale": text_scale,
             "paper": paper,
             "neutral": neutral,
+            "spacing": spacing,
             "panel": levels,
             "footer": footer,
             "night": night,
