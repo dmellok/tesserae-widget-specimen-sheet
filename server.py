@@ -85,6 +85,7 @@ NAME_LOCALES = (
 )
 PICTURE_PX = 700
 PICTURES = ("free", "gen")
+ARRANGEMENTS = ("sheet", "scene")
 SHEET_MAX = 16
 RETURN_AFTER_DAYS = 45
 QUIET_MIN = 90
@@ -739,6 +740,14 @@ def fetch(
         )
         art_style = P.register_custom(how)
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
+    arrangement = (
+        _choice(options.get("arrangement"), ARRANGEMENTS)
+        if pictures == "gen"
+        else "sheet"
+    )
+    scene = _choice(options.get("scene"), tuple(P.SCENES))
+    fidelity = _choice(options.get("scene_fidelity"), tuple(P.FIDELITY))
+    scene_every = int(_choice(options.get("scene_every"), P.SCENE_EVERY))
     rules = exclude_rules(
         str(options.get("exclude") or ""), str((settings or {}).get("exclude") or "")
     )
@@ -785,6 +794,8 @@ def fetch(
             "demo": False,
             "pictures": pictures,
             "art_style": art_style,
+            "arrangement": arrangement,
+            "scene": None,
         }
         base_out.update(kw)
         return base_out
@@ -995,6 +1006,12 @@ def fetch(
             notices.append(
                 f"{n} painting{'' if n == 1 else 's'} failed; tried again later"
             )
+    scene_out = None
+    if gen and arrangement == "scene":
+        scene_out, more = _scene(
+            shown, gen, scene, fidelity, scene_every, fal_key, data_dir, levels, ctx
+        )
+        status += [m_ for m_ in more if m_ not in status]
     return out(
         title=title,
         area=area,
@@ -1006,11 +1023,110 @@ def fetch(
         sky=sky,
         asleep=asleep,
         state="asleep" if asleep else "ok",
-        credits=credits,
+        credits=([scene_out["pic"]["credit"]] if scene_out else credits),
         notices=notices,
         status=status,
         demo=demo,
+        scene=scene_out,
     )
+
+
+def _scene(
+    shown: list[dict[str, Any]],
+    gen: dict[str, Any],
+    scene: str,
+    fidelity: str,
+    every_h: int,
+    fal_key: str,
+    data_dir: Path,
+    levels: str,
+    ctx: dict[str, Any],
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """The sheet repainted as one scene: once every specimen is painted and
+    cut out, their cut-outs go on a collage and fal.ai repaints it, at most
+    once per ``every_h`` hours for a given line-up. Until then the sheet
+    shows. (the scene payload or None, status lines)."""
+    folder = P.gen_dir(data_dir)
+    keys = [
+        str(r["pic"]["key"])[2:]
+        for r in shown
+        if (r.get("pic") or {}).get("kind") == "painting"
+    ]
+    if len(keys) < 2 or len(keys) < len(shown):
+        return None, ["composing the scene once every specimen is painted"]
+    if not all((r.get("pic") or {}).get("cut_state") == "ready" for r in shown):
+        return None, ["composing the scene once every specimen is cut out"]
+    w, h = int(ctx.get("cell_w") or 800), int(ctx.get("cell_h") or 480)
+    ratio = w / h if h else 1.6
+    made = P.collage(keys, data_dir, ratio)
+    if not made:
+        return None, ["composing the scene"]
+    skey = P.scene_key(gen["style"], scene, fidelity)
+    meta = N.read_json(folder / f"{skey}.json", {})
+    meta = meta if isinstance(meta, dict) else {}
+    have = (folder / f"{skey}.jpg").exists()
+    age_h = (time.time() - float(meta.get("made") or 0)) / 3600 if have else 1e9
+    status: list[str] = []
+    if not have or (meta.get("tag") != made["tag"] and age_h >= every_h):
+        go, why = P.may_start(skey, folder, fal_key, gen["cap"])
+        if go:
+            by_key = {str(r["pic"]["key"])[2:]: r for r in shown}
+            boxes = [b for b in made["boxes"] if b["key"] in by_key]
+            job = {
+                "key": skey,
+                "style": gen["style"],
+                "how": gen.get("how") or "",
+                "name": "the scene",
+                "sci": "",
+                "kind": "",
+                "collage": made["path"],
+                "tag": made["tag"],
+                "boxes": [
+                    {
+                        **b,
+                        "name": by_key[b["key"]]["name"],
+                        "sci": by_key[b["key"]]["sci"],
+                    }
+                    for b in boxes
+                ],
+                "names": [
+                    f"the {by_key[b['key']]['name']} ({by_key[b['key']]['sci']})"
+                    for b in boxes
+                ],
+                "scene": scene,
+                "fidelity": fidelity,
+                "aspect": "4:3" if ratio >= 1 else "3:4",
+            }
+            P.start(job, data_dir, fal_key)
+            status.append("composing the scene (fal.ai)")
+        elif why == "running":
+            status.append("composing the scene (fal.ai)")
+        elif why == "capped":
+            status.append(P.NOTE_GEN_CAP.format(cap=gen["cap"]))
+    if not have:
+        return None, status
+    try:
+        raw = (folder / f"{skey}.jpg").read_bytes()
+    except OSError:
+        return None, status
+    src = N.render(raw, 1600, None, folder / f"{skey}_1600.jpg", levels)
+    if not src:
+        return None, status
+    return {
+        "pic": {
+            "src": src,
+            "kind": "scene",
+            "credit": str(meta.get("credit") or "AI scene (fal.ai nano-banana)"),
+            "paper": N.paper_of(src, folder / f"{skey}.paper", levels),
+        },
+        "items": [
+            {"name": b.get("name", ""), "sci": b.get("sci", ""), "box": b["box"]}
+            for b in meta.get("boxes") or []
+            if isinstance(b, dict) and b.get("box")
+        ],
+        "fidelity": str(meta.get("fidelity") or fidelity),
+        "stale": meta.get("tag") != made["tag"],
+    }, status
 
 
 # ----------------------------------------------------------------------

@@ -7,10 +7,13 @@ small hat. Loaded by server.py by path."""
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import hashlib
 import importlib.util
+import io
 import json
+import math
 import os
 import re
 import sys
@@ -145,6 +148,32 @@ POSES = {
     "flight": "in flight with its wings spread, seen from the side a little below, the whole bird",
 }
 
+# The scene: the sheet's cut-outs on one collage, repainted by the model as a
+# single picture with one background. Opt-in, one painting per re-compose.
+SCENES = {
+    "auto": "the specimens gathered in an oval cluster, like a Victorian vignette, on branches and foliage that join them",
+    "branch": "all perched along one shared branch",
+    "tree": "perched through the branches of one tree",
+    "birdbath": "gathered round a stone bird bath in a garden",
+    "wire": "sitting in a row along a telephone wire against the sky",
+    "feeder": "gathered at and around a hanging bird feeder",
+    "meadow": "on the ground and low stems of a wildflower meadow",
+    "sky": "all in flight together across an open sky",
+    "wetland": "among reeds and still water at the edge of a wetland",
+    "garden": "in a cottage garden, on a fence, shrubs and a path",
+}
+FIDELITY = {
+    "exact": "Keep every specimen exactly where it is, at the same size and pose, with its own colours and markings unchanged.",
+    "free": "Move and resize the specimens as the scene needs, but keep each one's own colours, markings and proportions.",
+}
+GEN_SCENE = (
+    "This picture is a collage of {n} specimens, each painted on its own: {names}. Repaint it "
+    "as one seamless picture, {style}, with all of them together in a single natural "
+    "scene: {scene}, one continuous background, the same light and paper throughout. "
+    "{fidelity} No text, no labels, no numbers, no border, no signature."
+)
+SCENE_EVERY = ("3", "1", "6", "24")
+
 _PAINTING: set[str] = set()
 _SINCE: dict[str, tuple[float, str, str]] = {}  # key -> (since, name, style)
 _FINISHED: list[tuple[str, float]] = []
@@ -220,6 +249,92 @@ def dapper_pick(scis: list[str], day: str) -> str:
         int(hashlib.sha1(f"{day}|{'|'.join(ordered)}".encode()).hexdigest()[:8], 16)
         % len(ordered)
     ]
+
+
+def scene_key(style: str, scene: str, fidelity: str) -> str:
+    return f"scene--{style}--{scene}--{fidelity}"
+
+
+def collage(
+    keys: list[str], data_dir: Path, ratio: float, size: int = 1400
+) -> dict[str, Any] | None:
+    """The paintings under ``keys``, their kept cut-outs pasted on one cream
+    sheet in an oval, largest first, as the reference the scene is painted
+    from: {path, tag, boxes}. Cached on the paintings it is made of; None
+    until every painting has its cut-out."""
+    from PIL import Image
+
+    folder = gen_dir(data_dir)
+    masks = data_dir / "masks"
+    stamps = []
+    for k in keys:
+        try:
+            stamps.append(f"{k}:{int((masks / f'g_{k}.cut.png').stat().st_mtime)}")
+        except OSError:
+            return None
+    if not keys:
+        return None
+    tag = hashlib.sha1(f"{'|'.join(stamps)}|{ratio:.3f}|{size}".encode()).hexdigest()[
+        :16
+    ]
+    path, info_path = folder / f"collage_{tag}.jpg", folder / f"collage_{tag}.json"
+    info = N.read_json(info_path, None)
+    if path.exists() and isinstance(info, dict):
+        return {"path": str(path), "tag": tag, "boxes": info["boxes"]}
+    W, H = (size, int(size / ratio)) if ratio >= 1 else (int(size * ratio), size)
+    cuts = []
+    for k in keys:
+        with contextlib.suppress(OSError):
+            cuts.append((k, Image.open(masks / f"g_{k}.cut.png").convert("RGBA")))
+    if len(cuts) != len(keys):
+        return None
+    cuts.sort(key=lambda c: -(c[1].width * c[1].height))
+    sheet = Image.new("RGB", (W, H), (243, 234, 214))
+    n = len(cuts)
+    # the largest in the middle, the rest round an oval, each in a slot of the ring
+    slots = [(0.5, 0.5)] + [
+        (
+            0.5 + 0.36 * math.cos(2 * math.pi * i / max(1, n - 1) - math.pi / 2),
+            0.5 + 0.34 * math.sin(2 * math.pi * i / max(1, n - 1) - math.pi / 2),
+        )
+        for i in range(n - 1)
+    ]
+    big = 0.42 if n > 1 else 0.8
+    small = max(0.16, min(0.3, 1.1 / max(1, n)))
+    boxes = []
+    for i, ((k, im), (sx, sy)) in enumerate(zip(cuts, slots, strict=False)):
+        box = (big if i == 0 else small) * min(W, H)
+        scale = min(box / im.width, box / im.height)
+        fit = im.resize(
+            (max(1, int(im.width * scale)), max(1, int(im.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        x, y = int(sx * W - fit.width / 2), int(sy * H - fit.height / 2)
+        x, y = max(0, min(W - fit.width, x)), max(0, min(H - fit.height, y))
+        sheet.paste(fit, (x, y), fit)
+        boxes.append(
+            {
+                "key": k,
+                "box": [
+                    round(x / W, 4),
+                    round(y / H, 4),
+                    round(fit.width / W, 4),
+                    round(fit.height / H, 4),
+                ],
+            }
+        )
+    buf = io.BytesIO()
+    sheet.save(buf, "JPEG", quality=88)
+    N.write(path, buf.getvalue())
+    N.write(info_path, json.dumps({"boxes": boxes}).encode())
+    with contextlib.suppress(OSError):
+        for old in folder.glob("collage_*"):
+            if (
+                not old.stem.startswith(f"collage_{tag}")
+                and time.time() - old.stat().st_mtime > 86400
+            ):
+                old.unlink()
+    return {"path": str(path), "tag": tag, "boxes": boxes}
 
 
 def about(sci: str, data_dir: Path) -> str:
@@ -366,12 +481,37 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         return fail(
             "the custom prompt behind this painting is not known; paint it again from the widget"
         )
-    image_url, ref_credit = str(job.get("ref") or ""), str(job.get("ref_credit") or "")
-    if not image_url and job.get("sci"):
-        image_url, ref_credit = S.inat_reference(job["sci"], data_dir)
-    if not image_url:
-        return fail("no openly licensed reference photo of the species")
-    prompt = prompt_for({**job, "how": how}, data_dir)
+    aspect = "3:4"
+    ref_credit = ""
+    if job.get("collage"):
+        # the scene: the sheet's own cut-outs, repainted as one picture
+        try:
+            sheet = Path(job["collage"]).read_bytes()
+        except OSError:
+            return fail(
+                "the collage to paint from has gone; it is made again on the next refresh"
+            )
+        image_url = "data:image/jpeg;base64," + base64.b64encode(sheet).decode()
+        names = job.get("names") or []
+        noun = K.noun_of(job.get("kind"))[0] if job.get("kind") else "subject"
+        prompt = GEN_SCENE.format(
+            n=len(names),
+            names="; ".join(names),
+            style=how.replace("{kind}", noun),
+            scene=SCENES.get(job.get("scene") or "auto", SCENES["auto"]),
+            fidelity=FIDELITY.get(job.get("fidelity") or "exact", FIDELITY["exact"]),
+        )
+        aspect = str(job.get("aspect") or "4:3")
+    else:
+        image_url, ref_credit = (
+            str(job.get("ref") or ""),
+            str(job.get("ref_credit") or ""),
+        )
+        if not image_url and job.get("sci"):
+            image_url, ref_credit = S.inat_reference(job["sci"], data_dir)
+        if not image_url:
+            return fail("no openly licensed reference photo of the species")
+        prompt = prompt_for({**job, "how": how}, data_dir)
     _spend(folder)
     body = json.dumps(
         {
@@ -379,7 +519,7 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
             "image_urls": [image_url],
             "num_images": 1,
             "output_format": "jpeg",
-            "aspect_ratio": "3:4",
+            "aspect_ratio": aspect,
         }
     ).encode()
     answer, err = N.get_json(
@@ -402,7 +542,9 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     if not raw:
         return fail(f"fal.ai sent no picture ({err})")
     credit = f"AI painting, {label.split(' (')[0].lower()} (fal.ai nano-banana)"
-    if ref_credit:
+    if job.get("collage"):
+        credit = f"AI scene, {label.split(' (')[0].lower()} (fal.ai nano-banana), from each specimen's own painting"
+    elif ref_credit:
         credit += f" after {ref_credit}"
     if (folder / f"{key}.jpg").exists():  # a repaint keeps the old one
         archive(folder, key)
@@ -415,6 +557,10 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         "kind": job.get("kind", ""),
         "prompt_version": PROMPT_VERSION,
     }
+    if job.get("collage"):
+        meta["tag"] = job.get("tag", "")
+        meta["boxes"] = job.get("boxes") or []
+        meta["scene"] = job.get("scene", "auto")
     if _CUSTOM_RE.fullmatch(str(job.get("style") or "")):
         meta["how"] = how
     N.write(folder / f"{key}.json", json.dumps(meta).encode())

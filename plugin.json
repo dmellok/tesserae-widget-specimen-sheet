@@ -802,6 +802,128 @@
       "help": "One specimen on the sheet is painted in a small hat, and perhaps a monocle, in whatever style the sheet is in: the same one all day, another to-morrow. One extra painting a day at most."
     },
     {
+      "name": "arrangement",
+      "type": "select",
+      "label": "Arrangement",
+      "default": "sheet",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "The sheet lays the cut-outs out itself and costs nothing beyond the paintings. The painted scene asks fal.ai to repaint the whole sheet as one picture with one background (about US$0.04 each time), once every specimen is painted and cut out; the sheet shows until it lands. The model takes liberties with a scene, so the names go in a legend under it rather than on the specimens.",
+      "choices": [
+        {
+          "value": "sheet",
+          "label": "Specimen sheet"
+        },
+        {
+          "value": "scene",
+          "label": "Painted scene (AI)"
+        }
+      ]
+    },
+    {
+      "name": "scene",
+      "type": "select",
+      "label": "Scene",
+      "default": "auto",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "choices": [
+        {
+          "value": "auto",
+          "label": "A vignette of branches and foliage"
+        },
+        {
+          "value": "branch",
+          "label": "One shared branch"
+        },
+        {
+          "value": "tree",
+          "label": "One tree"
+        },
+        {
+          "value": "birdbath",
+          "label": "A bird bath"
+        },
+        {
+          "value": "wire",
+          "label": "A telephone wire"
+        },
+        {
+          "value": "feeder",
+          "label": "A bird feeder"
+        },
+        {
+          "value": "meadow",
+          "label": "A wildflower meadow"
+        },
+        {
+          "value": "sky",
+          "label": "All in flight"
+        },
+        {
+          "value": "wetland",
+          "label": "A wetland's edge"
+        },
+        {
+          "value": "garden",
+          "label": "A cottage garden"
+        }
+      ]
+    },
+    {
+      "name": "scene_fidelity",
+      "type": "select",
+      "label": "How free fal.ai is",
+      "default": "exact",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "help": "Exact asks the model to keep each specimen where the sheet put it; free lets it move and resize them for the scene. Either way the model may take liberties, so the names go in a legend under the picture.",
+      "choices": [
+        {
+          "value": "exact",
+          "label": "Keep every specimen in place"
+        },
+        {
+          "value": "free",
+          "label": "Free to rearrange"
+        }
+      ]
+    },
+    {
+      "name": "scene_every",
+      "type": "select",
+      "label": "Re-compose at most",
+      "default": "3",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "help": "A new scene is painted when the line-up changes, no more often than this.",
+      "choices": [
+        {
+          "value": "1",
+          "label": "hourly"
+        },
+        {
+          "value": "3",
+          "label": "every 3 hours"
+        },
+        {
+          "value": "6",
+          "label": "every 6 hours"
+        },
+        {
+          "value": "24",
+          "label": "daily"
+        }
+      ]
+    },
+    {
       "name": "sizing",
       "type": "select",
       "label": "Sizes",

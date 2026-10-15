@@ -92,6 +92,21 @@ function sheet(d, made) {
   return `${head(d)}<div class="sh">${page}</div>${foot(d, extra)}`;
 }
 
+/* The scene: the sheet repainted by the model as one picture, shown whole.
+   The model moves the specimens about however it is asked, so no label is
+   placed on one; the names go in a legend under the picture instead. */
+function scenePage(d) {
+  const S = d.scene;
+  const labels = d.labels || 'caption';
+  const bySci = Object.fromEntries(d.species.map((s) => [s.sci || s.name, s]));
+  const names = (S.items.length ? S.items : d.species).map((m) => {
+    const s = bySci[m.sci || m.name] || m;
+    return `<span class="sc-n">${esc(s.name)}${labels !== 'none' && s.count_text ? `<i> ${esc(s.count_text)}</i>` : ''}</span>`;
+  }).join('<span class="sc-dot">·</span>');
+  const ratio = d.cell_w && d.cell_h ? d.cell_w / d.cell_h : 1.6;
+  return `${head(d)}<div class="sc" style="background:${esc(S.pic.paper || 'transparent')}"><div class="sc-pic" style="--r:${ratio}"><img src="${S.pic.src}" alt=""></div>${labels === 'none' ? '' : `<div class="sc-legend">${names}</div>`}</div>${foot(d)}`;
+}
+
 /* With no canvas (a test in node, or a browser that refused): the pictures
    as a plain grid, so the page is never empty. */
 function montage(d) {
@@ -112,6 +127,7 @@ export default async function render(shadow, ctx) {
   else if (d.state === 'error' || d.state === 'nowhere') body = message(d, d.title || 'Specimen Sheet', d.error || 'Something went wrong.', d.hint);
   else if (d.state === 'empty') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', `Nothing recorded ${d.area ? d.area + ' ' : ''}${d.period || ''}.`.replace('  ', ' '), d.hint);
   else if (d.state === 'asleep') body = asleep(d);
+  else if (d.scene && d.scene.pic) body = scenePage(d);
   else {
     const made = await build(d);
     body = made ? sheet(d, made) : montage(d);
@@ -142,6 +158,12 @@ export default async function render(shadow, ctx) {
       .sh { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 1cqmin; }
       .sh-page { position: relative; aspect-ratio: var(--r); max-width: 100%; max-height: 100%; width: min(100%, calc((100cqh - 12cqmin) * var(--r))); container-type: size; }
       .sh-page > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+      .sc { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 0 2.8cqmin; }
+      .sc-pic { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
+      .sc-pic img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }
+      .sc-legend { flex: 0 0 auto; text-align: center; font-family: var(--sc); font-size: calc(2.3cqmin * var(--ts)); letter-spacing: .05em; padding: .6cqmin 0 .2cqmin; line-height: 1.35; max-height: 18%; overflow: hidden; }
+      .sc-n i { font-family: var(--serif); font-style: italic; letter-spacing: 0; opacity: .8; }
+      .sc-dot { padding: 0 .7em; opacity: .6; }
       .sh-l { position: absolute; transform: translate(-50%, 12%); white-space: nowrap; text-align: center; line-height: 1.15; font-family: var(--sc); font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; color: var(--ink); }
       .sh-ln { display: block; }
       .sh-sci { font-family: var(--serif); font-style: italic; letter-spacing: 0; }

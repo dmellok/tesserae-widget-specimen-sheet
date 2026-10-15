@@ -940,3 +940,69 @@ def test_admin_template_renders(tmp_path, offline_paint):
     )
     assert "Cut out again" in html and "No paintings yet" not in html
     assert any(e["cut"] == "ready" for e in g["paintings"])
+
+
+def test_scene_is_painted_once_everything_is_cut_out(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "arrangement": "scene",
+        "scene": "wire",
+        "count": "4",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    assert (
+        r["scene"] is None
+        and "composing the scene once every specimen is painted" in r["status"]
+    )
+    _settle_paint()
+    server.fetch(
+        options, settings, ctx=ctx
+    )  # the fourth painting, and masks for the first three
+    _settle_paint()
+    r = server.fetch(options, settings, ctx=ctx)  # the fourth's mask
+    _settle_paint()
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["scene"] is None and "composing the scene (fal.ai)" in r["status"]
+    _settle_paint()
+    scene = [pr for pr in offline_paint if "collage of 4 specimens" in pr["prompt"]]
+    assert len(scene) == 1
+    assert (
+        "telephone wire" in scene[0]["prompt"]
+        and "Keep every specimen exactly where it is" in scene[0]["prompt"]
+    )
+    assert (
+        scene[0]["image_urls"][0].startswith("data:image/jpeg;base64,")
+        and scene[0]["aspect_ratio"] == "4:3"
+    )
+    assert "the Australian Magpie (Gymnorhina tibicen)" in scene[0]["prompt"]
+    r = server.fetch(options, settings, ctx=ctx)
+    assert (
+        r["scene"]
+        and r["scene"]["pic"]["kind"] == "scene"
+        and len(r["scene"]["items"]) == 4
+    )
+    assert r["scene"]["items"][0]["box"] and not r["scene"]["stale"]
+    assert (
+        r["credits"] == [r["scene"]["pic"]["credit"]] and "AI scene" in r["credits"][0]
+    )
+    r = server.fetch(options, settings, ctx=ctx)
+    assert len([pr for pr in offline_paint if "collage" in pr["prompt"]]) == 1, (
+        "the same line-up paints no second scene"
+    )
+    script = (
+        f"import('file://{ROOT}/client.js').then(async (m) => {{ const s = {{innerHTML: ''}};"
+        f" await m.default(s, {{data: {json.dumps(r)}, cell: {{size: 'md', w: 800, h: 480}}}});"
+        " if (!s.innerHTML.includes('sc-legend') || !s.innerHTML.includes('Australian Magpie')) throw new Error(s.innerHTML.slice(0, 300));"
+        " console.log('ok'); })"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
