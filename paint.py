@@ -43,6 +43,85 @@ K = _sibling("kinds")
 S = _sibling("sources")
 
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
+# The models a painting may be made with, all on fal.ai and all painting
+# from a reference picture so the species stays right. The default keeps
+# the plain key; another model's paintings carry its id in theirs.
+MODELS: dict[str, dict[str, str]] = {
+    "nano_banana": {
+        "label": "Nano Banana",
+        "endpoint": "fal-ai/nano-banana/edit",
+        "cost": "about US$0.04",
+    },
+    "nano_banana_pro": {
+        "label": "Nano Banana Pro",
+        "endpoint": "fal-ai/nano-banana-pro/edit",
+        "cost": "about US$0.15",
+    },
+    "flux_kontext": {
+        "label": "FLUX.1 Kontext Pro",
+        "endpoint": "fal-ai/flux-pro/kontext",
+        "cost": "about US$0.04",
+    },
+    "gpt_image": {
+        "label": "GPT Image 2",
+        "endpoint": "openai/gpt-image-2/edit",
+        "cost": "about US$0.05",
+    },
+    "seedream": {
+        "label": "Seedream 4",
+        "endpoint": "fal-ai/bytedance/seedream/v4/edit",
+        "cost": "about US$0.03",
+    },
+}
+DEFAULT_MODEL = "nano_banana"
+
+
+def model_of(model: str | None) -> str:
+    return model if model in MODELS else DEFAULT_MODEL
+
+
+def request_body(
+    model: str, prompt: str, image_url: str, aspect: str
+) -> dict[str, Any]:
+    """The model's own request shape: one reference picture, one output."""
+    portrait = aspect == "3:4"
+    if model == "flux_kontext":
+        return {
+            "prompt": prompt,
+            "image_url": image_url,
+            "num_images": 1,
+            "output_format": "jpeg",
+            "aspect_ratio": aspect,
+        }
+    if model == "gpt_image":
+        return {
+            "prompt": prompt,
+            "image_urls": [image_url],
+            "image_size": "portrait_4_3" if portrait else "landscape_4_3",
+            "background": "opaque",
+            "quality": "medium",
+            "output_format": "jpeg",
+            "num_images": 1,
+        }
+    if model == "seedream":
+        return {
+            "prompt": prompt,
+            "image_urls": [image_url],
+            "image_size": "portrait_4_3" if portrait else "landscape_4_3",
+            "num_images": 1,
+        }
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "image_urls": [image_url],
+        "num_images": 1,
+        "output_format": "jpeg",
+        "aspect_ratio": aspect,
+    }
+    if model == "nano_banana_pro":
+        body["resolution"] = "1K"
+    return body
+
+
 WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 ABOUT_MAX = 400
 GEN_TIMEOUT_S = 120
@@ -381,21 +460,31 @@ def style_of(style: str | None) -> tuple[str, str]:
             else "Custom style"
         )
         return label, how
-    return STYLES["gould"]
+    # an unknown style id is a bug, not a request for Gould: paint() fails on the empty prompt
+    return f"Unknown style {style}", ""
 
 
 def flies(sci: str) -> bool:
     return int(hashlib.sha1(sci.encode()).hexdigest()[:4], 16) % 3 == 0
 
 
-def key_for(sci: str, style: str, kind: str = "Aves", dapper: bool = False) -> str:
+def key_for(
+    sci: str,
+    style: str,
+    kind: str = "Aves",
+    dapper: bool = False,
+    model: str = DEFAULT_MODEL,
+) -> str:
     """The painting's file key: species slug, style, flight for a flying
-    bird, dapper for the day's dapper specimen."""
+    bird, dapper for the day's dapper specimen, the model when it is not the
+    default (so switching models never repaints what another made)."""
     key = f"{N.slug(sci)}--{style}"
     if kind == "Aves" and flies(sci):
         key += "--flight"
     if dapper:
         key += "--dapper"
+    if model_of(model) != DEFAULT_MODEL:
+        key += f"--m_{model_of(model)}"
     return key
 
 
@@ -410,8 +499,11 @@ def dapper_pick(scis: list[str], day: str) -> str:
     ]
 
 
-def scene_key(style: str, scene: str, fidelity: str) -> str:
-    return f"scene--{style}--{scene}--{fidelity}"
+def scene_key(style: str, scene: str, fidelity: str, model: str = DEFAULT_MODEL) -> str:
+    key = f"scene--{style}--{scene}--{fidelity}"
+    if model_of(model) != DEFAULT_MODEL:
+        key += f"--m_{model_of(model)}"
+    return key
 
 
 def collage(
@@ -713,18 +805,11 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         if not image_url:
             return fail("no openly licensed reference photo of the species")
         prompt = prompt_for({**job, "how": how}, data_dir)
+    model = model_of(job.get("model"))
     _spend(folder)
-    body = json.dumps(
-        {
-            "prompt": prompt,
-            "image_urls": [image_url],
-            "num_images": 1,
-            "output_format": "jpeg",
-            "aspect_ratio": aspect,
-        }
-    ).encode()
+    body = json.dumps(request_body(model, prompt, image_url, aspect)).encode()
     answer, err = N.get_json(
-        FAL_EDIT,
+        "https://fal.run/" + MODELS[model]["endpoint"],
         fal_key,
         auth_scheme="Key",
         body=body,
@@ -742,9 +827,10 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     )
     if not raw:
         return fail(f"fal.ai sent no picture ({err})")
-    credit = f"AI painting, {label.split(' (')[0].lower()} (fal.ai nano-banana)"
+    mname = MODELS[model]["label"]
+    credit = f"AI painting, {label.split(' (')[0].lower()} ({mname} on fal.ai)"
     if job.get("collage"):
-        credit = f"AI scene, {label.split(' (')[0].lower()} (fal.ai nano-banana), from each specimen's own painting"
+        credit = f"AI scene, {label.split(' (')[0].lower()} ({mname} on fal.ai), from each specimen's own painting"
     elif ref_credit:
         credit += f" after {ref_credit}"
     if (folder / f"{key}.jpg").exists():  # a repaint keeps the old one
@@ -757,6 +843,7 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         "sci": job.get("sci", ""),
         "kind": job.get("kind", ""),
         "prompt_version": PROMPT_VERSION,
+        "model": model,
     }
     if job.get("collage"):
         meta["tag"] = job.get("tag", "")

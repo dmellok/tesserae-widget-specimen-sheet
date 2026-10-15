@@ -742,7 +742,12 @@ def offline_paint(offline_masks):
     prompts: list[dict] = []
 
     def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
-        if "nano-banana" in url:
+        if (
+            "nano-banana" in url
+            or "flux-pro/kontext" in url
+            or "gpt-image" in url
+            or "seedream" in url
+        ):
             prompts.append(json.loads(kw["body"]))
             assert token == "k"
             return json.dumps(
@@ -1022,3 +1027,51 @@ def test_every_style_is_grouped():
         assert label and len(label) < 40, k
     # a style that names the kind gets the noun, and the dapper line fits any of them
     assert "the bird" in P.style_of("drone")[1].replace("{kind}", "bird")
+
+
+def test_models_have_their_own_keys_and_request_shapes(tmp_path, offline_paint):
+    assert P.key_for("Gymnorhina tibicen", "gould", model="nano_banana") == P.key_for(
+        "Gymnorhina tibicen", "gould"
+    )
+    assert P.key_for("Gymnorhina tibicen", "gould", model="flux_kontext").endswith(
+        "--m_flux_kontext"
+    )
+    assert P.model_of("nope") == "nano_banana"
+    for model in P.MODELS:
+        body = P.request_body(model, "p", "https://x/y.jpg", "3:4")
+        assert body["prompt"] == "p" and (
+            "image_url" in body or body["image_urls"] == ["https://x/y.jpg"]
+        )
+    assert P.request_body("gpt_image", "p", "u", "4:3")["image_size"] == "landscape_4_3"
+    real = N.http.side_effect
+    urls: list[str] = []
+
+    def spy(url, token="", accept="application/json", **kw):
+        urls.append(url)
+        return real(url, token, accept, **kw)
+
+    N.http.side_effect = spy
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "model": "flux_kontext",
+        "count": "4",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
+    _settle_paint()
+    assert any(u == "https://fal.run/fal-ai/flux-pro/kontext" for u in urls)
+    keys = [f.stem for f in (tmp_path / "gen").glob("*--m_flux_kontext.jpg")]
+    assert len(keys) == 3
+    meta = json.loads((tmp_path / "gen" / f"{keys[0]}.json").read_text())
+    assert (
+        meta["model"] == "flux_kontext"
+        and "FLUX.1 Kontext Pro on fal.ai" in meta["credit"]
+    )
+    g = server._gallery(tmp_path, 12)
+    assert all(
+        e["model"] == "FLUX.1 Kontext Pro" for e in g["paintings"] if e["active"]
+    )
+    # the unknown-style fallback is gone: an unknown id fails rather than painting Gould
+    assert P.style_of("nope")[1] == ""

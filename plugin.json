@@ -908,6 +908,38 @@
       "help": "Describe the medium and the look; the widget adds the species, its photo and the white paper. For example: an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, ochre and dusty rose, on plain pure white paper."
     },
     {
+      "name": "model",
+      "type": "select",
+      "label": "Model",
+      "default": "nano_banana",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away.",
+      "choices": [
+        {
+          "value": "nano_banana",
+          "label": "Nano Banana (about US$0.04)"
+        },
+        {
+          "value": "nano_banana_pro",
+          "label": "Nano Banana Pro (about US$0.15)"
+        },
+        {
+          "value": "flux_kontext",
+          "label": "FLUX.1 Kontext Pro (about US$0.04)"
+        },
+        {
+          "value": "gpt_image",
+          "label": "GPT Image 2 (about US$0.05)"
+        },
+        {
+          "value": "seedream",
+          "label": "Seedream 4 (about US$0.03)"
+        }
+      ]
+    },
+    {
       "name": "dapper",
       "type": "boolean",
       "label": "One dapper specimen a day",

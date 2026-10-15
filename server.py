@@ -510,7 +510,13 @@ def _attach_pictures(
         if not gen or not row.get("sci"):
             return None
         dapper = row["sci"] == gen.get("dapper_sci")
-        key = P.key_for(row["sci"], gen["style"], row.get("kind") or "Aves", dapper)
+        key = P.key_for(
+            row["sci"],
+            gen["style"],
+            row.get("kind") or "Aves",
+            dapper,
+            gen.get("model", P.DEFAULT_MODEL),
+        )
         pic = _painting(key, data_dir, levels)
         if pic:
             states["painted"] = states.get("painted", 0) + 1
@@ -524,6 +530,7 @@ def _attach_pictures(
                 "sci": row["sci"],
                 "kind": row.get("kind") or "Aves",
                 "how": gen.get("how") or "",
+                "model": gen.get("model", P.DEFAULT_MODEL),
             }
             if row.get("ref"):
                 job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
@@ -745,6 +752,7 @@ def fetch(
         )
         art_style = P.register_custom(how)
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
+    model = P.model_of(options.get("model"))
     arrangement = (
         _choice(options.get("arrangement"), ARRANGEMENTS)
         if pictures == "gen"
@@ -965,6 +973,7 @@ def fetch(
         gen = {
             "style": art_style,
             "how": how,
+            "model": model,
             "cap": P.daily_cap(settings),
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
@@ -1077,7 +1086,7 @@ def _scene(
     )
     if not made:
         return None, ["composing the scene"]
-    skey = P.scene_key(gen["style"], scene, fidelity)
+    skey = P.scene_key(gen["style"], scene, fidelity, gen.get("model", P.DEFAULT_MODEL))
     meta = N.read_json(folder / f"{skey}.json", {})
     meta = meta if isinstance(meta, dict) else {}
     have = (folder / f"{skey}.jpg").exists()
@@ -1092,6 +1101,7 @@ def _scene(
                 "key": skey,
                 "style": gen["style"],
                 "how": gen.get("how") or "",
+                "model": gen.get("model", P.DEFAULT_MODEL),
                 "name": "the scene",
                 "sci": "",
                 "kind": "",
@@ -1149,8 +1159,8 @@ def _scene(
 # The paintings page
 # ----------------------------------------------------------------------
 
-_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z]{1,20}){0,3}")
-_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z]{1,20}){0,3})__(\d{8}-\d{6})")
+_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,4}")
+_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,4})__(\d{8}-\d{6})")
 
 
 def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
@@ -1173,6 +1183,14 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
                 "style_label": P.style_of(style)[0],
                 "flight": "flight" in parts[2:],
                 "dapper": "dapper" in parts[2:],
+                "model": next(
+                    (
+                        P.MODELS[x[2:]]["label"]
+                        for x in parts[2:]
+                        if x.startswith("m_") and x[2:] in P.MODELS
+                    ),
+                    "",
+                ),
                 "active": None,
                 "archive": [],
                 "error": None,
@@ -1269,6 +1287,7 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
             (g, [(k, P.STYLES[k][0]) for k in ids]) for g, ids in P.STYLE_GROUPS
         ],
         "kinds": [(k, v[0]) for k, v in K.KINDS.items()],
+        "models": [(k, f"{v['label']} ({v['cost']})") for k, v in P.MODELS.items()],
     }
 
 
@@ -1284,6 +1303,9 @@ def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
     }
     if e.get("how"):
         job["how"] = e["how"]
+    for part in e["slug"].split("--")[2:]:
+        if part.startswith("m_"):
+            job["model"] = part[2:]
     return job
 
 
@@ -1415,8 +1437,9 @@ def blueprint() -> Any:
             )
             job["style"] = P.register_custom(how)
             job["how"] = how
+        job["model"] = P.model_of(request.form.get("model"))
         job["key"] = P.key_for(
-            sci, job["style"], kind, request.form.get("dapper") == "1"
+            sci, job["style"], kind, request.form.get("dapper") == "1", job["model"]
         )
         start(job, f"the {name[:80]}")
         return back()

@@ -52,6 +52,9 @@
         <optgroup label="Your own"><option value="custom">Your own prompt</option></optgroup>
       </select>
       <label class="bb-check bb-dapper"><input type="checkbox" name="dapper" value="1"> Dapper (a hat, perhaps a monocle)</label>
+      <select name="model" aria-label="Model" class="bb-model">
+        {% for value, label in g.models %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
     </div>
     <div class="field">
       <label for="bb-how">Your own prompt</label>
@@ -113,7 +116,7 @@
         <div class="bb-title">
           <h3>{{ b.name }}</h3>
           {% if b.sci %}<i>{{ b.sci }}</i>{% endif %}
-          <span class="bb-style">{{ b.style_label }}{% if b.flight %} · in flight{% endif %}{% if b.dapper %} · dapper{% endif %}</span>
+          <span class="bb-style">{{ b.style_label }}{% if b.flight %} · in flight{% endif %}{% if b.dapper %} · dapper{% endif %}{% if b.model %} · {{ b.model }}{% endif %}</span>
         </div>
         {% if b.painting %}<span class="bb-tag">painting…</span>{% elif b.cut == 'ready' %}<span class="bb-tag bb-tag--ok" title="Cut out by the model">cut out</span>{% elif b.cut == 'bad' %}<span class="bb-tag" title="{{ b.cut_why }}">no cut-out</span>{% endif %}
       </header>
@@ -265,6 +268,7 @@
   .bb-paint .field { margin: 0; }
   .bb-paint .actions { margin: 24px 0 0; }
   .bb-dapper { margin-top: 6px; font-size: 12px; }
+  .bb-model { margin-top: 6px; width: 100%; }
   @media (max-width: 640px) { .bb-paint { grid-template-columns: 1fr; } .bb-paint .actions { margin: 0; } }
   .bb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: start; }
   .bb-bird { border: 1px solid var(--t-border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--t-surface); }
