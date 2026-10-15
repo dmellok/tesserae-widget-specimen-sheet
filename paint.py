@@ -956,9 +956,10 @@ def about(sci: str, data_dir: Path) -> str:
 
 
 PLATE_NOTE = (
-    " The reference is an old illustrated plate: take the bird's shape and markings"
-    " from it, but paint it afresh in the style above rather than copying the"
-    " plate's own brushwork or paper."
+    " The reference is an old illustrated plate, a guide to the bird's shape and"
+    " markings only. Make a new painting of this bird in the style above, with its"
+    " own pose, perch and brushwork: do not reproduce the plate, its composition,"
+    " its foliage or its pale paper edge."
 )
 BOTH_NOTE = (
     " A second reference picture is an old illustrated plate of the same species:"

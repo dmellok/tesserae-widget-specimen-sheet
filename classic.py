@@ -101,7 +101,7 @@ def artist_of(entry: dict[str, Any]) -> str:
 
 
 def credit_of(entry: dict[str, Any]) -> str:
-    return f"classic plate after {artist_of(entry)}, via Fugleramme · {LICENCE}"
+    return f"a plate by {artist_of(entry)}, via Fugleramme · {LICENCE}"
 
 
 def credit_for(artists: list[str]) -> str:
