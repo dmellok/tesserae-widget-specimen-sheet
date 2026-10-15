@@ -608,22 +608,74 @@ def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
         N.write(data_dir / "held_paints.json", json.dumps(got).encode())
 
 
-def start_held(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
-    """Start what was held, within the day's limit. (started, held before)."""
+WANTED_S = 30 * 86400
+
+
+def _note_wanted(data_dir: Path, gen: dict[str, Any]) -> None:
+    """The painting settings a sheet last rendered with, so Render now can paint
+    the species on a frame in them without waiting for the next refresh."""
+    path = data_dir / "wanted_paints.json"
+    now = time.time()
+    got = N.read_json(path, {})
+    got = got if isinstance(got, dict) else {}
+    got = {
+        k: v
+        for k, v in got.items()
+        if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S
+    }
+    model = gen.get("model", P.DEFAULT_MODEL)
+    got[f"{gen['style']}|{model}|{gen.get('ref_mode', 'photo')}"] = {
+        "style": gen["style"],
+        "how": gen.get("how") or "",
+        "model": model,
+        "ref_mode": gen.get("ref_mode", "photo"),
+        "at": now,
+    }
+    N.write(path, json.dumps(got).encode())
+
+
+def wanted_configs(data_dir: Path) -> list[dict[str, Any]]:
+    got = N.read_json(data_dir / "wanted_paints.json", {})
+    if not isinstance(got, dict):
+        return []
+    now = time.time()
+    return [
+        v
+        for v in got.values()
+        if isinstance(v, dict)
+        and now - float(v.get("at") or 0) < WANTED_S
+        and (v.get("style") in P.STYLES or P._CUSTOM_RE.fullmatch(str(v.get("style"))))
+    ]
+
+
+def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
+    """Paint what is missing now: what a button-mode refresh held, plus the
+    species on a frame in the last three days in each setting a sheet last used.
+    (started, found)."""
     folder = P.gen_dir(data_dir)
-    jobs = list(held(data_dir).values())
-    ready = []
-    for job in jobs:
-        if (folder / f"{job['key']}.jpg").exists():
-            continue
-        if job.get("collage") and not Path(job["collage"]).exists():
-            continue
-        ready.append(job)
+    jobs = {j["key"]: j for j in held(data_dir).values()}
+    for cfg in wanted_configs(data_dir):
+        for name, sci, kind in on_frame_species(data_dir):
+            key = P.key_for(sci, cfg["style"], kind, False, cfg["model"])
+            jobs.setdefault(
+                key,
+                _paint_job(
+                    key,
+                    {"name": name, "sci": sci, "kind": kind},
+                    cfg,
+                ),
+            )
+    ready = [
+        j
+        for j in jobs.values()
+        if not (folder / f"{j['key']}.jpg").exists()
+        and not (j.get("collage") and not Path(j["collage"]).exists())
+    ]
     _unhold(data_dir)
     room = max(0, cap - P.budget_used(folder))
     begin = [j for j in ready if P.state(j["key"], folder) == "none"][:room]
     P.start_batch(begin, data_dir, fal_key, cap)
-    return len(begin), len(jobs)
+    return len(begin), len(ready)
 
 
 def _attach_pictures(
@@ -1181,6 +1233,8 @@ def fetch(
             if dapper
             else "",
         }
+    if gen and not demo:
+        _note_wanted(data_dir, gen)
     mask_states = _attach_pictures(
         shown, base, token, data_dir, levels, fal_key, gen, plates == "classic"
     )
@@ -1502,12 +1556,45 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
         "running": sorted(running),
         "styles": [(k, v[0]) for k, v in P.STYLES.items()],
         "custom_example": P.CUSTOM_EXAMPLE,
+        "style_tree": _style_tree(ordered),
         "style_groups": [
             (g, [(k, P.STYLES[k][0]) for k in ids]) for g, ids in P.STYLE_GROUPS
         ],
         "kinds": [(k, v[0]) for k, v in K.KINDS.items()],
         "models": [(k, f"{v['label']} ({v['cost']})") for k, v in P.MODELS.items()],
     }
+
+
+def _style_tree(paintings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The styles by kind and subgroup, each with a painting to preview it: the
+    preview species' if there is one, else the newest painting in that style."""
+    shown: dict[str, tuple[bool, str]] = {}
+    for e in paintings:
+        if not e.get("active") or e.get("dapper") or e.get("flight"):
+            continue
+        mine = e["sci"] == P.PREVIEW_SPECIES[1] and not e.get("model")
+        if e["style"] not in shown or (mine and not shown[e["style"]][0]):
+            shown[e["style"]] = (mine, e["active"]["file"])
+    return [
+        {
+            "name": top,
+            "subs": [
+                {
+                    "name": sub,
+                    "styles": [
+                        {
+                            "id": i,
+                            "label": P.STYLES[i][0],
+                            "file": shown.get(i, (False, ""))[1],
+                        }
+                        for i in ids
+                    ],
+                }
+                for sub, ids in subs
+            ],
+        }
+        for top, subs in P.STYLE_TREE
+    ]
 
 
 def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
@@ -1613,6 +1700,7 @@ def blueprint() -> Any:
             known=known_species(dd),
             has_key=bool(fal_key()),
             held=len(held(dd)),
+            wanted=len(wanted_configs(dd)),
         )
 
     @bp.get("/progress")
@@ -1689,6 +1777,23 @@ def blueprint() -> Any:
             sci, job["style"], kind, request.form.get("dapper") == "1", job["model"]
         )
         start(job, f"the {name[:80]}")
+        return back()
+
+    @bp.post("/preview")
+    def preview() -> Any:
+        style = request.form.get("style", "")
+        if style not in P.STYLES:
+            abort(400)
+        name, sci, kind = P.PREVIEW_SPECIES
+        job = {
+            "style": style,
+            "name": name,
+            "sci": sci,
+            "kind": kind,
+            "model": P.DEFAULT_MODEL,
+        }
+        job["key"] = P.key_for(sci, style, kind, False, job["model"])
+        start(job, f"a preview in {P.STYLES[style][0]}")
         return back()
 
     @bp.post("/<slug>/repaint")
@@ -1779,18 +1884,21 @@ def blueprint() -> Any:
         retired(retire(request.form.getlist("keys")))
         return back()
 
-    @bp.post("/start-held")
-    def start_held_route() -> Any:
+    @bp.post("/render-now")
+    def render_now_route() -> Any:
         key = fal_key()
         if not key:
             flash("Add a fal.ai key in this widget's settings first.", "warn")
             return back()
-        n, before = start_held(data_dir(), key, cap())
-        if not before:
-            flash("Nothing is waiting to be painted.", "info")
+        n, found = render_now(data_dir(), key, cap())
+        if not found:
+            flash(
+                "Nothing is missing: every species on a frame already has its painting. A sheet that has not rendered yet shows nothing here; open the dashboard or the editor once.",
+                "info",
+            )
         elif not n:
             flash(
-                f"To-day's limit of {cap()} paintings is used up, or the waiting ones are already made. Raise it in this widget's settings.",
+                f"To-day's limit of {cap()} paintings is used up, or those are already being painted. Raise it in this widget's settings.",
                 "warn",
             )
         else:

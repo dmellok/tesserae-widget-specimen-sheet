@@ -819,342 +819,342 @@
         {
           "value": "gould",
           "label": "Hand-coloured lithograph (Gould)",
-          "group": "Plates and prints"
+          "group": "Realistic · Plates and paintings"
         },
         {
           "value": "audubon",
           "label": "Watercolour after Audubon",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "engraving",
-          "label": "Black-ink engraving",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "woodblock",
-          "label": "Japanese woodblock print",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "linocut",
-          "label": "Linocut",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "harper",
-          "label": "Mid-century modern (Harper)",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "watercolour",
-          "label": "Modern watercolour",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "sketch",
-          "label": "Field sketch",
-          "group": "Plates and prints"
-        },
-        {
-          "value": "mucha",
-          "label": "Art Nouveau (Mucha)",
-          "group": "Colour, clean"
-        },
-        {
-          "value": "gouache",
-          "label": "Gouache poster",
-          "group": "Colour, clean"
+          "group": "Realistic · Plates and paintings"
         },
         {
           "value": "keulemans",
           "label": "Scientific plate (Keulemans)",
-          "group": "Colour, clean"
+          "group": "Realistic · Plates and paintings"
         },
         {
-          "value": "stamp",
-          "label": "Vintage stamp",
-          "group": "Colour, clean"
+          "value": "watercolour",
+          "label": "Modern watercolour",
+          "group": "Realistic · Plates and paintings"
         },
         {
-          "value": "stainedglass",
-          "label": "Stained glass",
-          "group": "Colour, clean"
+          "value": "engraving",
+          "label": "Black-ink engraving",
+          "group": "Realistic · Plates and paintings"
         },
         {
-          "value": "risograph",
-          "label": "Risograph print",
-          "group": "Colour, clean"
-        },
-        {
-          "value": "scraperboard",
-          "label": "Scraperboard",
-          "group": "Black and white, for 1-bit panels"
-        },
-        {
-          "value": "woodcut",
-          "label": "Woodcut",
-          "group": "Black and white, for 1-bit panels"
-        },
-        {
-          "value": "stipple",
-          "label": "Stipple",
-          "group": "Black and white, for 1-bit panels"
-        },
-        {
-          "value": "silhouette",
-          "label": "Silhouette",
-          "group": "Black and white, for 1-bit panels"
-        },
-        {
-          "value": "inkbrush",
-          "label": "Ink brush",
-          "group": "Black and white, for 1-bit panels"
+          "value": "sketch",
+          "label": "Field sketch",
+          "group": "Realistic · Plates and paintings"
         },
         {
           "value": "pencil",
           "label": "Pencil study",
-          "group": "Four greys"
+          "group": "Realistic · Greys and tones, for grey panels"
         },
         {
           "value": "litho_toned",
           "label": "Lithograph, toned",
-          "group": "Four greys"
-        },
-        {
-          "value": "halftone",
-          "label": "Halftone print",
-          "group": "Four greys"
-        },
-        {
-          "value": "blueprint",
-          "label": "Technical drawing",
-          "group": "Four greys"
+          "group": "Realistic · Greys and tones, for grey panels"
         },
         {
           "value": "platinum",
           "label": "Platinum print",
-          "group": "Greyscale"
+          "group": "Realistic · Greys and tones, for grey panels"
         },
         {
           "value": "charcoal",
           "label": "Charcoal",
-          "group": "Greyscale"
+          "group": "Realistic · Greys and tones, for grey panels"
         },
         {
           "value": "mezzotint",
           "label": "Mezzotint",
-          "group": "Greyscale"
+          "group": "Realistic · Greys and tones, for grey panels"
         },
         {
-          "value": "anime",
-          "label": "Anime",
-          "group": "Anime"
-        },
-        {
-          "value": "shonen",
-          "label": "Shonen action",
-          "group": "Anime"
-        },
-        {
-          "value": "manga",
-          "label": "Manga ink",
-          "group": "Anime"
-        },
-        {
-          "value": "anime_retro",
-          "label": "Retro 90s anime",
-          "group": "Anime"
-        },
-        {
-          "value": "pixel",
-          "label": "Pixel art",
-          "group": "Playful"
-        },
-        {
-          "value": "origami",
-          "label": "Origami",
-          "group": "Playful"
-        },
-        {
-          "value": "hats",
-          "label": "Hats and monocles",
-          "group": "Playful"
-        },
-        {
-          "value": "surveillance",
-          "label": "Surveillance unit (watercolour)",
-          "group": "Birds aren't real"
-        },
-        {
-          "value": "cctv",
-          "label": "Camera head (watercolour)",
-          "group": "Birds aren't real"
-        },
-        {
-          "value": "patent",
-          "label": "Patent drawing",
-          "group": "Birds aren't real"
-        },
-        {
-          "value": "automaton",
-          "label": "Clockwork automaton",
-          "group": "Birds aren't real"
-        },
-        {
-          "value": "drone",
-          "label": "Drone",
-          "group": "Birds aren't real"
+          "value": "mucha",
+          "label": "Art Nouveau (Mucha)",
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "artnouveau",
           "label": "Art Nouveau illustration",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "artsandcrafts",
           "label": "Arts and Crafts (Morris)",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "jugendstil",
           "label": "Jugendstil",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "glasgow",
           "label": "Glasgow style",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "secession",
           "label": "Vienna Secession",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "deco",
           "label": "Art Deco",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "beardsley",
           "label": "Beardsley ink",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "nouveauglass",
           "label": "Nouveau stained window",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
           "value": "fairytale",
           "label": "Golden Age fairy-tale plate",
-          "group": "Nouveau and Deco"
+          "group": "Decorative · Nouveau and Deco"
         },
         {
-          "value": "japonisme",
-          "label": "Japonisme",
-          "group": "Around the world"
+          "value": "woodblock",
+          "label": "Japanese woodblock print",
+          "group": "Decorative · Prints and posters"
         },
         {
-          "value": "chinoiserie",
-          "label": "Chinoiserie",
-          "group": "Around the world"
+          "value": "linocut",
+          "label": "Linocut",
+          "group": "Decorative · Prints and posters"
         },
         {
-          "value": "persian",
-          "label": "Persian miniature",
-          "group": "Around the world"
+          "value": "harper",
+          "label": "Mid-century modern (Harper)",
+          "group": "Decorative · Prints and posters"
         },
         {
-          "value": "bestiary",
-          "label": "Medieval bestiary",
-          "group": "Around the world"
+          "value": "gouache",
+          "label": "Gouache poster",
+          "group": "Decorative · Prints and posters"
         },
         {
-          "value": "byzantine",
-          "label": "Byzantine icon",
-          "group": "Around the world"
-        },
-        {
-          "value": "folkart",
-          "label": "Folk art",
-          "group": "Around the world"
-        },
-        {
-          "value": "delft",
-          "label": "Delft tile",
-          "group": "Around the world"
-        },
-        {
-          "value": "sumie",
-          "label": "Ink and wash",
-          "group": "Around the world"
-        },
-        {
-          "value": "cigarette",
-          "label": "Edwardian cigarette card",
-          "group": "Around the world"
-        },
-        {
-          "value": "felt",
-          "label": "Needle felt",
-          "group": "Craft"
-        },
-        {
-          "value": "clay",
-          "label": "Clay figure",
-          "group": "Craft"
-        },
-        {
-          "value": "bricks",
-          "label": "Brick-built",
-          "group": "Craft"
+          "value": "risograph",
+          "label": "Risograph print",
+          "group": "Decorative · Prints and posters"
         },
         {
           "value": "screenprint",
           "label": "Screen print poster",
-          "group": "Craft"
+          "group": "Decorative · Prints and posters"
         },
         {
-          "value": "embroidery",
-          "label": "Embroidery",
-          "group": "Craft"
+          "value": "stamp",
+          "label": "Vintage stamp",
+          "group": "Decorative · Prints and posters"
+        },
+        {
+          "value": "japonisme",
+          "label": "Japonisme",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "chinoiserie",
+          "label": "Chinoiserie",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "persian",
+          "label": "Persian miniature",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "bestiary",
+          "label": "Medieval bestiary",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "byzantine",
+          "label": "Byzantine icon",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "folkart",
+          "label": "Folk art",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "delft",
+          "label": "Delft tile",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "sumie",
+          "label": "Ink and wash",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "cigarette",
+          "label": "Edwardian cigarette card",
+          "group": "Decorative · Around the world"
+        },
+        {
+          "value": "stainedglass",
+          "label": "Stained glass",
+          "group": "Decorative · Glass, thread and paper"
         },
         {
           "value": "mosaic",
           "label": "Mosaic",
-          "group": "Craft"
+          "group": "Decorative · Glass, thread and paper"
+        },
+        {
+          "value": "embroidery",
+          "label": "Embroidery",
+          "group": "Decorative · Glass, thread and paper"
         },
         {
           "value": "papercut",
           "label": "Paper cut",
-          "group": "Craft"
+          "group": "Decorative · Glass, thread and paper"
         },
         {
           "value": "pointillism",
           "label": "Pointillism",
-          "group": "Craft"
+          "group": "Decorative · Glass, thread and paper"
+        },
+        {
+          "value": "scraperboard",
+          "label": "Scraperboard",
+          "group": "Decorative · Black and white, for 1-bit panels"
+        },
+        {
+          "value": "woodcut",
+          "label": "Woodcut",
+          "group": "Decorative · Black and white, for 1-bit panels"
+        },
+        {
+          "value": "stipple",
+          "label": "Stipple",
+          "group": "Decorative · Black and white, for 1-bit panels"
+        },
+        {
+          "value": "silhouette",
+          "label": "Silhouette",
+          "group": "Decorative · Black and white, for 1-bit panels"
+        },
+        {
+          "value": "inkbrush",
+          "label": "Ink brush",
+          "group": "Decorative · Black and white, for 1-bit panels"
+        },
+        {
+          "value": "halftone",
+          "label": "Halftone print",
+          "group": "Decorative · Graphic greys, for grey panels"
+        },
+        {
+          "value": "blueprint",
+          "label": "Technical drawing",
+          "group": "Decorative · Graphic greys, for grey panels"
+        },
+        {
+          "value": "anime",
+          "label": "Anime",
+          "group": "Fun · Anime"
+        },
+        {
+          "value": "shonen",
+          "label": "Shonen action",
+          "group": "Fun · Anime"
+        },
+        {
+          "value": "manga",
+          "label": "Manga ink",
+          "group": "Fun · Anime"
+        },
+        {
+          "value": "anime_retro",
+          "label": "Retro 90s anime",
+          "group": "Fun · Anime"
+        },
+        {
+          "value": "pixel",
+          "label": "Pixel art",
+          "group": "Fun · Made of things"
+        },
+        {
+          "value": "origami",
+          "label": "Origami",
+          "group": "Fun · Made of things"
+        },
+        {
+          "value": "felt",
+          "label": "Needle felt",
+          "group": "Fun · Made of things"
+        },
+        {
+          "value": "clay",
+          "label": "Clay figure",
+          "group": "Fun · Made of things"
+        },
+        {
+          "value": "bricks",
+          "label": "Brick-built",
+          "group": "Fun · Made of things"
         },
         {
           "value": "grumpy",
           "label": "Grumpy (plate style)",
-          "group": "Characters"
+          "group": "Fun · Characters"
         },
         {
           "value": "superhero",
           "label": "Superhero",
-          "group": "Characters"
+          "group": "Fun · Characters"
         },
         {
           "value": "portrait",
           "label": "Victorian portrait",
-          "group": "Characters"
+          "group": "Fun · Characters"
         },
         {
           "value": "pirate",
           "label": "Pirate",
-          "group": "Characters"
+          "group": "Fun · Characters"
+        },
+        {
+          "value": "hats",
+          "label": "Hats and monocles",
+          "group": "Fun · Characters"
+        },
+        {
+          "value": "surveillance",
+          "label": "Surveillance unit (watercolour)",
+          "group": "Fun · Birds aren't real"
+        },
+        {
+          "value": "cctv",
+          "label": "Camera head (watercolour)",
+          "group": "Fun · Birds aren't real"
+        },
+        {
+          "value": "patent",
+          "label": "Patent drawing",
+          "group": "Fun · Birds aren't real"
+        },
+        {
+          "value": "automaton",
+          "label": "Clockwork automaton",
+          "group": "Fun · Birds aren't real"
+        },
+        {
+          "value": "drone",
+          "label": "Drone",
+          "group": "Fun · Birds aren't real"
         },
         {
           "value": "custom",
@@ -1162,7 +1162,7 @@
           "group": "Your own"
         }
       ],
-      "help": "38 styles in eight groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
+      "help": "68 styles in three kinds: realistic (plates, paintings and tonal studies), decorative (Nouveau and Deco, prints, craft, black and white) and fun (anime, made of things, characters, birds aren't real). The black-and-white group is drawn without mid-tones for 1-bit panels; the grey groups suit the grey panels; the rest are for colour. Widgets, Specimen Sheet shows a preview of each style."
     },
     {
       "name": "art_prompt",

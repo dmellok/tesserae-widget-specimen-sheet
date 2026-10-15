@@ -21,18 +21,21 @@
     {% endif %}
     {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
   </div>
-  {% if held %}
   <div class="bb-held">
-    <strong>{{ held }} painting{{ '' if held == 1 else 's' }} waiting.</strong>
-    A sheet set to start paintings with a button found these and held them back; nothing is spent until you press Start.
-    <form method="post" action="{{ url_for('specimen_sheet_admin.start_held_route') }}" class="bb-inline">
-      <button type="submit" {% if not has_key %}disabled{% endif %}><i class="ph ph-play" aria-hidden="true"></i> Start painting</button>
+    <div>
+      <strong>{% if held %}{{ held }} painting{{ '' if held == 1 else 's' }} waiting.{% else %}Render now{% endif %}</strong>
+      {% if held %}A sheet set to start paintings with a button found these and held them back; nothing is spent until you press Start.
+      {% else %}Paints what the sheets on your frames are missing, in the styles they last used, within the daily limit. {% if not wanted %}No sheet has rendered with AI paintings yet; open its dashboard or the editor once so it can tell this page what it wants.{% endif %}{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('specimen_sheet_admin.render_now_route') }}" class="bb-inline">
+      <button type="submit" {% if not has_key %}disabled title="Add a fal.ai key in this widget's settings"{% endif %}><i class="ph ph-play" aria-hidden="true"></i> {{ 'Start painting' if held else 'Render now' }}</button>
     </form>
+    {% if held %}
     <form method="post" action="{{ url_for('specimen_sheet_admin.clear_held') }}" class="bb-inline">
       <button type="submit" class="ghost">Drop them</button>
     </form>
+    {% endif %}
   </div>
-  {% endif %}
   <div id="bb-queue" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('specimen_sheet_admin.progress') }}"
        data-stop="{{ url_for('specimen_sheet_admin.stop_one') }}" data-stop-all="{{ url_for('specimen_sheet_admin.stop_all') }}">
     <div class="bb-queue-head">
@@ -69,6 +72,7 @@
         {% for group, styles in g.style_groups %}<optgroup label="{{ group }}">{% for value, label in styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
         <optgroup label="Your own"><option value="custom">Your own prompt</option></optgroup>
       </select>
+      <p class="bb-meta bb-prev" id="bb-prev" hidden></p>
       <label class="bb-check bb-dapper"><input type="checkbox" name="dapper" value="1"> Dapper (a hat, perhaps a monocle)</label>
       <select name="model" aria-label="Model" class="bb-model">
         {% for value, label in g.models %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
@@ -88,6 +92,34 @@
     </select>
     <button type="submit" class="ghost" {% if not has_key %}disabled{% endif %}><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint the species on a frame in this style</button>
   </form>
+</section>
+
+<section class="card">
+  {{ card_head('Styles', icon_name='palette', level=2,
+               blurb='Every style, grouped as realistic, decorative or fun, with a preview painted from a Great Tit. A style without one has a button that paints it (about US$0.04); the painting is kept and the sheet uses it whenever a Great Tit is shown.') }}
+  {% for top in g.style_tree %}
+  <details class="bb-kind-group" {% if loop.first %}open{% endif %}>
+    <summary><strong>{{ top.name }}</strong> <span class="bb-meta">{{ top.subs|map(attribute='styles')|map('length')|sum }} styles</span></summary>
+    {% for sub in top.subs %}
+    <h4 class="bb-sub">{{ sub.name }}</h4>
+    <div class="bb-styles">
+      {% for st in sub.styles %}
+      <figure class="bb-style-tile" data-style-id="{{ st.id }}">
+        {% if st.file %}
+        <a href="{{ url_for('specimen_sheet_admin.image', name=st.file) }}" data-lightbox aria-label="{{ st.label }}"><img src="{{ url_for('specimen_sheet_admin.image', name=st.file) }}" alt="{{ st.label }}" loading="lazy"></a>
+        {% else %}
+        <form method="post" action="{{ url_for('specimen_sheet_admin.preview') }}" class="bb-style-empty">
+          <input type="hidden" name="style" value="{{ st.id }}">
+          <button type="submit" class="ghost" {% if not has_key %}disabled{% endif %}><i class="ph ph-paint-brush" aria-hidden="true"></i> Preview</button>
+        </form>
+        {% endif %}
+        <figcaption>{{ st.label }}</figcaption>
+      </figure>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </details>
+  {% endfor %}
 </section>
 
 <section class="card">
@@ -307,7 +339,24 @@
   })();
 </script>
 
+<script>
+  (function () {
+    const sel = document.getElementById('bb-style'), box = document.getElementById('bb-prev');
+    if (!sel || !box) return;
+    const show = () => {
+      const tile = document.querySelector('[data-style-id="' + sel.value + '"] img');
+      box.hidden = sel.value === 'custom';
+      box.textContent = '';
+      if (tile) { const im = document.createElement('img'); im.src = tile.src; im.alt = ''; im.className = 'bb-prev-img'; box.append(im); }
+      else box.textContent = 'No preview of this style yet: use its Preview button under Styles.';
+    };
+    sel.addEventListener('change', show);
+    show();
+  })();
+</script>
+
 <style>
+  .bb-prev-img { width: 120px; height: 120px; object-fit: contain; background: #fff; border: 1px solid var(--t-border); border-radius: 6px; display: block; }
   .bb-inline { display: inline; margin: 0; }
   .bb-link { padding: 0 4px; font-size: inherit; text-decoration: underline; }
   .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
@@ -340,6 +389,15 @@
   .bb-paint .field { margin: 0; }
   .bb-paint .actions { margin: 24px 0 0; }
   .bb-dapper { margin-top: 6px; font-size: 12px; }
+  .bb-kind-group { margin: 0 0 10px; }
+  .bb-kind-group > summary { cursor: pointer; padding: 6px 0; }
+  .bb-sub { margin: 14px 0 8px; font-size: 13px; color: var(--t-fg-soft); }
+  .bb-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+  .bb-style-tile { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+  .bb-style-tile img, .bb-style-empty { width: 100%; aspect-ratio: 1; border: 1px solid var(--t-border); border-radius: 6px; background: #fff; }
+  .bb-style-tile img { object-fit: contain; display: block; }
+  .bb-style-empty { display: flex; align-items: center; justify-content: center; margin: 0; background: var(--t-surface); }
+  .bb-style-tile figcaption { font-size: 12px; line-height: 1.25; }
   .bb-model { margin-top: 6px; width: 100%; }
   @media (max-width: 640px) { .bb-paint { grid-template-columns: 1fr; } .bb-paint .actions { margin: 0; } }
   .bb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: start; }

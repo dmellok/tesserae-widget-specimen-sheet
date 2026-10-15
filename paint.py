@@ -431,84 +431,99 @@ STYLES.update(
         ),
     }
 )
-STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+# Three kinds of look, each in subgroups: realistic (true to the bird, as a
+# naturalist's plate or study), decorative (the bird as a pattern, a print or a
+# craft) and fun (a joke, a cartoon, a costume).
+STYLE_TREE: tuple[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], ...] = (
     (
-        "Plates and prints",
+        "Realistic",
         (
-            "gould",
-            "audubon",
-            "engraving",
-            "woodblock",
-            "linocut",
-            "harper",
-            "watercolour",
-            "sketch",
+            (
+                "Plates and paintings",
+                ("gould", "audubon", "keulemans", "watercolour", "engraving", "sketch"),
+            ),
+            (
+                "Greys and tones, for grey panels",
+                ("pencil", "litho_toned", "platinum", "charcoal", "mezzotint"),
+            ),
         ),
     ),
     (
-        "Colour, clean",
-        ("mucha", "gouache", "keulemans", "stamp", "stainedglass", "risograph"),
-    ),
-    (
-        "Black and white, for 1-bit panels",
-        ("scraperboard", "woodcut", "stipple", "silhouette", "inkbrush"),
-    ),
-    ("Four greys", ("pencil", "litho_toned", "halftone", "blueprint")),
-    ("Greyscale", ("platinum", "charcoal", "mezzotint")),
-    ("Anime", ("anime", "shonen", "manga", "anime_retro")),
-    ("Playful", ("pixel", "origami", "hats")),
-    ("Birds aren't real", ("surveillance", "cctv", "patent", "automaton", "drone")),
-    (
-        "Nouveau and Deco",
+        "Decorative",
         (
-            "artnouveau",
-            "artsandcrafts",
-            "jugendstil",
-            "glasgow",
-            "secession",
-            "deco",
-            "beardsley",
-            "nouveauglass",
-            "fairytale",
+            (
+                "Nouveau and Deco",
+                (
+                    "mucha",
+                    "artnouveau",
+                    "artsandcrafts",
+                    "jugendstil",
+                    "glasgow",
+                    "secession",
+                    "deco",
+                    "beardsley",
+                    "nouveauglass",
+                    "fairytale",
+                ),
+            ),
+            (
+                "Prints and posters",
+                (
+                    "woodblock",
+                    "linocut",
+                    "harper",
+                    "gouache",
+                    "risograph",
+                    "screenprint",
+                    "stamp",
+                ),
+            ),
+            (
+                "Around the world",
+                (
+                    "japonisme",
+                    "chinoiserie",
+                    "persian",
+                    "bestiary",
+                    "byzantine",
+                    "folkart",
+                    "delft",
+                    "sumie",
+                    "cigarette",
+                ),
+            ),
+            (
+                "Glass, thread and paper",
+                ("stainedglass", "mosaic", "embroidery", "papercut", "pointillism"),
+            ),
+            (
+                "Black and white, for 1-bit panels",
+                ("scraperboard", "woodcut", "stipple", "silhouette", "inkbrush"),
+            ),
+            ("Graphic greys, for grey panels", ("halftone", "blueprint")),
         ),
     ),
     (
-        "Around the world",
+        "Fun",
         (
-            "japonisme",
-            "chinoiserie",
-            "persian",
-            "bestiary",
-            "byzantine",
-            "folkart",
-            "delft",
-            "sumie",
-            "cigarette",
-        ),
-    ),
-    (
-        "Craft",
-        (
-            "felt",
-            "clay",
-            "bricks",
-            "screenprint",
-            "embroidery",
-            "mosaic",
-            "papercut",
-            "pointillism",
-        ),
-    ),
-    (
-        "Characters",
-        (
-            "grumpy",
-            "superhero",
-            "portrait",
-            "pirate",
+            ("Anime", ("anime", "shonen", "manga", "anime_retro")),
+            ("Made of things", ("pixel", "origami", "felt", "clay", "bricks")),
+            ("Characters", ("grumpy", "superhero", "portrait", "pirate", "hats")),
+            (
+                "Birds aren't real",
+                ("surveillance", "cctv", "patent", "automaton", "drone"),
+            ),
         ),
     ),
 )
+# What the admin's select and the manifest offer: one group per subgroup, named
+# "Realistic · Plates and paintings" so a flat dropdown still reads as a tree.
+STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = tuple(
+    (f"{top} · {sub}", ids) for top, subs in STYLE_TREE for sub, ids in subs
+)
+# The species a style's preview is painted from: a familiar bird that is not
+# in flight and needs no unusual pose.
+PREVIEW_SPECIES = ("Great Tit", "Parus major", "Aves")
 STYLE_IDS = (*STYLES, "custom")
 # The camera a species gets for a head, picked from its name so a sheet has a mix.
 CAMERAS = (

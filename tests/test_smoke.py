@@ -860,14 +860,14 @@ def test_paintings_wait_for_the_button_when_asked(tmp_path, offline_paint):
     assert len(server.held(tmp_path)) == 3
     server.fetch(options, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3, "a refresh does not add them twice"
-    started, before = server.start_held(tmp_path, "k", 12)
+    started, before = server.render_now(tmp_path, "k", 12)
     _settle_paint()
     assert (started, before) == (3, 3)
     assert len(offline_paint) == 3
     assert not server.held(tmp_path)
 
 
-def test_start_held_keeps_to_the_daily_limit(tmp_path, offline_paint):
+def test_render_now_keeps_to_the_daily_limit(tmp_path, offline_paint):
     options = {
         **MELBOURNE,
         "url": "birdnet.local",
@@ -878,9 +878,27 @@ def test_start_held_keeps_to_the_daily_limit(tmp_path, offline_paint):
     }
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     server.fetch(options, {"fal_api_key": "k", "gen_daily_cap": "12"}, ctx=ctx)
-    started, _ = server.start_held(tmp_path, "k", 2)
+    started, _ = server.render_now(tmp_path, "k", 2)
     _settle_paint()
     assert started == 2 and len(offline_paint) == 2
+
+
+def test_render_now_finds_what_a_frame_is_missing(tmp_path, offline_paint):
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+        "paint_start": "button",
+        "count": 3,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, {"fal_api_key": "k", "gen_daily_cap": "12"}, ctx=ctx)
+    server._unhold(tmp_path)
+    assert not server.held(tmp_path) and server.wanted_configs(tmp_path)
+    started, found = server.render_now(tmp_path, "k", 12)
+    _settle_paint()
+    assert (started, found) == (3, 3) and len(offline_paint) == 3
 
 
 def test_paintings_climb_the_ladder(tmp_path, offline_paint):
@@ -1037,8 +1055,20 @@ def test_admin_template_renders(tmp_path, offline_paint):
             known=server.known_species(tmp_path),
             has_key=True,
             held=2,
+            wanted=1,
+        )
+        idle = render_template(
+            "specimen_sheet/admin.html",
+            g=g,
+            known=[],
+            has_key=True,
+            held=0,
+            wanted=1,
         )
     assert "2 paintings waiting" in html and "Start painting" in html
+    assert "Render now" in idle and "waiting." not in idle
+    assert "Realistic" in html and "Decorative" in html and "Fun" in html
+    assert "bb-style-tile" in html and "Preview" in html
     assert g["used"] == 4 and len([e for e in g["paintings"] if e["active"]]) == 4
     assert (
         "Australian Magpie" in html
@@ -1124,6 +1154,11 @@ def test_every_style_is_grouped():
     assert {c["group"] for c in art["choices"]} == {g for g, _ in P.STYLE_GROUPS} | {
         "Your own"
     }
+    assert {t for t, _ in P.STYLE_TREE} == {"Realistic", "Decorative", "Fun"}
+    assert all(
+        g.split(" · ")[0] in {"Realistic", "Decorative", "Fun"}
+        for g, _ in P.STYLE_GROUPS
+    )
     for k, (label, how) in P.STYLES.items():
         assert "pure white paper" in how or k in P.WHOLE, k
         assert label and len(label) < 40, k
@@ -1541,3 +1576,19 @@ def test_reference_plate_reaches_the_prompt_and_the_request(
         ]
         if isinstance(m, dict)
     )
+
+
+def test_style_previews_come_from_paintings_of_the_preview_species(tmp_path):
+    folder = P.gen_dir(tmp_path)
+    folder.mkdir(parents=True, exist_ok=True)
+    for slug in ("corvus_corax--gould", "parus_major--gould", "parus_major--engraving"):
+        (folder / f"{slug}.jpg").write_bytes(b"x")
+        (folder / f"{slug}.json").write_text(
+            json.dumps({"sci": slug.split("--")[0].replace("_", " ").capitalize()})
+        )
+    tree = server._gallery(tmp_path, 12)["style_tree"]
+    files = {
+        s["id"]: s["file"] for t in tree for sub in t["subs"] for s in sub["styles"]
+    }
+    assert files["gould"] == "parus_major--gould.jpg" and files["engraving"]
+    assert not files["anime"]
