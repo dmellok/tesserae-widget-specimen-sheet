@@ -130,6 +130,7 @@ GEN_CAPS = (6, 12, 24, 48, 96)
 GEN_RETRY_S = 6 * 3600
 PER_FETCH = 3  # new paintings started per refresh
 BATCH_PARALLEL = 3
+STOPPED = "stopped"
 PROMPT_VERSION = 1
 # A style reworded after it shipped gets a revision here; its paintings are
 # keyed with it, so only that style is painted again.
@@ -678,7 +679,11 @@ def scene_for(scene: str, kinds: list[str]) -> str:
 _PAINTING: set[str] = set()
 _SINCE: dict[str, tuple[float, str, str]] = {}  # key -> (since, name, style)
 _FINISHED: list[tuple[str, float]] = []
-_BATCH: set[str] = set()
+# Paintings wait here and BATCH_PARALLEL workers take them in order. A key
+# is in _PAINTING from the moment it is queued; in _STOPS once it runs.
+_QUEUE: list[tuple[dict[str, Any], Path, str, int | None]] = []
+_STOPS: dict[str, threading.Event] = {}
+_WORKERS = 0
 _LOCK = threading.Lock()
 # Custom prompts live in the cell, not the folder: the fetch sets the tag
 # for the call so the painting threads it starts know the words.
@@ -1020,7 +1025,12 @@ def why_failed(key: str, folder: Path) -> str:
 # ----------------------------------------------------------------------
 
 
-def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
+def paint(
+    job: dict[str, Any],
+    data_dir: Path,
+    fal_key: str,
+    stop: threading.Event | None = None,
+) -> str | None:
     """Make one painting and keep it under job["key"]. Blocking: run it
     through ``start``. ``job`` is {key, style, name, sci, kind} and may carry
     ``ref`` (an openly licensed photo of the record itself) with
@@ -1075,6 +1085,8 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
             return fail("no openly licensed reference photo of the species")
         prompt = prompt_for({**job, "how": how}, data_dir)
     model = model_of(job.get("model"))
+    if stop is not None and stop.is_set():
+        return STOPPED
     _spend(folder)
     body = json.dumps(request_body(model, prompt, image_url, aspect)).encode()
     answer, err = N.get_json(
@@ -1085,6 +1097,8 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         timeout=GEN_TIMEOUT_S,
         detail=True,
     )
+    if stop is not None and stop.is_set():
+        return STOPPED
     if err:
         if err.startswith(("HTTP 401", "HTTP 403")):
             err = "fal.ai refused the key or the account has no balance (" + err + ")"
@@ -1094,6 +1108,8 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     raw, err = (
         N.http(out_url, accept="image/*", timeout=60) if out_url else (None, "no image")
     )
+    if stop is not None and stop.is_set():
+        return STOPPED
     if not raw:
         return fail(f"fal.ai sent no picture ({err})")
     mname = MODELS[model]["label"]
@@ -1128,8 +1144,83 @@ def paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     return None
 
 
-def start(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
-    """Paint in the background; False when this key is already being painted."""
+def _finish(key: str) -> None:
+    with _LOCK:
+        _PAINTING.discard(key)
+        _SINCE.pop(key, None)
+        _STOPS.pop(key, None)
+        _FINISHED.append((key, time.time()))
+        del _FINISHED[:-20]
+
+
+def _note_stopped(key: str, job: dict[str, Any], data_dir: Path) -> None:
+    """A stopped painting counts as a failure for GEN_RETRY_S, so the next
+    refresh does not queue it again."""
+    info = {k: job.get(k) for k in ("name", "sci", "style", "kind")}
+    N.write(
+        gen_dir(data_dir) / f"{key}.err",
+        json.dumps({"why": STOPPED, "at": int(time.time()), **info}).encode(),
+    )
+
+
+def _run_one(job: dict[str, Any], data_dir: Path, fal_key: str) -> None:
+    """Paint one job, giving the slot up at once if it is stopped: the call
+    to fal.ai cannot be recalled, so it finishes on its own and its result
+    is dropped."""
+    key = job["key"]
+    stop = _STOPS[key]
+
+    def go() -> None:
+        try:
+            why = paint(job, data_dir, fal_key, stop)
+            if why == STOPPED:
+                _note_stopped(key, job, data_dir)
+        except Exception as exc:  # noqa: BLE001 - a thread must not die loudly
+            if not stop.is_set():
+                N.write(
+                    gen_dir(data_dir) / f"{key}.err",
+                    json.dumps(
+                        {"why": str(exc)[:200], "at": int(time.time())}
+                    ).encode(),
+                )
+
+    t = threading.Thread(target=go, name=f"specimen-paint-{key[:16]}", daemon=True)
+    t.start()
+    while t.is_alive() and not stop.is_set():
+        t.join(0.25)
+    if stop.is_set():
+        _note_stopped(key, job, data_dir)
+
+
+def _work() -> None:
+    global _WORKERS
+    while True:
+        with _LOCK:
+            if not _QUEUE:
+                _WORKERS -= 1
+                return
+            job, data_dir, fal_key, cap = _QUEUE.pop(0)
+            key = job["key"]
+            _STOPS[key] = threading.Event()
+            _SINCE[key] = (
+                time.time(),
+                str(job.get("name") or key),
+                str(job.get("style") or "gould"),
+            )
+        try:
+            if cap is not None and budget_used(gen_dir(data_dir)) >= cap:
+                continue
+            _run_one(job, data_dir, fal_key)
+        finally:
+            _finish(key)
+
+
+def start(
+    job: dict[str, Any], data_dir: Path, fal_key: str, cap: int | None = None
+) -> bool:
+    """Queue a painting; False when this key is already queued or painting.
+    ``cap`` is the day's limit, checked again when the job reaches the front."""
+    global _WORKERS
     key = job["key"]
     if not job.get("how"):
         job["how"] = style_of(job.get("style"))[1]
@@ -1137,68 +1228,54 @@ def start(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
         if key in _PAINTING:
             return False
         _PAINTING.add(key)
-        _SINCE[key] = (
-            time.time(),
-            str(job.get("name") or key),
-            str(job.get("style") or "gould"),
-        )
-
-    def run() -> None:
-        try:
-            paint(job, data_dir, fal_key)
-        except Exception as exc:  # noqa: BLE001 - a thread must not die loudly
-            N.write(
-                gen_dir(data_dir) / f"{key}.err",
-                json.dumps({"why": str(exc)[:200], "at": int(time.time())}).encode(),
-            )
-        finally:
-            with _LOCK:
-                _PAINTING.discard(key)
-                _SINCE.pop(key, None)
-                _FINISHED.append((key, time.time()))
-                del _FINISHED[:-20]
-
-    threading.Thread(target=run, name=f"specimen-paint-{key[:16]}", daemon=True).start()
+        _QUEUE.append((job, data_dir, fal_key, cap))
+        spawn = _WORKERS < BATCH_PARALLEL
+        if spawn:
+            _WORKERS += 1
+    if spawn:
+        threading.Thread(
+            target=_work, name="specimen-paint-worker", daemon=True
+        ).start()
     return True
 
 
 def start_batch(
     jobs: list[dict[str, Any]], data_dir: Path, fal_key: str, cap: int
 ) -> bool:
-    """Paint ``jobs`` a few at a time from one background thread, stopping at
-    the daily cap. False when a batch in this style is already running."""
-    if not jobs:
-        return False
-    tag = str(jobs[0].get("style") or "gould")
+    """Queue ``jobs``; the workers take them a few at a time and drop what is
+    left once the day's cap is reached. False when every one was already queued."""
+    queued = False
+    for job in jobs:
+        if budget_used(gen_dir(data_dir)) >= cap:
+            break
+        queued = start(job, data_dir, fal_key, cap) or queued
+    return queued
+
+
+def stop(key: str, data_dir: Path) -> bool:
+    """Stop one painting, waiting or under way. A painting under way has been
+    paid for by fal.ai already; its result is dropped."""
     with _LOCK:
-        if tag in _BATCH:
-            return False
-        _BATCH.add(tag)
-    folder = gen_dir(data_dir)
-
-    def run() -> None:
-        mine: set[str] = set()
-
-        def in_flight() -> int:
-            with _LOCK:
-                return len(mine & _PAINTING)
-
-        try:
-            for job in jobs:
-                while in_flight() >= BATCH_PARALLEL:
-                    time.sleep(0.5)
-                if budget_used(folder) >= cap:
-                    break
-                if start(job, data_dir, fal_key):
-                    mine.add(job["key"])
-            while in_flight():
-                time.sleep(0.5)
-        finally:
-            with _LOCK:
-                _BATCH.discard(tag)
-
-    threading.Thread(target=run, name=f"specimen-batch-{tag}", daemon=True).start()
+        for i, (job, *_rest) in enumerate(_QUEUE):
+            if job["key"] == key:
+                gone = _QUEUE.pop(i)[0]
+                _PAINTING.discard(key)
+                break
+        else:
+            gone = None
+            ev = _STOPS.get(key)
+            if ev is None:
+                return False
+            ev.set()
+    if gone is not None:
+        _note_stopped(key, gone, data_dir)
     return True
+
+
+def stop_all(data_dir: Path) -> int:
+    with _LOCK:
+        keys = [j["key"] for j, *_r in _QUEUE] + list(_STOPS)
+    return sum(1 for k in keys if stop(k, data_dir))
 
 
 def may_start(key: str, folder: Path, fal_key: str, cap: int) -> tuple[bool, str]:
@@ -1227,11 +1304,18 @@ def progress(folder: Path, cap: int, has_key: bool) -> dict[str, Any]:
             }
             for k, (since, name, style) in _SINCE.items()
         ]
-        batches = [style_of(t)[0] for t in sorted(_BATCH)]
+        queued = [
+            {
+                "key": j["key"],
+                "name": str(j.get("name") or j["key"]),
+                "style": style_of(j.get("style"))[0],
+            }
+            for j, *_r in _QUEUE
+        ]
         finished = [{"key": k, "at": int(at)} for k, at in _FINISHED]
     return {
         "running": running,
-        "batches": batches,
+        "queued": queued,
         "finished": finished,
         "used": budget_used(folder),
         "cap": cap,

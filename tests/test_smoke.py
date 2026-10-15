@@ -1138,3 +1138,124 @@ def test_camera_heads_vary_by_species(tmp_path, offline_paint):
         and P.camera_for("Columba livia") in prompt
         and "{camera}" not in prompt
     )
+
+
+# ----------------------------------------------------------------------
+# The render queue
+# ----------------------------------------------------------------------
+
+
+def _wait(cond, timeout=5.0):
+    import time
+
+    end = time.time() + timeout
+    while not cond() and time.time() < end:
+        time.sleep(0.02)
+    assert cond()
+
+
+@pytest.fixture
+def held_paint(tmp_path):
+    """paint() waits on a gate, so the queue can be looked at mid-flight."""
+    import threading
+
+    gate = threading.Event()
+    seen: list[str] = []
+
+    def slow(job, data_dir, fal_key, stop=None):  # noqa: ARG001
+        seen.append(job["key"])
+        gate.wait(5)
+        if stop is not None and stop.is_set():
+            return P.STOPPED
+        return None
+
+    with patch.object(P, "paint", slow):
+        yield gate, seen
+    gate.set()
+    _wait(lambda: not P._PAINTING)
+
+
+def _jobs(n):
+    return [
+        {"key": f"bird{i}--gould", "style": "gould", "name": f"Bird {i}", "sci": "x"}
+        for i in range(n)
+    ]
+
+
+def test_queue_runs_a_few_at_a_time(tmp_path, held_paint):
+    gate, seen = held_paint
+    for job in _jobs(5):
+        assert P.start(job, tmp_path, "k")
+    assert not P.start(_jobs(1)[0], tmp_path, "k")  # already queued
+    _wait(lambda: len(seen) == P.BATCH_PARALLEL)
+    got = P.progress(P.gen_dir(tmp_path), 24, True)
+    assert len(got["running"]) == P.BATCH_PARALLEL and len(got["queued"]) == 2
+    gate.set()
+    _wait(lambda: not P._PAINTING)
+    assert len(seen) == 5
+
+
+def test_stop_one_waiting_and_one_running(tmp_path, held_paint):
+    gate, seen = held_paint
+    for job in _jobs(5):
+        P.start(job, tmp_path, "k")
+    _wait(lambda: len(seen) == 3)
+    assert P.stop("bird4--gould", tmp_path)  # waiting
+    assert P.stop("bird0--gould", tmp_path)  # under way
+    assert not P.stop("nobody--gould", tmp_path)
+    assert P.state("bird4--gould", P.gen_dir(tmp_path)) == "failed"
+    _wait(lambda: "bird0--gould" not in P._PAINTING)
+    # the freed slot takes the next waiting job; the stopped one never starts
+    _wait(lambda: "bird3--gould" in seen)
+    gate.set()
+    _wait(lambda: not P._PAINTING)
+    assert "bird4--gould" not in seen
+    err = N.read_json(P.gen_dir(tmp_path) / "bird0--gould.err", {})
+    assert err["why"] == "stopped"
+
+
+def test_stop_all_empties_the_queue(tmp_path, held_paint):
+    gate, seen = held_paint
+    for job in _jobs(6):
+        P.start(job, tmp_path, "k")
+    _wait(lambda: len(seen) == 3)
+    assert P.stop_all(tmp_path) == 6
+    _wait(lambda: not P._PAINTING)
+    assert len(seen) == 3 and not P.progress(P.gen_dir(tmp_path), 24, True)["queued"]
+    assert not list(P.gen_dir(tmp_path).glob("*.jpg"))
+    gate.set()
+
+
+def test_queue_drops_jobs_past_the_cap(tmp_path):
+    ran: list[str] = []
+    folder = P.gen_dir(tmp_path)
+    folder.mkdir(parents=True, exist_ok=True)
+    N.write(
+        folder / "budget.json",
+        json.dumps({__import__("time").strftime("%Y-%m-%d"): 4}).encode(),
+    )
+    with patch.object(P, "paint", lambda job, *a, **k: ran.append(job["key"])):
+        P.start(_jobs(1)[0], tmp_path, "k", cap=4)
+        _wait(lambda: not P._PAINTING)
+    assert ran == []
+
+
+def test_stopped_cutout_is_dropped_and_holds_the_sheet(tmp_path):
+    import threading
+
+    gate = threading.Event()
+
+    def slow(key, picture, data_dir, fal_key, stop=None):  # noqa: ARG001
+        gate.wait(5)
+        return None
+
+    with patch.object(M, "make", slow):
+        assert M.start("a", b"x", tmp_path, "k", "A bird")
+        assert M.running()[0]["name"] == "A bird"
+        assert M.stop_all() == 1
+        assert not M.running() and not M._RUNNING
+        assert not M.start("b", b"x", tmp_path, "k")  # held after a stop
+        assert M.start("b", b"x", tmp_path, "k", force=True)
+        gate.set()
+        _wait(lambda: not M._RUNNING)
+    M._HOLD_UNTIL = 0.0

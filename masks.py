@@ -53,6 +53,10 @@ MAIN_SHARE = 0.35  # the largest piece must hold this much of the foreground (a 
 HOLE_SHARE = 0.01  # holes smaller than this share of the piece are filled
 
 _RUNNING: set[str] = set()
+_STOPS: dict[str, threading.Event] = {}
+_SINCE: dict[str, tuple[float, str]] = {}
+_HOLD_UNTIL = 0.0  # after a stop, the sheet starts no cut-outs of its own until then
+HOLD_S = 1800
 _LOCK = threading.Lock()
 
 
@@ -309,7 +313,13 @@ def _spend(data_dir: Path) -> None:
         )
 
 
-def make(key: str, picture: bytes, data_dir: Path, fal_key: str) -> str | None:
+def make(
+    key: str,
+    picture: bytes,
+    data_dir: Path,
+    fal_key: str,
+    stop: threading.Event | None = None,
+) -> str | None:
     """Ask the model for the picture's mask, check it, keep the cut-out.
     Blocking; run through ``start``. Returns None, or why there is no cut."""
     f = folder(data_dir)
@@ -322,6 +332,8 @@ def make(key: str, picture: bytes, data_dir: Path, fal_key: str) -> str | None:
             "refine_foreground": True,
         }
     ).encode()
+    if stop is not None and stop.is_set():
+        return "stopped"
     _spend(data_dir)
     answer, err = N.get_json(
         FAL_CUTOUT,
@@ -337,8 +349,10 @@ def make(key: str, picture: bytes, data_dir: Path, fal_key: str) -> str | None:
         else ""
     )
     raw = None
-    if url:
+    if url and not (stop is not None and stop.is_set()):
         raw, err = N.http(url, accept="image/*", timeout=60)
+    if stop is not None and stop.is_set():
+        return "stopped"
     if not raw or raw[:2] != b"\x89P":
         (f / f"{key}.miss").touch()
         return f"the cut-out model answered {err or 'nothing'}"
@@ -363,26 +377,71 @@ def make(key: str, picture: bytes, data_dir: Path, fal_key: str) -> str | None:
     return None
 
 
-def start(key: str, picture: bytes, data_dir: Path, fal_key: str) -> bool:
-    """Make the mask in the background; False when one is already under way
-    or the day's allowance is used."""
+def start(
+    key: str,
+    picture: bytes,
+    data_dir: Path,
+    fal_key: str,
+    label: str = "",
+    force: bool = False,
+) -> bool:
+    """Make the mask in the background; False when one is already under way,
+    the day's allowance is used, or cut-outs were just stopped (``force`` is
+    for a cut-out someone asked for by name)."""
     if not fal_key or budget_used(data_dir) >= DAILY_CAP:
+        return False
+    if not force and time.time() < _HOLD_UNTIL:
         return False
     with _LOCK:
         if key in _RUNNING:
             return False
         _RUNNING.add(key)
+        stop = _STOPS[key] = threading.Event()
+        _SINCE[key] = (time.time(), label or key)
 
     def run() -> None:
         try:
-            make(key, picture, data_dir, fal_key)
+            make(key, picture, data_dir, fal_key, stop)
         except Exception as exc:  # noqa: BLE001 - a thread must not die loudly
-            with contextlib.suppress(OSError):
-                (folder(data_dir) / f"{key}.miss").touch()
-            N.write(folder(data_dir) / f"{key}.err", str(exc).encode())
+            if not stop.is_set():
+                with contextlib.suppress(OSError):
+                    (folder(data_dir) / f"{key}.miss").touch()
+                N.write(folder(data_dir) / f"{key}.err", str(exc).encode())
         finally:
             with _LOCK:
-                _RUNNING.discard(key)
+                if _STOPS.get(key) is stop:
+                    _RUNNING.discard(key)
+                    _STOPS.pop(key, None)
+                    _SINCE.pop(key, None)
 
     threading.Thread(target=run, name=f"specimen-mask-{key[:8]}", daemon=True).start()
     return True
+
+
+def stop(key: str) -> bool:
+    """Stop one cut-out: its call to fal.ai finishes by itself and is dropped."""
+    with _LOCK:
+        ev = _STOPS.pop(key, None)
+        _RUNNING.discard(key)
+        _SINCE.pop(key, None)
+    if ev is None:
+        return False
+    ev.set()
+    return True
+
+
+def stop_all() -> int:
+    global _HOLD_UNTIL
+    with _LOCK:
+        keys = list(_STOPS)
+    _HOLD_UNTIL = time.time() + HOLD_S
+    return sum(1 for k in keys if stop(k))
+
+
+def running() -> list[dict[str, Any]]:
+    now = time.time()
+    with _LOCK:
+        return [
+            {"key": k, "name": name, "seconds": int(now - since)}
+            for k, (since, name) in _SINCE.items()
+        ]

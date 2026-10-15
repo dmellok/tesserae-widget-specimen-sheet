@@ -21,8 +21,13 @@
     {% endif %}
     {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
   </div>
-  <div id="bb-ticker" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('specimen_sheet_admin.progress') }}">
-    <span class="bb-tick-dot" aria-hidden="true"></span><span id="bb-tick-text"></span>
+  <div id="bb-queue" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('specimen_sheet_admin.progress') }}"
+       data-stop="{{ url_for('specimen_sheet_admin.stop_one') }}" data-stop-all="{{ url_for('specimen_sheet_admin.stop_all') }}">
+    <div class="bb-queue-head">
+      <span class="bb-tick-dot" aria-hidden="true"></span><strong id="bb-queue-title"></strong>
+      <button type="button" class="ghost danger bb-queue-all" id="bb-stop-all"><i class="ph ph-stop" aria-hidden="true"></i> Stop all</button>
+    </div>
+    <ul class="bb-queue-list" id="bb-queue-list"></ul>
   </div>
   <form method="post" action="{{ url_for('specimen_sheet_admin.paint') }}" class="form bb-paint">
     <div class="field">
@@ -190,26 +195,50 @@
 
 <script>
   (function () {
-    const box = document.getElementById('bb-ticker');
+    const box = document.getElementById('bb-queue');
     if (!box) return;
-    const text = document.getElementById('bb-tick-text');
+    const title = document.getElementById('bb-queue-title');
+    const list = document.getElementById('bb-queue-list');
+    const plain = (s) => s.replace(/ \(.*$/, '').toLowerCase();
     let seen = null;
-    const words = (p) => {
-      const parts = [];
-      if (p.running.length) parts.push(p.running.map((r) => `${r.name} (${r.style.replace(/ \(.*$/, '').toLowerCase()}, ${r.seconds}s)`).join(' · '));
-      if (p.batches.length) parts.push(`painting every species in ${p.batches.join(', ')}`);
-      return parts.length ? `Painting now: ${parts.join(' · ')} · ${p.used} of ${p.cap} to-day` : '';
+    const post = (url, key) => {
+      const body = new FormData();
+      if (key) body.append('key', key);
+      return fetch(url, { method: 'POST', body, headers: { Accept: 'application/json' } }).then(tick);
     };
-    const tick = async () => {
+    const row = (r, state) => {
+      const li = document.createElement('li');
+      const what = document.createElement('span');
+      what.textContent = r.style ? `${r.name}, ${plain(r.style)}` : r.name;
+      const when = document.createElement('span');
+      when.className = 'bb-meta';
+      when.textContent = state === 'queued' ? 'waiting' : state === 'cut' ? `cutting out, ${r.seconds}s` : `painting, ${r.seconds}s`;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost bb-link';
+      btn.textContent = 'Stop';
+      btn.addEventListener('click', () => post(box.dataset.stop, r.key));
+      li.append(what, when, btn);
+      return li;
+    };
+    async function tick() {
       let p;
       try { p = await (await fetch(box.dataset.progress, { headers: { Accept: 'application/json' } })).json(); } catch { return; }
-      const line = words(p);
-      box.hidden = !line;
-      text.textContent = line;
+      const rows = [...p.running.map((r) => row(r, 'run')), ...p.cutting.map((r) => row(r, 'cut')), ...p.queued.map((r) => row(r, 'queued'))];
+      box.hidden = !rows.length;
+      list.replaceChildren(...rows);
+      const parts = [];
+      if (p.running.length) parts.push(`${p.running.length} painting`);
+      if (p.queued.length) parts.push(`${p.queued.length} waiting`);
+      if (p.cutting.length) parts.push(`${p.cutting.length} cutting out`);
+      title.textContent = rows.length ? `${parts.join(', ')} · ${p.used} of ${p.cap} to-day` : '';
       const latest = p.finished.length ? p.finished[p.finished.length - 1].at : 0;
       if (seen === null) seen = latest;
-      else if (latest > seen && !p.running.length) location.reload();
-    };
+      else if (latest > seen && !p.running.length && !p.queued.length) location.reload();
+    }
+    document.getElementById('bb-stop-all').addEventListener('click', () => {
+      if (confirm('Stop every render, waiting or under way? A painting already under way has been paid for; its result is dropped.')) post(box.dataset.stopAll);
+    });
     tick();
     setInterval(tick, 3000);
   })();
@@ -250,7 +279,12 @@
   .bb-inline { display: inline; margin: 0; }
   .bb-link { padding: 0 4px; font-size: inherit; text-decoration: underline; }
   .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
-  .bb-ticker { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--t-border); border-radius: 8px; background: var(--t-surface); font-size: 13px; }
+  .bb-ticker { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--t-border); border-radius: 8px; background: var(--t-surface); font-size: 13px; }
+  .bb-queue-head { display: flex; align-items: center; gap: 8px; }
+  .bb-queue-all { margin-left: auto; }
+  .bb-queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .bb-queue-list li { display: flex; align-items: center; gap: 10px; }
+  .bb-queue-list li > :first-child { flex: 1; min-width: 0; }
   .bb-tick-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--t-accent, #c8281e); animation: bb-pulse 1.2s ease-in-out infinite; }
   @keyframes bb-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
   .bb-filter { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }

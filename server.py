@@ -612,7 +612,7 @@ def _attach_pictures(
             }
             if row.get("ref"):
                 job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
-            if P.start(job, data_dir, fal_key):
+            if P.start(job, data_dir, fal_key, gen["cap"]):
                 started_paint += 1
                 why = "running"
         elif go:
@@ -647,7 +647,9 @@ def _attach_pictures(
                 picture = Path(pic["file"]).read_bytes()
             except OSError:
                 picture = b""
-            if picture and M.start(pic["key"], picture, data_dir, fal_key):
+            if picture and M.start(
+                pic["key"], picture, data_dir, fal_key, str(row.get("name") or "")
+            ):
                 started += 1
                 st = "running"
         elif st == "none" and not fal_key:
@@ -1207,7 +1209,7 @@ def _scene(
                 "fidelity": fidelity,
                 "aspect": "4:3" if ratio >= 1 else "3:4",
             }
-            P.start(job, data_dir, fal_key)
+            P.start(job, data_dir, fal_key, gen["cap"])
             status.append("composing the scene (fal.ai)")
         elif why == "running":
             status.append("composing the scene (fal.ai)")
@@ -1457,7 +1459,7 @@ def blueprint() -> Any:
                 f"To-day's limit of {cap()} paintings is used up. Raise it in this widget's settings.",
                 "warn",
             )
-        elif not P.start(job, data_dir(), key):
+        elif not P.start(job, data_dir(), key, cap()):
             flash(f"{label} is already being painted.", "info")
         else:
             with contextlib.suppress(OSError):
@@ -1479,7 +1481,32 @@ def blueprint() -> Any:
 
     @bp.get("/progress")
     def progress() -> Any:
-        return jsonify(P.progress(P.gen_dir(data_dir()), cap(), bool(fal_key())))
+        got = P.progress(P.gen_dir(data_dir()), cap(), bool(fal_key()))
+        got["cutting"] = M.running()
+        return jsonify(got)
+
+    def stopped(n: int) -> Any:
+        if "application/json" in request.headers.get("Accept", ""):
+            return jsonify({"stopped": n})
+        flash(
+            f"Stopped {n} render{'s' if n != 1 else ''}."
+            if n
+            else "Nothing was being rendered.",
+            "info",
+        )
+        return back()
+
+    @bp.post("/stop")
+    def stop_one() -> Any:
+        key = request.form.get("key", "")
+        if not key:
+            abort(400)
+        n = int(P.stop(key, data_dir())) + int(M.stop(key))
+        return stopped(min(n, 1))
+
+    @bp.post("/stop-all")
+    def stop_all() -> Any:
+        return stopped(P.stop_all(data_dir()) + M.stop_all())
 
     @bp.get("/painting/<path:name>")
     def image(name: str) -> Any:
@@ -1554,7 +1581,7 @@ def blueprint() -> Any:
         key = fal_key()
         if not key:
             flash("Add a fal.ai key in this widget's settings first.", "warn")
-        elif M.start(f"g_{slug}", img.read_bytes(), dd, key):
+        elif M.start(f"g_{slug}", img.read_bytes(), dd, key, slug, force=True):
             flash("Cutting the painting out again; it takes a few seconds.", "success")
         else:
             flash(
