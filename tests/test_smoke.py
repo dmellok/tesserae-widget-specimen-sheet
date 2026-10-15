@@ -254,7 +254,7 @@ def _fetch(tmp_path, offline, **opts):  # noqa: ARG001
 def test_demo_garden_without_an_address(tmp_path, offline):
     r = _fetch(tmp_path, offline)
     assert r["state"] == "ok" and r["demo"] and r["source"] == "birdnet_go"
-    assert r["title"] == "Demo garden" and r["area"] == "heard to-day"
+    assert r["title"] == "Demo garden" and r["period"] == "heard to-day"
     assert 2 <= len(r["species"]) <= 8
     s = r["species"][0]
     assert s["unit"] == "calls" and s["count"] >= s["count"] and s["kind"] == "Aves"
@@ -315,7 +315,7 @@ def test_week_window(tmp_path, offline):
     r = _fetch(tmp_path, offline, url="birdnet.local", window="week")
     assert "/species/summary?start_date=" in offline[0]
     assert (
-        r["period"] == "this week"
+        r["period"] == "heard this week"
         and r["species"][0]["lines"][1] == "52 calls this week"
     )
 
@@ -547,7 +547,7 @@ def test_client_renders_every_state(tmp_path, offline, state):
     assert data["state"] == state
     expect = {
         "ok": 'class="mont',
-        "empty": "Nothing recorded",
+        "empty": "Nothing heard",
         "asleep": "asleep since 17:40",
         "error": "nowhere.local",
     }[state]

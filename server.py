@@ -838,7 +838,7 @@ def fetch(
             stale = raw.get("stale_error")
             title = title or "Backyard"
         rows = S.rows_birdnet(raw, window)
-        area = "heard " + period
+        period = "heard " + period
         if not demo:
             _rarity(data_dir, rows, now.strftime("%Y-%m-%d"))
             _names(data_dir, rows, name_locale, name_place)
@@ -943,7 +943,7 @@ def fetch(
     shown = [dict(r) for r in rows[:count]]
     if not rows:
         hint = {
-            "birdnet_go": "Nothing heard yet " + period + ".",
+            "birdnet_go": "The microphone has heard nothing yet.",
             "inaturalist": "Try a wider circle, a longer period or more kinds.",
             "gbif": "Try a wider circle or more kinds.",
         }[source]
