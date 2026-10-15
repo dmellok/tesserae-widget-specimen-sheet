@@ -1825,36 +1825,42 @@
       "label": "fal.ai API key (clean cut-outs)",
       "secret": true,
       "default": "",
-      "help": "With a key, every plate and photo on the sheet is cut out by a background-removal model on fal.ai (BiRefNet, well under a cent a picture, once per picture, at most 300 a day), so a plate with a painted sky or a photo arrives on the page as the specimen alone. Without one, pictures on plain paper are cut by their edges and photos are shown as soft ovals. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
+      "help": "With a key, every plate and photo on the sheet is cut out by a background-removal model on fal.ai (BiRefNet, well under a cent a picture, once per picture, 300 a day unless you change the cut-out limit below), so a plate with a painted sky or a photo arrives on the page as the specimen alone. Without one, pictures on plain paper are cut by their edges and photos are shown as soft ovals. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
     },
     {
       "name": "gen_daily_cap",
-      "type": "select",
+      "type": "number",
       "label": "AI paintings per day",
-      "default": "12",
-      "help": "The most new AI paintings made in a day, at about US$0.04 each. Paintings are kept, so a place's species only cost once; raise this to fill a sheet faster.",
-      "choices": [
-        {
-          "value": "6",
-          "label": "6 (about US$0.24)"
-        },
-        {
-          "value": "12",
-          "label": "12 (about US$0.48)"
-        },
-        {
-          "value": "24",
-          "label": "24 (about US$0.96)"
-        },
-        {
-          "value": "48",
-          "label": "48 (about US$1.92)"
-        },
-        {
-          "value": "96",
-          "label": "96 (about US$3.84)"
-        }
-      ]
+      "default": 12,
+      "help": "The most new AI paintings made in a day, at about US$0.04 each. Any whole number; 0 is no limit. Paintings are kept, so a place's species only cost once; raise this to fill a sheet faster."
+    },
+    {
+      "name": "gen_per_refresh",
+      "type": "number",
+      "label": "New paintings started per refresh",
+      "default": 3,
+      "help": "How many new paintings one refresh of a sheet may start (1 to 50). The rest wait for the next refresh, still within the daily number."
+    },
+    {
+      "name": "gen_parallel",
+      "type": "number",
+      "label": "Paintings made at once",
+      "default": 3,
+      "help": "How many paintings fal.ai works on side by side (1 to 8). The others wait in the queue on the paintings page."
+    },
+    {
+      "name": "mask_daily_cap",
+      "type": "number",
+      "label": "Cut-outs per day",
+      "default": 300,
+      "help": "The most background-removal cut-outs made in a day, well under a cent each. Any whole number; 0 is no limit."
+    },
+    {
+      "name": "mask_per_refresh",
+      "type": "number",
+      "label": "Cut-outs started per refresh",
+      "default": 6,
+      "help": "How many new cut-outs one refresh may start (1 to 100)."
     },
     {
       "name": "exclude",

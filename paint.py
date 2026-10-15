@@ -126,10 +126,12 @@ WIKI_SUMMARY = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 ABOUT_MAX = 400
 GEN_TIMEOUT_S = 120
 GEN_DAILY_CAP = 12
-GEN_CAPS = (6, 12, 24, 48, 96)
+UNLIMITED = 10**9
 GEN_RETRY_S = 6 * 3600
 PER_FETCH = 3  # new paintings started per refresh
 BATCH_PARALLEL = 3
+_PARALLEL = BATCH_PARALLEL
+_PER_FETCH = PER_FETCH
 STOPPED = "stopped"
 PROMPT_VERSION = 1
 # A style reworded after it shipped gets a revision here; its paintings are
@@ -679,7 +681,7 @@ def scene_for(scene: str, kinds: list[str]) -> str:
 _PAINTING: set[str] = set()
 _SINCE: dict[str, tuple[float, str, str]] = {}  # key -> (since, name, style)
 _FINISHED: list[tuple[str, float]] = []
-# Paintings wait here and BATCH_PARALLEL workers take them in order. A key
+# Paintings wait here and _PARALLEL workers take them in order. A key
 # is in _PAINTING from the moment it is queued; in _STOPS once it runs.
 _QUEUE: list[tuple[dict[str, Any], Path, str, int | None]] = []
 _STOPS: dict[str, threading.Event] = {}
@@ -968,12 +970,30 @@ def _spend(folder: Path) -> None:
         )
 
 
-def daily_cap(settings: dict[str, Any] | None) -> int:
+def whole(value: Any, default: int, low: int = 0, high: int = 100000) -> int:
+    """A setting as a whole number in range; ``default`` when blank or not a number."""
     with contextlib.suppress(TypeError, ValueError):
-        cap = int((settings or {}).get("gen_daily_cap") or GEN_DAILY_CAP)
-        if cap in GEN_CAPS:
-            return cap
-    return GEN_DAILY_CAP
+        if str(value).strip() != "":
+            return min(high, max(low, int(float(value))))
+    return default
+
+
+def daily_cap(settings: dict[str, Any] | None) -> int:
+    """New paintings a day. Any whole number; 0 is no limit."""
+    n = whole((settings or {}).get("gen_daily_cap"), GEN_DAILY_CAP)
+    return n or UNLIMITED
+
+
+def configure(settings: dict[str, Any] | None) -> None:
+    """Take the knobs the owner has set: paintings started per refresh and made at once."""
+    global _PARALLEL, _PER_FETCH
+    s = settings or {}
+    _PER_FETCH = whole(s.get("gen_per_refresh"), PER_FETCH, 1, 50)
+    _PARALLEL = whole(s.get("gen_parallel"), BATCH_PARALLEL, 1, 8)
+
+
+def per_fetch() -> int:
+    return _PER_FETCH
 
 
 def archive(folder: Path, key: str) -> None:
@@ -1229,7 +1249,7 @@ def start(
             return False
         _PAINTING.add(key)
         _QUEUE.append((job, data_dir, fal_key, cap))
-        spawn = _WORKERS < BATCH_PARALLEL
+        spawn = _WORKERS < _PARALLEL
         if spawn:
             _WORKERS += 1
     if spawn:

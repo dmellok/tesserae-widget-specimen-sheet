@@ -600,7 +600,7 @@ def _attach_pictures(
             pic["whole"] = gen["style"] in P.WHOLE
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
-        if go and started_paint < P.PER_FETCH:
+        if go and started_paint < P.per_fetch():
             job = {
                 "key": key,
                 "style": gen["style"],
@@ -642,7 +642,7 @@ def _attach_pictures(
         if st == "ready":
             pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
             st = "ready" if pic["cut"] else "failed"
-        elif st == "none" and fal_key and started < M.PER_FETCH:
+        elif st == "none" and fal_key and started < M.per_fetch():
             try:
                 picture = Path(pic["file"]).read_bytes()
             except OSError:
@@ -1054,6 +1054,8 @@ def fetch(
         )
 
     # --- pictures, sizes, labels ------------------------------------------
+    P.configure(settings)
+    M.configure(settings)
     gen = None
     if pictures == "gen":
         gen = {
@@ -1439,6 +1441,8 @@ def blueprint() -> Any:
         return str(settings().get("fal_api_key") or "").strip()
 
     def cap() -> int:
+        P.configure(settings())
+        M.configure(settings())
         return P.daily_cap(settings())
 
     def slug_or_404(slug: str) -> str:

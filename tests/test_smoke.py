@@ -552,6 +552,10 @@ def test_manifest_is_well_formed():
     assert {s["name"] for s in m["settings"]} == {
         "fal_api_key",
         "gen_daily_cap",
+        "gen_per_refresh",
+        "gen_parallel",
+        "mask_daily_cap",
+        "mask_per_refresh",
         "exclude",
     }
 
@@ -1259,3 +1263,32 @@ def test_stopped_cutout_is_dropped_and_holds_the_sheet(tmp_path):
         gate.set()
         _wait(lambda: not M._RUNNING)
     M._HOLD_UNTIL = 0.0
+
+
+def test_limits_are_the_owners_to_set():
+    P, M = server.P, server.M
+    assert P.daily_cap({"gen_daily_cap": 500}) == 500
+    assert P.daily_cap({"gen_daily_cap": "7"}) == 7
+    assert P.daily_cap({"gen_daily_cap": 0}) == P.UNLIMITED
+    assert P.daily_cap({"gen_daily_cap": ""}) == P.GEN_DAILY_CAP
+    assert P.daily_cap({"gen_daily_cap": "lots"}) == P.GEN_DAILY_CAP
+    assert P.daily_cap({}) == P.GEN_DAILY_CAP
+    try:
+        P.configure({"gen_per_refresh": 9, "gen_parallel": 1})
+        M.configure({"mask_daily_cap": 0, "mask_per_refresh": 20})
+        assert (P.per_fetch(), P._PARALLEL, M._cap, M.per_fetch()) == (
+            9,
+            1,
+            P.UNLIMITED,
+            20,
+        )
+        P.configure({"gen_per_refresh": 0, "gen_parallel": 99})
+        assert (P.per_fetch(), P._PARALLEL) == (1, 8)
+    finally:
+        P.configure({})
+        M.configure({})
+    assert (P.per_fetch(), P._PARALLEL, M._cap) == (
+        P.PER_FETCH,
+        P.BATCH_PARALLEL,
+        M.DAILY_CAP,
+    )

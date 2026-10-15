@@ -45,6 +45,8 @@ FAL_CUTOUT = "https://fal.run/fal-ai/birefnet/v2"
 FAL_TIMEOUT_S = 90
 PER_FETCH = 6  # masks started per refresh
 DAILY_CAP = 300  # masks a day; they cost well under a cent each
+_cap = DAILY_CAP
+_per_fetch = PER_FETCH
 RETRY_S = 6 * 3600  # after the model or the network failed
 BAD_S = 30 * 86400  # after the model answered but the mask was no good
 MIN_COVER, MAX_COVER = 0.04, 0.85
@@ -295,6 +297,27 @@ def cut_url(key: str, data_dir: Path, levels: str = "colour") -> str | None:
         return None
 
 
+def _whole(value: Any, default: int, low: int, high: int) -> int:
+    try:
+        if str(value).strip() != "":
+            return min(high, max(low, int(float(value))))
+    except (TypeError, ValueError):
+        pass
+    return default
+
+
+def configure(settings: dict[str, Any] | None) -> None:
+    """Take the owner's cut-out limits: masks a day (0 for no limit) and started per refresh."""
+    global _cap, _per_fetch
+    s = settings or {}
+    _cap = _whole(s.get("mask_daily_cap"), DAILY_CAP, 0, 100000) or 10**9
+    _per_fetch = _whole(s.get("mask_per_refresh"), PER_FETCH, 1, 100)
+
+
+def per_fetch() -> int:
+    return _per_fetch
+
+
 def budget_used(data_dir: Path) -> int:
     got = N.read_json(folder(data_dir) / "budget.json", {})
     if isinstance(got, dict) and got.get("day") == time.strftime("%Y-%m-%d"):
@@ -388,7 +411,7 @@ def start(
     """Make the mask in the background; False when one is already under way,
     the day's allowance is used, or cut-outs were just stopped (``force`` is
     for a cut-out someone asked for by name)."""
-    if not fal_key or budget_used(data_dir) >= DAILY_CAP:
+    if not fal_key or budget_used(data_dir) >= _cap:
         return False
     if not force and time.time() < _HOLD_UNTIL:
         return False
