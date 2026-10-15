@@ -201,7 +201,7 @@ export function cutout(img) {
 /* A picture that arrived already cut out (a PNG with alpha): its alpha is
    the mask and nothing is guessed; the alpha travels with the cut, so a
    plate prints by multiply and a photo over the paper. */
-export function fromAlpha(img) {
+export function fromAlpha(img, paper = null) {
   const k0 = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
   const cw = Math.max(1, Math.round(img.naturalWidth * k0)), ch = Math.max(1, Math.round(img.naturalHeight * k0));
   const full = canvas(cw, ch);
@@ -220,13 +220,15 @@ export function fromAlpha(img) {
   const cut = canvas(bw, bh);
   const cctx = cut.getContext('2d');
   const out = cctx.createImageData(bw, bh);
+  // the picture's own paper scaled to white, so a cream wash under a bird does not tint the sheet
+  const lut = paper ? paper.map((c) => { const t = new Uint8Array(256); for (let i = 0; i < 256; i++) t[i] = Math.min(255, Math.round(i * 255 / Math.max(1, c))); return t; }) : null;
   for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
     const i = ((box[1] + y) * cw + box[0] + x) * 4, o = (y * bw + x) * 4;
     const a = px[i + 3] / 255;
     hard[y * bw + x] = a > 0.5 ? 1 : 0;
-    out.data[o] = px[i];
-    out.data[o + 1] = px[i + 1];
-    out.data[o + 2] = px[i + 2];
+    out.data[o] = lut ? lut[0][px[i]] : px[i];
+    out.data[o + 1] = lut ? lut[1][px[i + 1]] : px[i + 1];
+    out.data[o + 2] = lut ? lut[2][px[i + 2]] : px[i + 2];
     out.data[o + 3] = px[i + 3];
   }
   cctx.putImageData(out, 0, 0);
@@ -533,15 +535,17 @@ export function packSheet(items, W, H, label) {
 
 const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220, 192] };
 
-/* The page. ``specimens``: [{name, sci, src, cut, on_paper, factor, lines}]
+/* The page. ``specimens``: [{name, sci, src, cut, on_paper, paper, neutral, factor, lines}]
    where ``src`` is the picture (or null for a mount), ``cut`` a PNG with
-   alpha when one arrived, and ``on_paper`` says the picture is a plate or
-   painting on plain paper. Returns null when nothing could be placed. */
+   alpha when one arrived, ``on_paper`` says the picture is a plate or
+   painting on plain paper, ``paper`` its paper colour as [r, g, b] and
+   ``neutral`` asks for that paper scaled to white. Returns null when
+   nothing could be placed. */
 export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116' }) {
   const loaded = await Promise.all(specimens.map(async (b) => {
     try {
       let got = null;
-      if (b.cut) { got = fromAlpha(await loadImage(b.cut)); if (got && !b.on_paper) got.blend = 'source-over'; }
+      if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper) got.blend = 'source-over'; }
       else if (b.src && b.on_paper) got = cutout(await loadImage(b.src));
       else if (b.src) got = vignette(await loadImage(b.src));
       if (!got) got = mount(0.8);

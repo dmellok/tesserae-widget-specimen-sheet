@@ -1067,6 +1067,13 @@
       ]
     },
     {
+      "name": "neutral",
+      "type": "boolean",
+      "label": "Remove the beige tint",
+      "default": false,
+      "help": "Plates and paintings carry the cream of their own paper, which the sheet keeps. This scales each picture's paper to white, so the specimens print without the tint; set Paper to White as well for a wholly neutral page."
+    },
+    {
       "name": "panel",
       "type": "select",
       "label": "Panel",

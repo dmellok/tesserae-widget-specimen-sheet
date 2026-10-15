@@ -9,6 +9,11 @@ import { buildSheet } from './sheet.js';
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
+const hexRgb = (hex) => {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ''));
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+};
+
 const SOURCE_NAME = { birdnet_go: 'BirdNET-Go', inaturalist: 'iNaturalist', gbif: 'GBIF' };
 
 /* the printed header: the place and the period in small caps, the date to the right, over a double rule */
@@ -59,6 +64,7 @@ async function build(d) {
   const specimens = d.species.map((s) => ({
     name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null,
     on_paper: !!(s.pic && s.pic.on_paper), factor: Number(s.factor) || 1,
+    paper: hexRgb(s.pic && s.pic.paper), neutral: !!d.neutral,
     lines: d.labels === 'none' ? [] : d.labels === 'key' ? ['00'] : (s.lines || [s.name]),
   }));
   const label = Math.max(0.017, 13 / h) * (d.text_scale || 1);

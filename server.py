@@ -477,7 +477,7 @@ def _painting(key: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
         "kind": "painting",
         "on_paper": True,
         "credit": str(meta.get("credit") or "AI painting"),
-        "paper": "#ffffff",
+        "paper": N.paper_of(src, folder / f"{key}.paper", levels),
         "key": f"g_{key}",
         "file": str(img),
     }
@@ -566,8 +566,10 @@ def _attach_pictures(
                 st = "running"
         elif st == "none" and not fal_key:
             st = "no_key"
-        if st == "bad":
-            # the model could not find one specimen in it: a soft oval, never a rectangle
+        if st == "bad" and pic.get("kind") != "painting":
+            # the model could not find one specimen in it: a soft oval, never a
+            # rectangle. A painting is on plain white paper by construction, so
+            # its edges cut it cleanly even when the subject is tiny.
             pic["on_paper"] = False
         pic["cut_state"] = st
         pic.pop("file", None)
@@ -719,6 +721,7 @@ def fetch(
     )
     text_scale = int(_choice(options.get("text_size"), TEXT_SCALES)) / 100
     paper = _choice(options.get("paper"), PAPERS)
+    neutral = options.get("neutral") in (True, "true", "True", 1, "1", "on")
     levels = _choice(options.get("panel"), LEVELS)
     night = _choice(options.get("night"), NIGHTS) if source == "birdnet_go" else "off"
     footer = _choice(options.get("footer"), FOOTERS)
@@ -779,6 +782,7 @@ def fetch(
             "label_lines": list(lines),
             "text_scale": text_scale,
             "paper": paper,
+            "neutral": neutral,
             "panel": levels,
             "footer": footer,
             "night": night,
