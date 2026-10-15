@@ -91,8 +91,8 @@ function packOffThread(args, onCut) {
 }
 const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 function keyOf(a) {
-  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}|${x.neutral ? 1 : 0}|${(x.paper || []).join(',')}|${(x.lines || []).join('/')}`);
-  return `ss1:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.ink}:${a.spacing}:${fnv(parts.join(';'))}`;
+  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}|${x.whole ? 1 : 0}|${x.neutral ? 1 : 0}|${(x.paper || []).join(',')}|${(x.lines || []).join('/')}`);
+  return `ss1:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.ink}:${a.spacing}:${a.layout}:${a.facing}:${fnv(parts.join(';'))}`;
 }
 const SHEETS = new Map();
 const store = (() => { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } })();
@@ -124,13 +124,21 @@ function buildArgs(d) {
   const w = d.cell_w || 800, h = d.cell_h || 480;
   const specimens = d.species.map((s) => ({
     name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null,
-    on_paper: !!(s.pic && s.pic.on_paper), factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
+    on_paper: !!(s.pic && s.pic.on_paper), whole: !!(s.pic && s.pic.whole), factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
     paper: hexRgb(s.pic && s.pic.paper), neutral: !!d.neutral,
     lines: d.labels === 'none' ? [] : d.labels === 'key' ? ['00'] : (s.lines || [s.name]),
   }));
-  const label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
+  let label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
-  return { specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy' };
+  let layout = ['cluster', 'scatter', 'band', 'column', 'grid', 'hero'].includes(d.layout) ? d.layout : 'cluster';
+  let shown = specimens;
+  if (layout === 'hero') {
+    // one specimen alone, the first by Order, with a caption to match
+    shown = specimens.slice(0, 1);
+    label *= 1.9;
+    layout = 'cluster';
+  }
+  return { specimens: shown, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy', layout, facing: d.facing === 'painted' ? 'painted' : 'inward' };
 }
 
 async function build(d, onCut) {
@@ -162,7 +170,9 @@ function sheet(d, made) {
     const rows = made.items.map((m, i) => { const s = bySci[m.sci || m.name] || {}; return `<li><em>${i + 1}.</em><span>${esc(m.name)}${s.sci ? `<i>${esc(s.sci)}</i>` : ''}</span><b>${s.count || ''}</b></li>`; }).join('');
     return `${head(d)}<div class="cl"><div class="cl-pic">${page}</div><ol class="cl-key">${rows}</ol></div>${foot(d, extra)}`;
   }
-  return `${head(d)}<div class="sh">${page}</div>${foot(d, extra)}`;
+  const also = d.layout === 'hero' && d.species.length > 1 && labels !== 'none'
+    ? `<div class="hero-also"><i>also</i> ${d.species.slice(1).map((s) => `<span>${esc(s.name)}${s.count ? ` <b>${esc(String(s.count))}</b>` : ''}</span>`).join('<em>·</em>')}</div>` : '';
+  return `${head(d)}<div class="sh">${page}</div>${also}${foot(d, extra)}`;
 }
 
 /* The scene: the sheet repainted by the model as one picture, shown whole.
@@ -242,6 +252,10 @@ function paint(shadow, d, size, body) {
       .sh { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 1cqmin; }
       .sh-page { position: relative; aspect-ratio: var(--r); max-width: 100%; max-height: 100%; width: min(100%, calc((100cqh - 12cqmin) * var(--r))); container-type: size; }
       .sh-page > img, .sh-page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+      .hero-also { flex: 0 0 auto; padding: .4cqmin 2.8cqmin .6cqmin; font-family: var(--sc); font-variant-caps: small-caps; font-size: 2.6cqmin; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+      .hero-also i { font-family: var(--serif); font-variant-caps: normal; font-style: italic; opacity: .7; margin-right: .4em; }
+      .hero-also em { font-style: normal; opacity: .5; margin: 0 .5em; }
+      .hero-also b { font-weight: 400; opacity: .75; }
       .sc { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 0 2.8cqmin; }
       .sc-pic { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
       .sc-pic img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }

@@ -404,9 +404,24 @@ function footprintOf(b, scale, flip, label, H, gap = 0) {
    across the page's axis and turned to face in; several attempts, the best
    by a balance score kept. (x, y, scale, flip) per specimen in the order
    given; scale 0 when one did not fit. */
-export function packSheet(items, W, H, label, gap = 2, fast = false) {
+/* A small deterministic generator for the scatter layout's origins. */
+function rand(seed) {
+  let a = (seed * 2654435761) >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/* ``layout``: cluster (the largest in the middle, the rest round it in
+   mirrored pairs), band (along the middle of the page), column (down it),
+   scatter (spread over the whole page from seeded origins, no pairs, no
+   settling inward). ``facing`` inward turns a cut-out to face the middle;
+   painted leaves every picture as it is. */
+export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'cluster', facing = 'inward') {
   const gw = Math.floor(W / CELL), gh = Math.floor(H / CELL);
-  const cx = gw / 2, cy = gh * 0.52, rx = gw * 0.48, ry = gh * 0.44;
+  // band and column are loose swathes, two or three deep, not a single file: a file of eight is tiny
+  const shapes = { cluster: [0.48, 0.44], band: [0.48, 0.24], column: [0.24, 0.46], scatter: [0.48, 0.44] };
+  const [kx, ky] = shapes[layout] || shapes.cluster;
+  const scatter = layout === 'scatter';
+  const cx = gw / 2, cy = gh * 0.52, rx = gw * kx, ry = gh * ky;
   const inside = new Uint8Array(gw * gh);
   let room = 0;
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
@@ -463,22 +478,29 @@ export function packSheet(items, W, H, label, gap = 2, fast = false) {
     const foot = (b, scale, flip) => footprintOf(b, scale, flip, label, H, gap);
     /* the facing a specimen needs on a side: toward the middle */
     const flipFor = (b, side) => {
-      if (!b.flippable || !b.face) return false;
+      if (facing === 'painted' || !b.flippable || !b.face) return false;
       return side < 0 ? b.face === 'left' : b.face === 'right';
     };
     const order = items.map((_b, i) => i); // already largest first
     const groups = [];
-    if (order.length) groups.push([order[0]]);
-    for (let i = 1; i + 1 < order.length; i += 2) groups.push([order[i], order[i + 1]]);
-    if (order.length > 1 && order.length % 2 === 0) groups.push([order[order.length - 1]]);
+    if (scatter) for (const i of order) groups.push([i]);
+    else {
+      if (order.length) groups.push([order[0]]);
+      for (let i = 1; i + 1 < order.length; i += 2) groups.push([order[i], order[i + 1]]);
+      if (order.length > 1 && order.length % 2 === 0) groups.push([order[order.length - 1]]);
+    }
     let centreTurn = 0;
+    const origins = rand(Math.round(start * 1000) + (leftFirst ? 7 : 0));
     for (const g of groups) {
       if (g.length === 1) {
         const i = g[0], b = items[i];
         const f = foot(b, scaleOf(b), false);
         if (f.fh >= gh || f.fw >= gw) return null;
         let spot = null;
-        if (!placed.some(Boolean)) spot = findSpot(occ, f, cx, cy, start, 0);
+        if (scatter) {
+          const ox = gw * (0.08 + 0.84 * origins()), oy = gh * (0.1 + 0.8 * origins());
+          spot = findSpot(occ, f, ox, oy, start, 0, 3);
+        } else if (!placed.some(Boolean)) spot = findSpot(occ, f, cx, cy, start, 0);
         else {
           // the leftover goes on the centre line, above or below, whichever balances
           const [a, bb] = (centreTurn++ % 2 === 0) ? [-Math.PI / 2, Math.PI / 2] : [Math.PI / 2, -Math.PI / 2];
@@ -511,7 +533,7 @@ export function packSheet(items, W, H, label, gap = 2, fast = false) {
       if (!sq) return null;
       put(q, fq, sq[0], sq[1]);
     }
-    settle(occ, placed, groups);
+    if (!scatter) settle(occ, placed, groups);
     return placed;
   };
 
@@ -627,6 +649,34 @@ const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220
    painting on plain paper, ``paper`` its paper colour as [r, g, b] and
    ``neutral`` asks for that paper scaled to white. Returns null when
    nothing could be placed. */
+/* The grid layout: a cell each, like a drawer of specimens, in the order
+   the rows came (the Order option), each fitted under its label strip. */
+function gridSpots(items, W, H, label, gap) {
+  const n = items.length;
+  const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * W) / H)) || 1));
+  const rows = Math.ceil(n / cols);
+  const mx = W * 0.03, my = H * 0.04;
+  const cw = (W - 2 * mx) / cols, ch = (H - 2 * my) / rows;
+  const pad = Math.max(gap * CELL, W / 100);
+  return items.map((b, i) => {
+    const strip = label * H * Math.max(1, (b.lines || []).length) * 1.3 + pad;
+    const aw = Math.max(4, cw - 2 * pad), ah = Math.max(4, ch - strip - pad);
+    const scale = Math.max(0.001, Math.min(aw / b.mask.w, ah / b.mask.h));
+    const w = b.mask.w * scale, h = b.mask.h * scale;
+    return [mx + (i % cols) * cw + (cw - w) / 2, my + Math.floor(i / cols) * ch + pad + (ah - h) / 2, scale, false];
+  });
+}
+
+/* A picture kept whole: a tile, a card, a framed portrait, an illuminated
+   page, a window; its rectangle is the mask and it prints over the paper. */
+export function whole(img) {
+  const k0 = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * k0)), h = Math.max(1, Math.round(img.naturalHeight * k0));
+  const c = canvas(w, h);
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return { cut: c, mask: { w, h, data: new Uint8Array(w * h).fill(1) }, paper: [255, 255, 255], blend: 'source-over', box: [0, 0, w, h], frame: [w, h] };
+}
+
 function drawMount(ctx, x, y, w, h, ink, W) {
   ctx.save();
   ctx.strokeStyle = ink;
@@ -647,17 +697,18 @@ const sheetSize = (ratio, size) => (ratio >= 1 ? [size, Math.round(size / ratio)
    the real sheet is built. ``slots`` gives each specimen's box on that
    canvas (by its index in ``specimens``), so a cut-out can be drawn into
    its mount as soon as it is ready. Synchronous, a few milliseconds. */
-export function quickSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy' }) {
+export function quickSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', layout = 'cluster', facing = 'inward' }) {
   const items = specimens.map((b, idx) => { const m = mount(Number(b.aspect) > 0 ? Number(b.aspect) : 0.8); return { ...b, ...m, idx, maskCanvas: maskCanvas(m.mask), flippable: false, face: null }; });
   if (!items.length) return null;
   const [W, H] = sheetSize(ratio, size);
-  items.sort((a, b) => b.factor ** 2 * b.mask.w * b.mask.h - a.factor ** 2 * a.mask.w * a.mask.h);
+  if (layout !== 'grid') items.sort((a, b) => b.factor ** 2 * b.mask.w * b.mask.h - a.factor ** 2 * a.mask.w * a.mask.h);
   const bg = PAPERS[paper] || PAPERS.cream;
   const page = canvas(W, H);
   const ctx = page.getContext('2d');
   ctx.fillStyle = `rgb(${bg.join(',')})`;
   ctx.fillRect(0, 0, W, H);
-  const spots = packSheet(items, W, H, label, { close: 0, airy: 2, open: 4 }[spacing] ?? 2, true);
+  const gapQ = { close: 0, airy: 2, open: 4 }[spacing] ?? 2;
+  const spots = layout === 'grid' ? gridSpots(items, W, H, label, gapQ) : packSheet(items, W, H, label, gapQ, true, layout, facing);
   const shown = [];
   const slots = [];
   items.forEach((b, i) => {
@@ -691,12 +742,13 @@ export function drawIntoMount(quick, i, pic, blend) {
   ctx.restore();
 }
 
-export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', onCut = null }) {
+export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy', layout = 'cluster', facing = 'inward', onCut = null }) {
   const loaded = await Promise.all(specimens.map(async (b, idx) => {
     try {
       let got = null, byEdges = false;
-      if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper) got.blend = 'source-over'; }
-      if (b.src && b.on_paper) {
+      if (b.whole && b.src) got = whole(await loadImage(b.src));
+      else if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper) got.blend = 'source-over'; }
+      if (!b.whole && b.src && b.on_paper) {
         // a plate or painting on plain paper is cut by its edges when that keeps
         // the perch, the foliage, the log a fungus grows from (perchKept)
         const edge = cutout(await loadImage(b.src));
@@ -706,19 +758,20 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       if (!got) got = mount(0.8);
       if (onCut && got.blend !== 'mount') { try { await onCut(idx, got.cut, got.blend); } catch { /* the page may have moved on */ } }
       // a plate cut by its edges may carry lettering, so it is never mirrored
-      const flippable = got.blend !== 'mount' && !byEdges && (!!b.cut || !b.on_paper);
+      const flippable = got.blend !== 'mount' && !byEdges && !b.whole && (!!b.cut || !b.on_paper);
       return { ...b, ...got, maskCanvas: maskCanvas(got.mask), flippable, face: flippable ? faceOf(got.mask) : null };
     } catch { return { ...b, ...mount(0.8), maskCanvas: null, flippable: false, face: null }; }
   })).then((all) => all.map((b) => (b.maskCanvas ? b : { ...b, maskCanvas: maskCanvas(b.mask) })));
   if (!loaded.length) return null;
   const [W, H] = sheetSize(ratio, size);
-  loaded.sort((a, b) => b.factor ** 2 * b.mask.w * b.mask.h - a.factor ** 2 * a.mask.w * a.mask.h);
+  if (layout !== 'grid') loaded.sort((a, b) => b.factor ** 2 * b.mask.w * b.mask.h - a.factor ** 2 * a.mask.w * a.mask.h);
   const bg = PAPERS[paper] || PAPERS.cream;
   const sheet = canvas(W, H);
   const ctx = sheet.getContext('2d');
   ctx.fillStyle = `rgb(${bg.join(',')})`;
   ctx.fillRect(0, 0, W, H);
-  const spots = packSheet(loaded, W, H, label, { close: 0, airy: 2, open: 4 }[spacing] ?? 2);
+  const gapN = { close: 0, airy: 2, open: 4 }[spacing] ?? 2;
+  const spots = layout === 'grid' ? gridSpots(loaded, W, H, label, gapN) : packSheet(loaded, W, H, label, gapN, false, layout, facing);
   const shown = [];
   loaded.forEach((b, i) => {
     const [x, y, scale, flip] = spots[i];

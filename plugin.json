@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -946,6 +946,156 @@
           "group": "Birds aren't real"
         },
         {
+          "value": "artnouveau",
+          "label": "Art Nouveau illustration",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "artsandcrafts",
+          "label": "Arts and Crafts (Morris)",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "jugendstil",
+          "label": "Jugendstil",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "glasgow",
+          "label": "Glasgow style",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "secession",
+          "label": "Vienna Secession",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "deco",
+          "label": "Art Deco",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "beardsley",
+          "label": "Beardsley ink",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "nouveauglass",
+          "label": "Nouveau stained window",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "fairytale",
+          "label": "Golden Age fairy-tale plate",
+          "group": "Nouveau and Deco"
+        },
+        {
+          "value": "japonisme",
+          "label": "Japonisme",
+          "group": "Around the world"
+        },
+        {
+          "value": "chinoiserie",
+          "label": "Chinoiserie",
+          "group": "Around the world"
+        },
+        {
+          "value": "persian",
+          "label": "Persian miniature",
+          "group": "Around the world"
+        },
+        {
+          "value": "bestiary",
+          "label": "Medieval bestiary",
+          "group": "Around the world"
+        },
+        {
+          "value": "byzantine",
+          "label": "Byzantine icon",
+          "group": "Around the world"
+        },
+        {
+          "value": "folkart",
+          "label": "Folk art",
+          "group": "Around the world"
+        },
+        {
+          "value": "delft",
+          "label": "Delft tile",
+          "group": "Around the world"
+        },
+        {
+          "value": "sumie",
+          "label": "Ink and wash",
+          "group": "Around the world"
+        },
+        {
+          "value": "cigarette",
+          "label": "Edwardian cigarette card",
+          "group": "Around the world"
+        },
+        {
+          "value": "felt",
+          "label": "Needle felt",
+          "group": "Craft"
+        },
+        {
+          "value": "clay",
+          "label": "Clay figure",
+          "group": "Craft"
+        },
+        {
+          "value": "bricks",
+          "label": "Brick-built",
+          "group": "Craft"
+        },
+        {
+          "value": "screenprint",
+          "label": "Screen print poster",
+          "group": "Craft"
+        },
+        {
+          "value": "embroidery",
+          "label": "Embroidery",
+          "group": "Craft"
+        },
+        {
+          "value": "mosaic",
+          "label": "Mosaic",
+          "group": "Craft"
+        },
+        {
+          "value": "papercut",
+          "label": "Paper cut",
+          "group": "Craft"
+        },
+        {
+          "value": "pointillism",
+          "label": "Pointillism",
+          "group": "Craft"
+        },
+        {
+          "value": "grumpy",
+          "label": "Grumpy (plate style)",
+          "group": "Characters"
+        },
+        {
+          "value": "superhero",
+          "label": "Superhero",
+          "group": "Characters"
+        },
+        {
+          "value": "portrait",
+          "label": "Victorian portrait",
+          "group": "Characters"
+        },
+        {
+          "value": "pirate",
+          "label": "Pirate",
+          "group": "Characters"
+        },
+        {
           "value": "custom",
           "label": "Your own prompt",
           "group": "Your own"
@@ -1183,6 +1333,56 @@
         {
           "value": "open",
           "label": "Open"
+        }
+      ]
+    },
+    {
+      "name": "layout",
+      "type": "select",
+      "label": "Layout",
+      "default": "cluster",
+      "help": "Cluster gathers the specimens round the largest in the middle, in mirrored pairs. Scatter spreads them over the whole page. Band runs them along the middle; Column stacks them down a tall panel. Grid gives each its own cell, like a drawer of specimens, in the Order chosen. Hero shows one specimen alone, the first by Order (the latest, the rarest, the most heard), with the others named beneath: for a small frame.",
+      "choices": [
+        {
+          "value": "cluster",
+          "label": "Cluster"
+        },
+        {
+          "value": "scatter",
+          "label": "Scatter"
+        },
+        {
+          "value": "band",
+          "label": "Band across the middle"
+        },
+        {
+          "value": "column",
+          "label": "Column"
+        },
+        {
+          "value": "grid",
+          "label": "Grid"
+        },
+        {
+          "value": "hero",
+          "label": "Hero: one specimen, the first by Order"
+        }
+      ]
+    },
+    {
+      "name": "facing",
+      "type": "select",
+      "label": "Facing",
+      "default": "inward",
+      "help": "Inward turns each specimen to face the middle of the page (a cut-out is mirrored when its head is on the outer side); As painted leaves every picture the way round it came.",
+      "choices": [
+        {
+          "value": "inward",
+          "label": "Inward, toward the middle"
+        },
+        {
+          "value": "painted",
+          "label": "As painted"
         }
       ]
     },

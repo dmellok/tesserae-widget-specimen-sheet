@@ -1056,7 +1056,7 @@ def test_every_style_is_grouped():
         "Your own"
     }
     for k, (label, how) in P.STYLES.items():
-        assert "pure white paper" in how, k
+        assert "pure white paper" in how or k in P.WHOLE, k
         assert label and len(label) < 40, k
     # a style that names the kind gets the noun, and the dapper line fits any of them
     assert "the bird" in P.style_of("drone")[1].replace("{kind}", "bird")

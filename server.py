@@ -63,6 +63,8 @@ LABEL_LINES = ("name", "sci", "count", "last", "flag", "who", "size")
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 PAPERS = ("cream", "white", "aged")
 SPACINGS = ("airy", "close", "open")
+LAYOUTS = ("cluster", "scatter", "band", "column", "grid", "hero")
+FACINGS = ("inward", "painted")
 LEVELS = ("colour", "gray16", "gray4", "mono")
 NIGHTS = ("off", "asleep", "owls")
 FOOTERS = ("show", "credits", "hide")
@@ -594,6 +596,8 @@ def _attach_pictures(
         pic = _painting(key, data_dir, levels)
         if pic:
             states["painted"] = states.get("painted", 0) + 1
+            # a tile, a card, a framed portrait: the picture is the object, kept whole
+            pic["whole"] = gen["style"] in P.WHOLE
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
         if go and started_paint < P.PER_FETCH:
@@ -806,6 +810,8 @@ def fetch(
     text_scale = int(_choice(options.get("text_size"), TEXT_SCALES)) / 100
     paper = _choice(options.get("paper"), PAPERS)
     spacing = _choice(options.get("spacing"), SPACINGS)
+    layout = _choice(options.get("layout"), LAYOUTS)
+    facing = _choice(options.get("facing"), FACINGS)
     neutral = options.get("neutral") in (True, "true", "True", 1, "1", "on")
     levels = _choice(options.get("panel"), LEVELS)
     night = _choice(options.get("night"), NIGHTS) if source == "birdnet_go" else "off"
@@ -870,6 +876,8 @@ def fetch(
             "paper": paper,
             "neutral": neutral,
             "spacing": spacing,
+            "layout": layout,
+            "facing": facing,
             "panel": levels,
             "footer": footer,
             "night": night,

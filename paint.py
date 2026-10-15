@@ -302,6 +302,126 @@ STYLES.update(
             "Drone",
             "a flat vector-style illustration of a military drone built to look like the {kind}: the body a matte grey machine with panel seams and a registration number, four small rotors set into the wings, a camera lens for an eye, a red LED and a landing skid for feet, only the colours and markings of the species painted on, clean flat colour, on plain pure white paper",
         ),
+        "artnouveau": (
+            "Art Nouveau illustration",
+            "an Art Nouveau illustration with sinuous flowing lines, a muted palette and decorative leaves curling round the branch, on plain pure white paper",
+        ),
+        "artsandcrafts": (
+            "Arts and Crafts (Morris)",
+            "an Arts and Crafts illustration in the manner of William Morris: the {kind} set among dense, repeating stylised foliage and flowers like a wallpaper or tapestry panel, flat muted earth, olive and indigo colours with a firm dark outline, on plain unbleached paper",
+        ),
+        "jugendstil": (
+            "Jugendstil",
+            "a Jugendstil illustration, the German Art Nouveau: squarer, more geometric ornament, a bold even outline, flat areas of muted colour, the {kind} framed in a decorative cartouche of stylised leaves, on plain cream paper",
+        ),
+        "glasgow": (
+            "Glasgow style",
+            "a Glasgow style illustration in the manner of Charles Rennie Mackintosh and the Macdonald sisters: a tall elongated composition, stylised roses and fine grids, pale washed colours with a few strong dark lines and a great deal of empty space, on plain pure white paper",
+        ),
+        "secession": (
+            "Vienna Secession",
+            "a Vienna Secession illustration in the manner of Klimt and Moser: the {kind}'s plumage true to life but its surroundings made of flat decorative shapes, gold, black and jewel colours, mosaic-like patterned areas, spirals and squares, on plain cream paper",
+        ),
+        "deco": (
+            "Art Deco",
+            "an Art Deco illustration: stepped geometry, sunbursts and fans, the {kind} simplified into clean curves and chevrons, a palette of gold, black, teal and cream with flat colour and crisp edges, on plain pure white paper",
+        ),
+        "beardsley": (
+            "Beardsley ink",
+            "a black-and-white ink illustration in the manner of Aubrey Beardsley: bold sweeping lines, large flat black masses against white, ornamental dots and fine hatching, no colour at all, on plain pure white paper",
+        ),
+        "nouveauglass": (
+            "Nouveau stained window",
+            "a Tiffany-style Art Nouveau stained-glass window of the {kind}: leaded curving lines around pieces of opalescent coloured glass, wisteria and dragonfly ornament, soft light through the glass, on a plain pale background",
+        ),
+        "fairytale": (
+            "Golden Age fairy-tale plate",
+            "a Golden Age illustration in the manner of Arthur Rackham and Edmund Dulac: fine ink line with soft muted watercolour wash, gnarled branches and twisted roots as a frame, a faintly magical atmosphere, on plain toned paper",
+        ),
+        "japonisme": (
+            "Japonisme",
+            "a Japonisme illustration, Western Art Nouveau borrowing from ukiyo-e: a flat {kind} on a branch, an asymmetric composition with an ornamented border and a small seal-like roundel, soft flat colours and a fine keyline, on plain cream paper",
+        ),
+        "chinoiserie": (
+            "Chinoiserie",
+            "a hand-painted chinoiserie wallpaper panel: the {kind} on a flowering branch with delicate blossom and butterflies, soft flat colours on a pale ground, fine brushwork, on plain pale paper",
+        ),
+        "persian": (
+            "Persian miniature",
+            "a Persian miniature painting: flat jewel colours, gold leaf, flattened perspective, the {kind} among tulips and stylised flowers under a patterned sky, with a gold and blue illuminated border, on plain cream paper",
+        ),
+        "bestiary": (
+            "Medieval bestiary",
+            "a page from a medieval bestiary: the {kind} painted in red, blue and green tempera with gold leaf on a vellum ground, drawn as a manuscript illuminator would, with a vine and acanthus border, no text",
+        ),
+        "byzantine": (
+            "Byzantine icon",
+            "a Byzantine icon panel of the {kind}: a burnished gold ground, a formal frontal pose with a halo-like circle behind the head, deep reds and blues in egg tempera, fine gold lines in the feathers",
+        ),
+        "folkart": (
+            "Folk art",
+            "a folk-art painting of the {kind} in the manner of Pennsylvania Dutch fraktur and Scandinavian rosemaling: symmetric scrolls, hearts and tulips, flat bright colours with a dark outline, on plain pure white paper",
+        ),
+        "delft": (
+            "Delft tile",
+            "a Dutch Delft tile painting of the {kind}: cobalt blue on white tin-glazed earthenware, the {kind} in a tiled square with corner ornaments, brushy blue washes and a fine crackle in the glaze",
+        ),
+        "sumie": (
+            "Ink and wash",
+            "a Japanese sumi-e ink and wash painting: a few confident brushstrokes of black ink with soft grey washes and a touch of colour, on plain pure white paper",
+        ),
+        "cigarette": (
+            "Edwardian cigarette card",
+            "an Edwardian cigarette card chromolithograph of the {kind}: a small framed picture with a decorative border, slightly faded printed inks, fine detail, and a blank panel below for the name, on plain cream card",
+        ),
+        "felt": (
+            "Needle felt",
+            "a needle-felted wool figure of the {kind}, soft and fuzzy, in the species' true colours and markings, photographed, on plain pure white paper",
+        ),
+        "clay": (
+            "Clay figure",
+            "a hand-sculpted plasticine figure of the {kind} for a stop-motion film, chunky with a slight sheen and visible thumbprints, in the species' true colours, on plain pure white paper",
+        ),
+        "bricks": (
+            "Brick-built",
+            "a model of the {kind} built from small plastic toy bricks, studs showing, in the species' colours, on plain pure white paper",
+        ),
+        "screenprint": (
+            "Screen print poster",
+            "a mid-century screen-printed nature poster: flat shapes of colour, simple bold forms and a slightly textured ink, on plain pure white paper",
+        ),
+        "embroidery": (
+            "Embroidery",
+            "satin-stitch embroidery in silk thread on plain natural linen, every feather in stitches of the species' true colours, on plain pure white paper",
+        ),
+        "mosaic": (
+            "Mosaic",
+            "a mosaic of small square tesserae of stone and glass in the species' colours, set in pale grout, on plain pure white paper",
+        ),
+        "papercut": (
+            "Paper cut",
+            "a layered cut-paper collage of the {kind}, with sheets of coloured paper in the species' colours and soft shadows between the layers, on plain pure white paper",
+        ),
+        "pointillism": (
+            "Pointillism",
+            "a pointillist painting made entirely of small dots of pure colour that blend at a distance, on plain pure white paper",
+        ),
+        "grumpy": (
+            "Grumpy (plate style)",
+            "a hand-coloured lithograph from a nineteenth-century natural history book, soft watercolour washes over fine engraved linework on pure white paper, of a comically plump {kind}: an almost perfectly round ball of feathers with a big head, a stubby tail and small feet, like a cartoon game character. Give it a very expressive, furious face: heavy dark brows of feathers slanting down over narrowed eyes, a hard glare and a determined scowl. Paint all of it with real, detailed feathers, keeping the species' true colours, markings and bill so it is still plainly that {kind}",
+        ),
+        "superhero": (
+            "Superhero",
+            "a realistic natural history painting on plain cream paper of the {kind} striking a heroic pose with a small flowing cape, dramatic light, plumage still true to life, on plain pure white paper",
+        ),
+        "portrait": (
+            "Victorian portrait",
+            "a stiff, dignified Victorian oil portrait of the {kind} as a family ancestor, in a small gilt oval frame, plumage painted true to life, on plain cream paper",
+        ),
+        "pirate": (
+            "Pirate",
+            "a realistic hand-coloured lithograph in the manner of John Gould on pure white paper, except that the {kind} is a pirate with an eye patch, a small tricorn hat and a cross scowl",
+        ),
     }
 )
 STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -331,6 +451,56 @@ STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Anime", ("anime", "shonen", "manga", "anime_retro")),
     ("Playful", ("pixel", "origami", "hats")),
     ("Birds aren't real", ("surveillance", "cctv", "patent", "automaton", "drone")),
+    (
+        "Nouveau and Deco",
+        (
+            "artnouveau",
+            "artsandcrafts",
+            "jugendstil",
+            "glasgow",
+            "secession",
+            "deco",
+            "beardsley",
+            "nouveauglass",
+            "fairytale",
+        ),
+    ),
+    (
+        "Around the world",
+        (
+            "japonisme",
+            "chinoiserie",
+            "persian",
+            "bestiary",
+            "byzantine",
+            "folkart",
+            "delft",
+            "sumie",
+            "cigarette",
+        ),
+    ),
+    (
+        "Craft",
+        (
+            "felt",
+            "clay",
+            "bricks",
+            "screenprint",
+            "embroidery",
+            "mosaic",
+            "papercut",
+            "pointillism",
+        ),
+    ),
+    (
+        "Characters",
+        (
+            "grumpy",
+            "superhero",
+            "portrait",
+            "pirate",
+        ),
+    ),
 )
 STYLE_IDS = (*STYLES, "custom")
 # The camera a species gets for a head, picked from its name so a sheet has a mix.
@@ -395,12 +565,39 @@ MONO = {
     "charcoal",
     "mezzotint",
     "patent",
+    "beardsley",
 }
+# Styles whose picture is a whole object (a tile, a card, a framed portrait,
+# an illuminated page, a window): kept whole on the sheet, never cut out.
+WHOLE: frozenset[str] = frozenset(
+    (
+        "portrait",
+        "cigarette",
+        "delft",
+        "bestiary",
+        "persian",
+        "byzantine",
+        "nouveauglass",
+        "secession",
+        "jugendstil",
+        "artsandcrafts",
+        "chinoiserie",
+        "japonisme",
+        "fairytale",
+    )
+)
 CUSTOM_EXAMPLE = (
     "an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, "
     "ochre and dusty rose, on plain pure white paper"
 )
 _CUSTOM_RE = re.compile(r"custom[a-z]{8}")
+
+GEN_WHOLE = (
+    "Paint the {kind} in the reference photo, the {name} ({sci}), as {style}. "
+    "Keep its colours, markings, shape and proportions exactly as in the photo: {pose}. "
+    "The picture complete as the style describes, filling the frame edge to edge: "
+    "no text, no lettering, no signature.{about}{dapper}"
+)
 
 GEN = (
     "Paint only the {kind} in the reference photo, the {name} ({sci}), as {style}. "
@@ -731,9 +928,9 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         .replace("{camera}", camera_for(job.get("sci") or ""))
     )
     words = about(job.get("sci") or "", data_dir)
-    gen = GEN
+    gen = GEN_WHOLE if str(job.get("style") or "") in WHOLE else GEN
     if str(job.get("style") or "") in MONO:
-        gen = GEN.replace(
+        gen = gen.replace(
             "Keep its colours, markings, shape and proportions exactly as in the photo",
             "Keep its markings, shape and proportions exactly as in the photo, rendered without any colour: black and white (and grey where the style has it) only",
         )
