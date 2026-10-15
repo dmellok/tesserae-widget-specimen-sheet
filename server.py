@@ -47,6 +47,7 @@ N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
 M = _sibling("masks")
+P = _sibling("paint")
 
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 
@@ -83,6 +84,7 @@ NAME_LOCALES = (
     "ru",
 )
 PICTURE_PX = 700
+PICTURES = ("free", "gen")
 SHEET_MAX = 16
 RETURN_AFTER_DAYS = 45
 QUIET_MIN = 90
@@ -454,6 +456,32 @@ def _photo(
     }
 
 
+def _painting(key: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
+    """A kept painting, resized for the sheet, or None."""
+    folder = P.gen_dir(data_dir)
+    img = folder / f"{key}.jpg"
+    if not img.exists():
+        return None
+    meta = N.read_json(folder / f"{key}.json", {})
+    meta = meta if isinstance(meta, dict) else {}
+    try:
+        raw = img.read_bytes()
+    except OSError:
+        return None
+    src = N.render(raw, PICTURE_PX, None, folder / f"{key}_{PICTURE_PX}.jpg", levels)
+    if not src:
+        return None
+    return {
+        "src": src,
+        "kind": "painting",
+        "on_paper": True,
+        "credit": str(meta.get("credit") or "AI painting"),
+        "paper": "#ffffff",
+        "key": f"g_{key}",
+        "file": str(img),
+    }
+
+
 def _attach_pictures(
     rows: list[dict[str, Any]],
     base: str,
@@ -461,23 +489,63 @@ def _attach_pictures(
     data_dir: Path,
     levels: str,
     fal_key: str = "",
+    gen: dict[str, Any] | None = None,
 ) -> dict[str, int]:
-    """Each row's best picture to-day: a plate from the pack, else the
-    record's own photo (or BirdNET-Go's thumbnail, or, for a bird, the first
-    openly licensed iNaturalist photo). Fetched side by side. Then its
-    cut-out: a kept mask rides along as ``cut``; a picture without one
-    starts a mask job in the background (a few per refresh, with a key) and
-    the page cuts it out itself meanwhile. Returns the mask states counted."""
+    """Each row's best picture to-day, up the ladder: its AI painting when
+    one is kept (``gen`` carries the style, the custom words, the day's
+    dapper species and the cap; a few new paintings are started per refresh),
+    else a plate from the pack, else the record's own photo (or BirdNET-Go's
+    thumbnail, or, for a bird, the first openly licensed iNaturalist photo).
+    Then its cut-out: a kept mask rides along as ``cut``; a picture without
+    one starts a mask job in the background. Returns the states counted."""
     pack = _pack(data_dir)
+    states: dict[str, int] = {}
+    folder = P.gen_dir(data_dir) if gen else None
+    started_paint = 0
+
+    def wanted(row: dict[str, Any]) -> dict[str, Any] | None:
+        nonlocal started_paint
+        if not gen or not row.get("sci"):
+            return None
+        dapper = row["sci"] == gen.get("dapper_sci")
+        key = P.key_for(row["sci"], gen["style"], row.get("kind") or "Aves", dapper)
+        pic = _painting(key, data_dir, levels)
+        if pic:
+            states["painted"] = states.get("painted", 0) + 1
+            return pic
+        go, why = P.may_start(key, folder, fal_key, gen["cap"])
+        if go and started_paint < P.PER_FETCH:
+            job = {
+                "key": key,
+                "style": gen["style"],
+                "name": row["name"],
+                "sci": row["sci"],
+                "kind": row.get("kind") or "Aves",
+                "how": gen.get("how") or "",
+            }
+            if row.get("ref"):
+                job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
+            if P.start(job, data_dir, fal_key):
+                started_paint += 1
+                why = "running"
+        elif go:
+            why = "waiting"
+        states["paint_" + (why or "waiting")] = (
+            states.get("paint_" + (why or "waiting"), 0) + 1
+        )
+        return None
 
     def best(row: dict[str, Any]) -> dict[str, Any] | None:
         return _plate(row["sci"], pack, data_dir, levels) or _photo(
             row, base, token, data_dir, levels
         )
 
+    # paintings are decided in order (a few new ones per refresh); the rest side by side
+    painted = [wanted(r) for r in rows]
     with ThreadPoolExecutor(max_workers=6) as pool:
-        pics = list(pool.map(best, rows))
-    states: dict[str, int] = {}
+        pics = list(
+            pool.map(lambda rp: rp[1] or best(rp[0]), zip(rows, painted, strict=True))
+        )
     started = 0
     for row, pic in zip(rows, pics, strict=True):
         row["pic"] = pic
@@ -504,6 +572,32 @@ def _attach_pictures(
         pic.pop("file", None)
         states[st] = states.get(st, 0) + 1
     return states
+
+
+def _remember(data_dir: Path, rows: list[dict[str, Any]]) -> None:
+    """Every species the widget has shown, for the paintings page."""
+    path = data_dir / "species_seen.json"
+    seen = N.read_json(path, {})
+    seen = seen if isinstance(seen, dict) else {}
+    changed = False
+    for r in rows:
+        if r.get("sci") and seen.get(r["sci"]) != [r["name"], r.get("kind") or "Aves"]:
+            seen[r["sci"]] = [r["name"], r.get("kind") or "Aves"]
+            changed = True
+    if changed:
+        N.write(path, json.dumps(seen, ensure_ascii=False).encode())
+
+
+def known_species(data_dir: Path) -> list[tuple[str, str, str]]:
+    seen = N.read_json(data_dir / "species_seen.json", {})
+    if not isinstance(seen, dict):
+        return []
+    out = [
+        (str(v[0]), sci, str(v[1]))
+        for sci, v in seen.items()
+        if isinstance(v, list) and len(v) == 2
+    ]
+    return sorted(out, key=lambda t: t[0].lower())
 
 
 # ----------------------------------------------------------------------
@@ -635,6 +729,16 @@ def fetch(
     base = S.base_url(options.get("url")) if source == "birdnet_go" else ""
     token = str(options.get("token") or "").strip()
     fal_key = str((settings or {}).get("fal_api_key") or "").strip()
+    pictures = _choice(options.get("pictures"), PICTURES)
+    art_style = _choice(options.get("art_style"), P.STYLE_IDS)
+    how = ""
+    if art_style == "custom":
+        how = (
+            " ".join(str(options.get("art_prompt") or "").split())[:800]
+            or P.CUSTOM_EXAMPLE
+        )
+        art_style = P.register_custom(how)
+    dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
     rules = exclude_rules(
         str(options.get("exclude") or ""), str((settings or {}).get("exclude") or "")
     )
@@ -679,6 +783,8 @@ def fetch(
             "status": [],
             "font_css": N.font_css(("im_fell", "im_fell_sc", "archivo_narrow")),
             "demo": False,
+            "pictures": pictures,
+            "art_style": art_style,
         }
         base_out.update(kw)
         return base_out
@@ -781,6 +887,7 @@ def fetch(
     obs_total = obs_total or sum(r["count"] for r in rows)
 
     # --- exclusions ------------------------------------------------------
+    _remember(data_dir, rows)
     kept = [r for r in rows if not is_excluded(r, rules)]
     excluded = len(rows) - len(kept)
     rows = kept
@@ -835,7 +942,19 @@ def fetch(
         )
 
     # --- pictures, sizes, labels ------------------------------------------
-    mask_states = _attach_pictures(shown, base, token, data_dir, levels, fal_key)
+    gen = None
+    if pictures == "gen":
+        gen = {
+            "style": art_style,
+            "how": how,
+            "cap": P.daily_cap(settings),
+            "dapper_sci": P.dapper_pick(
+                [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
+            )
+            if dapper
+            else "",
+        }
+    mask_states = _attach_pictures(shown, base, token, data_dir, levels, fal_key, gen)
     _size(shown, sizing)
     for r in shown:
         r["count_text"] = _count_text(r, source, window)
@@ -860,6 +979,22 @@ def fetch(
         status.append(f"{n} cut-out{'' if n == 1 else 's'} on the way")
     if mask_states.get("no_key"):
         notices.append(NOTE_NO_KEY)
+    if gen:
+        want = len([r for r in shown if r.get("sci")])
+        have = mask_states.get("painted", 0)
+        if mask_states.get("paint_running") or mask_states.get("paint_waiting"):
+            status.append(
+                f"painting {have + 1} of {want}" if have < want else "painting"
+            )
+        if mask_states.get("paint_no_key"):
+            notices.append(P.NOTE_NO_KEY)
+        if mask_states.get("paint_capped"):
+            status.append(P.NOTE_GEN_CAP.format(cap=gen["cap"]))
+        if mask_states.get("paint_failed"):
+            n = mask_states["paint_failed"]
+            notices.append(
+                f"{n} painting{'' if n == 1 else 's'} failed; tried again later"
+            )
     return out(
         title=title,
         area=area,
@@ -876,3 +1011,468 @@ def fetch(
         status=status,
         demo=demo,
     )
+
+
+# ----------------------------------------------------------------------
+# The paintings page
+# ----------------------------------------------------------------------
+
+_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z]{1,20}){0,3}")
+_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z]{1,20}){0,3})__(\d{8}-\d{6})")
+
+
+def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
+    """Everything the paintings page shows, read from gen/: one entry per
+    painting key (a species in a style, perched or in flight, dapper or not)."""
+    folder = P.gen_dir(data_dir)
+    entries: dict[str, dict[str, Any]] = {}
+
+    def entry(key: str) -> dict[str, Any]:
+        parts = key.split("--")
+        style = parts[1] if len(parts) > 1 else "gould"
+        return entries.setdefault(
+            key,
+            {
+                "slug": key,
+                "name": parts[0].replace("_", " ").capitalize(),
+                "sci": "",
+                "kind": "",
+                "style": style,
+                "style_label": P.style_of(style)[0],
+                "flight": "flight" in parts[2:],
+                "dapper": "dapper" in parts[2:],
+                "active": None,
+                "archive": [],
+                "error": None,
+                "cut": "none",
+                "cut_why": "",
+            },
+        )
+
+    def take(e: dict[str, Any], meta: Any) -> None:
+        if not isinstance(meta, dict):
+            return
+        if meta.get("name"):
+            e["name"] = str(meta["name"])
+        e["sci"] = e["sci"] or str(meta.get("sci") or "")
+        e["kind"] = e["kind"] or str(meta.get("kind") or "")
+        if meta.get("how") and not e.get("how"):
+            e["how"] = str(meta["how"])
+            words = e["how"]
+            e["style_label"] = "Custom: " + (
+                words[:44].rstrip() + "…" if len(words) > 45 else words
+            )
+
+    with contextlib.suppress(OSError):
+        for f in folder.glob("*.jpg"):
+            if (
+                not _SLUG_RE.fullmatch(f.stem)
+                or not (folder / f"{f.stem}.json").exists()
+            ):
+                continue  # a resized copy, not a painting
+            meta = N.read_json(folder / f"{f.stem}.json", {})
+            e = entry(f.stem)
+            take(e, meta)
+            e["active"] = {
+                "file": f.name,
+                "credit": str(meta.get("credit") or ""),
+                "made": time.strftime(
+                    "%d %b %Y",
+                    time.localtime(int(meta.get("made") or f.stat().st_mtime)),
+                ),
+            }
+            e["cut"] = M.state(f"g_{f.stem}", data_dir)
+            e["cut_why"] = (
+                M.why_bad(f"g_{f.stem}", data_dir) if e["cut"] == "bad" else ""
+            )
+        for f in sorted((folder / "archive").glob("*.jpg"), reverse=True):
+            m = _ARCHIVED_RE.fullmatch(f.stem)
+            if not m:
+                continue
+            e = entry(m.group(1))
+            take(e, N.read_json(f.with_suffix(".json"), {}))
+            e["archive"].append(
+                {
+                    "file": f.name,
+                    "made": datetime.strptime(m.group(2), "%Y%m%d-%H%M%S").strftime(
+                        "%d %b"
+                    ),
+                }
+            )
+        for f in folder.glob("*.err"):
+            if _SLUG_RE.fullmatch(f.stem):
+                err = N.read_json(f, {})
+                e = entry(f.stem)
+                take(e, err)
+                e["error"] = (
+                    str(err.get("why") or "failed")
+                    if isinstance(err, dict)
+                    else "failed"
+                )
+    with P._LOCK:
+        running = set(P._PAINTING)
+    known = {N.slug(sci): (n, sci, k) for n, sci, k in known_species(data_dir)}
+    for key, e in entries.items():
+        e["painting"] = key in running
+        base = key.split("--")[0]
+        if base in known:
+            name, sci, kind = known[base]
+            e["sci"] = e["sci"] or sci
+            e["kind"] = e["kind"] or kind
+            if e["name"].lower() == base.replace("_", " "):
+                e["name"] = name
+    ordered = sorted(
+        entries.values(),
+        key=lambda e: (e["active"] is None, e["name"].lower(), e["style"]),
+    )
+    return {
+        "paintings": ordered,
+        "used": P.budget_used(folder),
+        "cap": cap,
+        "masks_used": M.budget_used(data_dir),
+        "running": sorted(running),
+        "styles": [(k, v[0]) for k, v in P.STYLES.items()],
+        "custom_example": P.CUSTOM_EXAMPLE,
+        "style_groups": [
+            (g, [(k, P.STYLES[k][0]) for k in ids]) for g, ids in P.STYLE_GROUPS
+        ],
+        "kinds": [(k, v[0]) for k, v in K.KINDS.items()],
+    }
+
+
+def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
+    if not e["sci"]:
+        return None
+    job = {
+        "key": e["slug"],
+        "style": e["style"],
+        "name": e["name"],
+        "sci": e["sci"],
+        "kind": e.get("kind") or "",
+    }
+    if e.get("how"):
+        job["how"] = e["how"]
+    return job
+
+
+def blueprint() -> Any:
+    """The page under Widgets: every AI painting this widget has made, with
+    earlier versions kept, buttons to paint, repaint, cut out again, delete
+    or bring back a version, and the species seen for the Leave out lists."""
+    from flask import (
+        Blueprint,
+        abort,
+        current_app,
+        flash,
+        jsonify,
+        redirect,
+        render_template,
+        request,
+        send_from_directory,
+        url_for,
+    )
+
+    bp = Blueprint("specimen_sheet_admin", __name__, template_folder="templates")
+
+    def plugin() -> Any:
+        registry = current_app.config["PLUGIN_REGISTRY"]
+        for pl in registry.plugins.values():
+            with contextlib.suppress(OSError, AttributeError):
+                if Path(pl.path).resolve() == HERE:
+                    return pl
+        abort(404)
+
+    def data_dir() -> Path:
+        path = Path(plugin().data_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def settings() -> dict[str, Any]:
+        store = current_app.config.get("SETTINGS_STORE")
+        if store is None:
+            return {}
+        pl = plugin()
+        got = store.get_for_runtime("plugins", pl.id, pl.manifest.get("settings", []))
+        return got if isinstance(got, dict) else {}
+
+    def fal_key() -> str:
+        return str(settings().get("fal_api_key") or "").strip()
+
+    def cap() -> int:
+        return P.daily_cap(settings())
+
+    def slug_or_404(slug: str) -> str:
+        if not _SLUG_RE.fullmatch(slug):
+            abort(404)
+        return slug
+
+    def back() -> Any:
+        return redirect(url_for("specimen_sheet_admin.index"))
+
+    def start(job: dict[str, Any], label: str) -> None:
+        key = fal_key()
+        folder = P.gen_dir(data_dir())
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+        elif P.budget_used(folder) >= cap():
+            flash(
+                f"To-day's limit of {cap()} paintings is used up. Raise it in this widget's settings.",
+                "warn",
+            )
+        elif not P.start(job, data_dir(), key):
+            flash(f"{label} is already being painted.", "info")
+        else:
+            with contextlib.suppress(OSError):
+                (folder / f"{job['key']}.err").unlink()
+            flash(
+                f"Painting {label}. It takes up to a minute; this page redraws when it lands.",
+                "success",
+            )
+
+    @bp.get("/")
+    def index() -> str:
+        dd = data_dir()
+        return render_template(
+            "specimen_sheet/admin.html",
+            g=_gallery(dd, cap()),
+            known=known_species(dd),
+            has_key=bool(fal_key()),
+        )
+
+    @bp.get("/progress")
+    def progress() -> Any:
+        return jsonify(P.progress(P.gen_dir(data_dir()), cap(), bool(fal_key())))
+
+    @bp.get("/painting/<path:name>")
+    def image(name: str) -> Any:
+        folder = P.gen_dir(data_dir())
+        stem, _, ext = name.rpartition(".")
+        if ext != "jpg":
+            abort(404)
+        if _SLUG_RE.fullmatch(stem):
+            return send_from_directory(folder, name)
+        if stem.startswith("archive/") and _ARCHIVED_RE.fullmatch(stem[8:]):
+            return send_from_directory(folder / "archive", name[8:])
+        abort(404)
+
+    @bp.post("/paint")
+    def paint() -> Any:
+        sci = request.form.get("sci", "").strip()
+        name = request.form.get("name", "").strip()
+        known = {s_: (n, k) for n, s_, k in known_species(data_dir())}
+        kind = request.form.get("kind", "").strip()
+        if not name:
+            name = known.get(sci, (sci, ""))[0]
+        if not kind:
+            kind = known.get(sci, ("", "Aves"))[1]
+        if not sci or not re.fullmatch(r"[A-Z][a-z-]+ [a-z-]+( [a-z-]+)?", sci):
+            flash("Give the scientific name, for example Gymnorhina tibicen.", "warn")
+            return back()
+        if kind not in K.KINDS:
+            kind = "Aves"
+        style = _choice(request.form.get("style"), P.STYLE_IDS)
+        job: dict[str, Any] = {
+            "style": style,
+            "name": name[:80],
+            "sci": sci,
+            "kind": kind,
+        }
+        if style == "custom":
+            how = (
+                " ".join(request.form.get("how", "").split())[:800] or P.CUSTOM_EXAMPLE
+            )
+            job["style"] = P.register_custom(how)
+            job["how"] = how
+        job["key"] = P.key_for(
+            sci, job["style"], kind, request.form.get("dapper") == "1"
+        )
+        start(job, f"the {name[:80]}")
+        return back()
+
+    @bp.post("/<slug>/repaint")
+    def repaint(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        e = next(
+            (e for e in _gallery(data_dir(), cap())["paintings"] if e["slug"] == slug),
+            None,
+        )
+        job = _job_for(e) if e else None
+        if job is None:
+            abort(404)
+        start(job, f"the {e['name']}")
+        return back()
+
+    @bp.post("/<slug>/recut")
+    def recut(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        dd = data_dir()
+        img = P.gen_dir(dd) / f"{slug}.jpg"
+        if not img.exists():
+            abort(404)
+        for f in M.folder(dd).glob(f"g_{slug}.*"):
+            with contextlib.suppress(OSError):
+                f.unlink()
+        key = fal_key()
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+        elif M.start(f"g_{slug}", img.read_bytes(), dd, key):
+            flash("Cutting the painting out again; it takes a few seconds.", "success")
+        else:
+            flash(
+                "That cut-out is already being made, or to-day's cut-outs are used up.",
+                "info",
+            )
+        return back()
+
+    @bp.post("/<slug>/delete")
+    def delete(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        folder = P.gen_dir(data_dir())
+        for f in (
+            folder / f"{slug}.jpg",
+            folder / f"{slug}.json",
+            folder / f"{slug}.err",
+        ):
+            with contextlib.suppress(OSError):
+                f.unlink()
+        P.drop_derived(folder, slug)
+        flash(
+            "Painting deleted. With AI paintings on, the species is painted again the next time it is shown.",
+            "success",
+        )
+        return back()
+
+    def retire(keys: list[str]) -> int:
+        folder = P.gen_dir(data_dir())
+        done = 0
+        for key in keys:
+            if not _SLUG_RE.fullmatch(key) or not (folder / f"{key}.jpg").exists():
+                continue
+            P.archive(folder, key)
+            with contextlib.suppress(OSError):
+                (folder / f"{key}.err").unlink()
+            done += 1
+        return done
+
+    def retired(n: int) -> None:
+        if n:
+            flash(
+                f"{n} painting{'' if n == 1 else 's'} moved to earlier versions. The widget paints them again as the species are shown, within the daily limit.",
+                "success",
+            )
+        else:
+            flash("No paintings were selected.", "info")
+
+    @bp.post("/budget-reset")
+    def budget_reset() -> Any:
+        N.write(
+            P.gen_dir(data_dir()) / "budget.json",
+            json.dumps({time.strftime("%Y-%m-%d"): 0}).encode(),
+        )
+        flash("To-day's count is back to 0.", "success")
+        return back()
+
+    @bp.post("/bulk-delete")
+    def bulk_delete() -> Any:
+        retired(retire(request.form.getlist("keys")))
+        return back()
+
+    @bp.post("/style-paint")
+    def style_paint() -> Any:
+        style = request.form.get("art", "")
+        if style not in P.STYLES:
+            abort(400)
+        key = fal_key()
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+            return back()
+        folder = P.gen_dir(data_dir())
+        jobs = []
+        for name, sci, kind in known_species(data_dir()):
+            k = P.key_for(sci, style, kind)
+            if not (folder / f"{k}.jpg").exists():
+                jobs.append(
+                    {"key": k, "style": style, "name": name, "sci": sci, "kind": kind}
+                )
+        label = P.STYLES[style][0]
+        room = max(0, cap() - P.budget_used(folder))
+        if not jobs:
+            flash(
+                f"Every species shown so far already has a painting in {label}.", "info"
+            )
+        elif not room:
+            flash(
+                f"To-day's limit of {cap()} paintings is used up. Raise it in this widget's settings.",
+                "warn",
+            )
+        elif not P.start_batch(jobs, data_dir(), key, cap()):
+            flash(f"{label} is already being painted for every species.", "info")
+        else:
+            n = min(len(jobs), room)
+            flash(
+                f"Painting {n} species in {label}, a few at a time"
+                + (
+                    f"; {len(jobs) - n} more wait for to-morrow's limit"
+                    if len(jobs) > n
+                    else ""
+                )
+                + ". This page redraws as they arrive.",
+                "success",
+            )
+        return back()
+
+    @bp.post("/style-delete")
+    def style_delete() -> Any:
+        style = request.form.get("art", "")
+        if style not in P.STYLES and not P._CUSTOM_RE.fullmatch(style):
+            abort(400)
+        keys = [
+            e["slug"]
+            for e in _gallery(data_dir(), cap())["paintings"]
+            if e["style"] == style and e["active"]
+        ]
+        retired(retire(keys))
+        return back()
+
+    @bp.post("/<slug>/clear-error")
+    def clear_error(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        with contextlib.suppress(OSError):
+            (P.gen_dir(data_dir()) / f"{slug}.err").unlink()
+        return back()
+
+    @bp.post("/archive/<stem>/use")
+    def use_archived(stem: str) -> Any:
+        import os
+
+        m = _ARCHIVED_RE.fullmatch(stem)
+        if not m:
+            abort(404)
+        folder = P.gen_dir(data_dir())
+        slug, src = m.group(1), folder / "archive" / f"{stem}.jpg"
+        if not src.exists():
+            abort(404)
+        meta = N.read_json(src.with_suffix(".json"), {})
+        if (folder / f"{slug}.jpg").exists():
+            P.archive(folder, slug)
+        os.replace(src, folder / f"{slug}.jpg")
+        if not isinstance(meta, dict) or not meta:
+            meta = {"credit": "AI painting", "made": int(time.time())}
+        N.write(folder / f"{slug}.json", json.dumps(meta).encode())
+        with contextlib.suppress(OSError):
+            src.with_suffix(".json").unlink()
+        P.drop_derived(folder, slug)
+        flash("That version is the species' painting again.", "success")
+        return back()
+
+    @bp.post("/archive/<stem>/delete")
+    def delete_archived(stem: str) -> Any:
+        if not _ARCHIVED_RE.fullmatch(stem):
+            abort(404)
+        arch = P.gen_dir(data_dir()) / "archive"
+        for f in (arch / f"{stem}.jpg", arch / f"{stem}.json"):
+            with contextlib.suppress(OSError):
+                f.unlink()
+        return back()
+
+    return bp

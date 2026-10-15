@@ -516,7 +516,11 @@ def test_manifest_is_well_formed():
             d = o.get("default")
             for v in d if isinstance(d, list) else [d]:
                 assert v in values, f"{o['name']} default {v!r} is not a choice"
-    assert {s["name"] for s in m["settings"]} == {"fal_api_key", "exclude"}
+    assert {s["name"] for s in m["settings"]} == {
+        "fal_api_key",
+        "gen_daily_cap",
+        "exclude",
+    }
 
 
 @pytest.mark.parametrize("state", ["ok", "empty", "asleep", "error"])
@@ -713,3 +717,226 @@ def test_masks_need_a_key_and_a_bad_one_is_remembered(tmp_path, offline_masks):
     r = server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
     assert all(s["pic"]["cut_state"] == "bad" for s in r["species"]) and not r["status"]
     assert "covers" in M.why_bad(r["species"][0]["pic"]["key"], tmp_path)
+
+
+# ----------------------------------------------------------------------
+# Paintings
+# ----------------------------------------------------------------------
+
+P = server.P
+
+
+def _settle_paint(timeout=15.0):
+    import time
+
+    end = time.time() + timeout
+    while (P._PAINTING or M._RUNNING) and time.time() < end:
+        time.sleep(0.02)
+    assert not P._PAINTING and not M._RUNNING
+
+
+@pytest.fixture
+def offline_paint(offline_masks):
+    """fal.ai paints too: nano-banana answers a picture, Wikipedia a sentence."""
+    real = N.http.side_effect
+    prompts: list[dict] = []
+
+    def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
+        if "nano-banana" in url:
+            prompts.append(json.loads(kw["body"]))
+            assert token == "k"
+            return json.dumps(
+                {"images": [{"url": "https://fal.example/out.jpg"}]}
+            ).encode(), None
+        if "wikipedia.org/api/rest_v1/page/summary/Gymnorhina_tibicen" in url:
+            return json.dumps(
+                {
+                    "extract": "The Australian magpie is a black and white passerine bird native to Australia. It has a solid wedge-shaped bluish-white and black bill."
+                }
+            ).encode(), None
+        if "wikipedia.org" in url:
+            return None, "HTTP 404"
+        return real(url, token, accept, **kw)
+
+    N.http.side_effect = fake_http
+    return prompts
+
+
+def test_keys_poses_and_dapper():
+    assert P.key_for("Gymnorhina tibicen", "gould") in (
+        "gymnorhina_tibicen--gould",
+        "gymnorhina_tibicen--gould--flight",
+    )
+    assert P.key_for("Amanita muscaria", "gould", "Fungi").endswith("--gould")
+    assert P.key_for("Gymnorhina tibicen", "hats", dapper=True).endswith("--dapper")
+    scis = ["Gymnorhina tibicen", "Columba livia", "Spilopelia chinensis"]
+    pick = P.dapper_pick(scis, "2026-10-15")
+    assert pick in scis and P.dapper_pick(list(reversed(scis)), "2026-10-15") == pick
+    assert len({P.dapper_pick(scis, f"2026-10-{d:02d}") for d in range(1, 31)}) > 1
+    assert P.custom_tag("x") == P.custom_tag("x") and P.custom_tag("x") != P.custom_tag(
+        "y"
+    )
+
+
+def test_paintings_climb_the_ladder(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+        "dapper": True,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    # until the paintings land, the plate and the photos show, and the foot says so
+    assert (
+        r["species"][0]["pic"]["kind"] == "plate" and "painting 1 of 4" in r["status"]
+    )
+    _settle_paint()
+    assert len(offline_paint) == 3, "three new paintings per refresh"
+    prompt = next(
+        pr["prompt"] for pr in offline_paint if "(Gymnorhina tibicen)" in pr["prompt"]
+    )
+    assert (
+        "copperplate engraving" in prompt
+        and "pure white paper" in prompt
+        and "(Gymnorhina tibicen)" in prompt
+    )
+    assert "About the subject: The Australian magpie" in prompt
+    assert all(
+        pr["image_urls"] == ["https://inat.example/photos/1/large.jpg"]
+        for pr in offline_paint
+    )
+    r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    assert len(offline_paint) == 4, "the fourth on the next refresh"
+    r = server.fetch(options, settings, ctx=ctx)
+    kinds = [s["pic"]["kind"] for s in r["species"]]
+    assert kinds == ["painting"] * 4 and len(offline_paint) == 4
+    assert not [x for x in r["status"] if "painting" in x]
+    assert all(
+        s["pic"]["on_paper"] and s["pic"]["key"].startswith("g_") for s in r["species"]
+    )
+    # the dapper one: one species, its own key, the hat in its prompt
+    dapper = [pr for pr in offline_paint if "is dapper" in pr["prompt"]]
+    assert len(dapper) == 1
+    assert (
+        sorted(f.name for f in (tmp_path / "gen").glob("*--dapper.jpg")).__len__() == 1
+    )
+    # paintings get masks like any other picture
+    _settle_paint()
+    r = server.fetch(options, settings, ctx=ctx)
+    assert all(s["pic"].get("cut") for s in r["species"])
+    assert P.budget_used(tmp_path / "gen") == 4
+    # switching the style paints again; switching back costs nothing
+    r = server.fetch({**options, "art_style": "gould"}, settings, ctx=ctx)
+    _settle_paint()
+    assert len(offline_paint) == 7
+    r = server.fetch(options, settings, ctx=ctx)
+    assert len(offline_paint) == 7 and all(
+        s["pic"]["kind"] == "painting" for s in r["species"]
+    )
+
+
+def test_paintings_need_a_key_and_respect_the_cap(tmp_path, offline_paint):
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, {}, ctx=ctx)
+    assert P.NOTE_NO_KEY in r["notices"] and not offline_paint
+    assert r["species"][0]["pic"]["kind"] == "plate"
+    N.write(
+        tmp_path / "gen" / "budget.json",
+        json.dumps({__import__("time").strftime("%Y-%m-%d"): 6}).encode(),
+    )
+    r = server.fetch(options, {"fal_api_key": "k", "gen_daily_cap": "6"}, ctx=ctx)
+    assert not offline_paint and any("limit of 6" in x for x in r["status"])
+
+
+def test_custom_prompt_and_kinds_in_the_prompt(tmp_path, offline_paint):
+    options = {
+        **MELBOURNE,
+        "source": "inaturalist",
+        "pictures": "gen",
+        "art_style": "custom",
+        "art_prompt": "a Delft tile, cobalt on white",
+        "count": "4",
+    }
+    server.fetch(
+        options,
+        {"fal_api_key": "k"},
+        ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480},
+    )
+    _settle_paint()
+    by = {
+        pr["prompt"].split("(")[1].split(")")[0]: pr["prompt"] for pr in offline_paint
+    }
+    assert "a Delft tile, cobalt on white" in by["Agrotis infusa"]
+    assert (
+        "Paint only the insect" in by["Agrotis infusa"]
+        and "pinned specimen" in by["Agrotis infusa"]
+    )
+    assert (
+        "Paint only the fungus" in by["Amanita muscaria"]
+        and "mycological plate" in by["Amanita muscaria"]
+    )
+    assert (
+        by["Cygnus atratus"].count("perched") + by["Cygnus atratus"].count("in flight")
+        == 1
+    )
+    # the observation's own photo is the reference
+    swan = next(pr for pr in offline_paint if "Cygnus atratus" in pr["prompt"])
+    assert swan["image_urls"] == [
+        "https://inaturalist-open-data.s3.amazonaws.com/photos/500/medium.jpg"
+    ]
+    keys = {
+        f.stem.split("--")[1][:6]
+        for f in (tmp_path / "gen").glob("*.jpg")
+        if "_700" not in f.stem
+    }
+    assert keys == {"custom"}
+
+
+def test_admin_template_renders(tmp_path, offline_paint):
+    import jinja2
+    from flask import Flask
+
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "4"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
+    _settle_paint()
+    server.fetch(
+        options, {"fal_api_key": "k"}, ctx=ctx
+    )  # the paintings are ready: their masks start
+    _settle_paint()
+    app = Flask("t", template_folder=str(ROOT / "templates"))
+    stubs = {
+        "_base.html": "{% block title %}{% endblock %}{% block main %}{% endblock %}",
+        "_components.html": (
+            "{% macro card_head(t, icon_name='', level=2, blurb='') %}<h2>{{ t }}</h2>{{ blurb }}{% endmacro %}"
+            "{% macro button(t, icon='', variant='', disabled=False) %}<button>{{ t }}</button>{% endmacro %}"
+            "{% macro empty_state(i, t, b) %}<p>{{ t }} {{ b }}</p>{% endmacro %}"
+        ),
+    }
+    app.jinja_loader = jinja2.ChoiceLoader(
+        [jinja2.DictLoader(stubs), jinja2.FileSystemLoader(str(ROOT / "templates"))]
+    )
+    app.register_blueprint(server.blueprint(), url_prefix="/plugins/specimen_sheet")
+    with app.test_request_context("/plugins/specimen_sheet/"):
+        from flask import render_template
+
+        g = server._gallery(tmp_path, 12)
+        html = render_template(
+            "specimen_sheet/admin.html",
+            g=g,
+            known=server.known_species(tmp_path),
+            has_key=True,
+        )
+    assert g["used"] == 4 and len([e for e in g["paintings"] if e["active"]]) == 4
+    assert (
+        "Australian Magpie" in html
+        and "Gymnorhina tibicen" in html
+        and "Silver Gull" in html
+    )
+    assert "Cut out again" in html and "No paintings yet" not in html
+    assert any(e["cut"] == "ready" for e in g["paintings"])

@@ -3,7 +3,7 @@
   "name": "Specimen Sheet",
   "version": "0.1.0",
   "kind": "widget",
-  "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos; labels with counts; a demo garden until BirdNET-Go is set up.",
+  "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
   "supports": {
     "sizes": [
@@ -693,6 +693,115 @@
       "help": "Species to leave off the sheet, one per line: a common or scientific name, a genus (Columba drops every pigeon in it), a kind (Insecta, insects, Birds) or a pattern such as *gull. An excluded species frees its place for the next. Case and accents don't matter."
     },
     {
+      "name": "pictures",
+      "type": "select",
+      "label": "Pictures",
+      "default": "free",
+      "help": "Plates and photos cost nothing. AI paintings paint each species once, from a photo of it, in the style below, on white paper so the cut-out is clean, at about US$0.04 a species; the sheet shows plates and photos until each painting lands. Needs a fal.ai key in this widget's settings.",
+      "choices": [
+        {
+          "value": "free",
+          "label": "Plates and photos"
+        },
+        {
+          "value": "gen",
+          "label": "AI paintings"
+        }
+      ]
+    },
+    {
+      "name": "art_style",
+      "type": "select",
+      "label": "Art style",
+      "default": "gould",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "choices": [
+        {
+          "value": "gould",
+          "label": "Hand-coloured lithograph (Gould)",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "audubon",
+          "label": "Watercolour after Audubon",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "engraving",
+          "label": "Black-ink engraving",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "woodblock",
+          "label": "Japanese woodblock print",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "linocut",
+          "label": "Linocut",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "harper",
+          "label": "Mid-century modern (Harper)",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "watercolour",
+          "label": "Modern watercolour",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "sketch",
+          "label": "Field sketch",
+          "group": "Plates and prints"
+        },
+        {
+          "value": "pixel",
+          "label": "Pixel art",
+          "group": "Playful"
+        },
+        {
+          "value": "origami",
+          "label": "Origami",
+          "group": "Playful"
+        },
+        {
+          "value": "hats",
+          "label": "Hats and monocles",
+          "group": "Playful"
+        },
+        {
+          "value": "custom",
+          "label": "Your own prompt",
+          "group": "Your own"
+        }
+      ]
+    },
+    {
+      "name": "art_prompt",
+      "type": "textarea",
+      "label": "Your own prompt",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "art_style": "custom"
+      },
+      "help": "Describe the medium and the look; the widget adds the species, its photo and the white paper. For example: an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, ochre and dusty rose, on plain pure white paper."
+    },
+    {
+      "name": "dapper",
+      "type": "boolean",
+      "label": "One dapper specimen a day",
+      "default": false,
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "One specimen on the sheet is painted in a small hat, and perhaps a monocle, in whatever style the sheet is in: the same one all day, another to-morrow. One extra painting a day at most."
+    },
+    {
       "name": "sizing",
       "type": "select",
       "label": "Sizes",
@@ -1145,6 +1254,35 @@
       "secret": true,
       "default": "",
       "help": "With a key, every plate and photo on the sheet is cut out by a background-removal model on fal.ai (BiRefNet, well under a cent a picture, once per picture, at most 300 a day), so a plate with a painted sky or a photo arrives on the page as the specimen alone. Without one, pictures on plain paper are cut by their edges and photos are shown as soft ovals. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
+    },
+    {
+      "name": "gen_daily_cap",
+      "type": "select",
+      "label": "AI paintings per day",
+      "default": "12",
+      "help": "The most new AI paintings made in a day, at about US$0.04 each. Paintings are kept, so a place's species only cost once; raise this to fill a sheet faster.",
+      "choices": [
+        {
+          "value": "6",
+          "label": "6 (about US$0.24)"
+        },
+        {
+          "value": "12",
+          "label": "12 (about US$0.48)"
+        },
+        {
+          "value": "24",
+          "label": "24 (about US$0.96)"
+        },
+        {
+          "value": "48",
+          "label": "48 (about US$1.92)"
+        },
+        {
+          "value": "96",
+          "label": "96 (about US$3.84)"
+        }
+      ]
     },
     {
       "name": "exclude",
