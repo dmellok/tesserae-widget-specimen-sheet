@@ -25,6 +25,7 @@
        data-stop="{{ url_for('specimen_sheet_admin.stop_one') }}" data-stop-all="{{ url_for('specimen_sheet_admin.stop_all') }}">
     <div class="bb-queue-head">
       <span class="bb-tick-dot" aria-hidden="true"></span><strong id="bb-queue-title"></strong>
+      <button type="button" class="ghost bb-link bb-fold" id="bb-queue-fold" aria-expanded="true" aria-controls="bb-queue-list"><i class="ph ph-caret-down" aria-hidden="true"></i> Hide</button>
       <button type="button" class="ghost danger bb-queue-all" id="bb-stop-all"><i class="ph ph-stop" aria-hidden="true"></i> Stop all</button>
     </div>
     <ul class="bb-queue-list" id="bb-queue-list"></ul>
@@ -80,11 +81,12 @@
 <section class="card">
   {{ card_head('Species seen', icon_name='binoculars', level=2,
                blurb='Every species the widget has shown, for the Leave out lists: copy a name into a cell\'s Leave out, or into the plugin\'s Always leave out.') }}
-  {% if known %}
-  <p class="bb-known">{% for name, sci, kind in known %}<span class="bb-chip-static" title="{{ sci }}">{{ name }}</span>{% endfor %}</p>
-  {% else %}
-  <p class="bb-meta">Nothing shown yet.</p>
-  {% endif %}
+  <details class="bb-species" id="bb-species">
+    <summary>{% if known %}{{ known|length }} species, show the list{% else %}Nothing shown yet{% endif %}</summary>
+    {% if known %}
+    <p class="bb-known">{% for name, sci, kind in known %}<span class="bb-chip-static" title="{{ sci }}">{{ name }}</span>{% endfor %}</p>
+    {% endif %}
+  </details>
 </section>
 
 <section class="card">
@@ -236,11 +238,29 @@
       if (seen === null) seen = latest;
       else if (latest > seen && !p.running.length && !p.queued.length) location.reload();
     }
+    const fold = document.getElementById('bb-queue-fold');
+    const setFold = (on) => {
+      box.classList.toggle('folded', on);
+      fold.setAttribute('aria-expanded', String(!on));
+      fold.lastChild.textContent = on ? ' Show' : ' Hide';
+    };
+    try { setFold(localStorage.getItem('bb-queue-folded') === '1'); } catch {}
+    fold.addEventListener('click', () => {
+      const on = !box.classList.contains('folded');
+      setFold(on);
+      try { localStorage.setItem('bb-queue-folded', on ? '1' : '0'); } catch {}
+    });
     document.getElementById('bb-stop-all').addEventListener('click', () => {
       if (confirm('Stop every render, waiting or under way? A painting already under way has been paid for; its result is dropped.')) post(box.dataset.stopAll);
     });
     tick();
     setInterval(tick, 3000);
+  })();
+  (function () {
+    const d = document.getElementById('bb-species');
+    if (!d) return;
+    try { d.open = localStorage.getItem('bb-species-open') === '1'; } catch {}
+    d.addEventListener('toggle', () => { try { localStorage.setItem('bb-species-open', d.open ? '1' : '0'); } catch {} });
   })();
   (function () {
     const chips = document.querySelectorAll('.bb-chip');
@@ -281,7 +301,12 @@
   .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
   .bb-ticker { display: flex; flex-direction: column; gap: 6px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--t-border); border-radius: 8px; background: var(--t-surface); font-size: 13px; }
   .bb-queue-head { display: flex; align-items: center; gap: 8px; }
-  .bb-queue-all { margin-left: auto; }
+  .bb-fold { margin-left: auto; }
+  .bb-queue-all { margin-left: 0; }
+  .bb-ticker.folded .bb-queue-list { display: none; }
+  .bb-ticker.folded .bb-fold i { transform: rotate(-90deg); }
+  .bb-species > summary { cursor: pointer; list-style: none; color: var(--t-fg-soft); margin-bottom: 8px; }
+  .bb-species > summary::-webkit-details-marker { display: none; }
   .bb-queue-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
   .bb-queue-list li { display: flex; align-items: center; gap: 10px; }
   .bb-queue-list li > :first-child { flex: 1; min-width: 0; }
