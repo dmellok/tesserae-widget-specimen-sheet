@@ -131,6 +131,9 @@ GEN_RETRY_S = 6 * 3600
 PER_FETCH = 3  # new paintings started per refresh
 BATCH_PARALLEL = 3
 PROMPT_VERSION = 1
+# A style reworded after it shipped gets a revision here; its paintings are
+# keyed with it, so only that style is painted again.
+STYLE_REVISIONS: dict[str, int] = {"cctv": 2}
 
 NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
 NOTE_GEN_CAP = "AI paintings: to-day's limit of {cap} is used up; more to-morrow."
@@ -292,8 +295,8 @@ STYLES.update(
             "a Victorian clockwork automaton of the {kind}: brass and enamel feathers, visible gears at the wing joint, a wind-up key in its back, painted as a natural-history plate, the {kind} alone on plain pure white paper",
         ),
         "cctv": (
-            "Camera head (anime)",
-            "a clean anime illustration of the {kind} in the species' true colours and markings, with crisp line art and soft cel shading, except that its head is, plainly and unmistakably, {camera}, sitting directly on the shoulders where the head should be with no neck, stalk or mount between, turned the way the head would face, the body, wings, tail and feet still those of the {kind}, on plain pure white paper",
+            "Camera head (watercolour)",
+            "a watercolour painting of the {kind} in the species' true colours and markings, loose transparent washes with soft wet edges and a few fine pen lines for the feathers, except that its head is, plainly and unmistakably, {camera}, sitting directly on the shoulders where the head should be with no neck, stalk or mount between, turned the way the head would face, the body, wings, tail and feet still those of the {kind}, on plain pure white paper",
         ),
         "drone": (
             "Drone",
@@ -542,6 +545,8 @@ def key_for(
     bird, dapper for the day's dapper specimen, the model when it is not the
     default (so switching models never repaints what another made)."""
     key = f"{N.slug(sci)}--{style}"
+    if style in STYLE_REVISIONS:
+        key += f"--r{STYLE_REVISIONS[style]}"
     if kind == "Aves" and flies(sci):
         key += "--flight"
     if dapper:

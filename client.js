@@ -58,6 +58,65 @@ function asleep(d) {
 
 /* ---------------- the sheet ---------------- */
 
+/* ---- building the sheet without holding the page ----
+   The packer runs in one long-lived module worker (OffscreenCanvas), so the
+   page, and the editor whose preview this page is, stay responsive while a
+   sheet is built; the page builds it itself only where workers are missing
+   or one fails. A finished sheet is remembered, in memory and in
+   localStorage, under a cheap key of what went into it (names, picture
+   sizes, factors, labels, page size and look), so a cell rendered again with
+   the same pictures, which is every refresh until a new picture lands, shows
+   at once with no decoding and no packing at all. */
+const WORKER_PATH = './static/sheet.js';
+let WORKER = null;
+let CHAIN = Promise.resolve();
+function packOffThread(args) {
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return buildSheet(args);
+  const run = () => new Promise((resolve) => {
+    try { if (!WORKER) WORKER = new Worker(new URL(WORKER_PATH, import.meta.url), { type: 'module' }); } catch { resolve(buildSheet(args)); return; }
+    const w = WORKER;
+    let done = false;
+    const finish = (sheet) => { if (done) return; done = true; clearTimeout(timer); w.onmessage = null; w.onerror = null; resolve(sheet); };
+    const drop = () => { if (WORKER === w) WORKER = null; try { w.terminate(); } catch { /* gone */ } };
+    const timer = setTimeout(() => { drop(); finish(buildSheet(args)); }, 90000);
+    w.onmessage = (e) => finish(e.data && e.data.ok ? e.data.sheet : buildSheet(args));
+    w.onerror = () => { drop(); finish(buildSheet(args)); };
+    w.postMessage(args);
+  });
+  CHAIN = CHAIN.then(run, run);
+  return CHAIN;
+}
+const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+function keyOf(a) {
+  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}|${x.neutral ? 1 : 0}|${(x.paper || []).join(',')}|${(x.lines || []).join('/')}`);
+  return `ss1:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.ink}:${a.spacing}:${fnv(parts.join(';'))}`;
+}
+const SHEETS = new Map();
+const store = (() => { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; } })();
+function recall(key) {
+  if (SHEETS.has(key)) return SHEETS.get(key);
+  try { const raw = store && store.getItem(key); if (raw) { const v = JSON.parse(raw); SHEETS.set(key, v); return v; } } catch { /* unreadable */ }
+  return null;
+}
+function remember(key, sheet) {
+  SHEETS.set(key, sheet);
+  if (!store) return;
+  try {
+    const raw = JSON.stringify(sheet);
+    const mine = []; for (let i = 0; i < store.length; i++) { const k = store.key(i); if (k && k.startsWith('ss1:')) mine.push(k); }
+    while (mine.length >= 6) store.removeItem(mine.shift()); // a handful of sheets, the oldest out first
+    store.setItem(key, raw);
+  } catch { try { for (let i = store.length - 1; i >= 0; i--) { const k = store.key(i); if (k && k.startsWith('ss1:')) store.removeItem(k); } } catch { /* full or blocked */ } }
+}
+async function buildCached(args) {
+  const key = keyOf(args);
+  const had = recall(key);
+  if (had) return had;
+  const sheet = await packOffThread(args);
+  if (sheet) remember(key, sheet);
+  return sheet;
+}
+
 async function build(d) {
   if (typeof document === 'undefined') return null;
   const w = d.cell_w || 800, h = d.cell_h || 480;
@@ -70,7 +129,7 @@ async function build(d) {
   const label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
   try {
-    return await buildSheet({ specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy' });
+    return await buildCached({ specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, spacing: d.spacing || 'airy' });
   } catch { return null; }
 }
 
@@ -90,7 +149,7 @@ function sheet(d, made) {
   }).join('');
   const mounts = made.items.filter((m) => m.mount).length;
   const extra = mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
-  const page = `<div class="sh-page" style="--r:${made.ratio};--lf:${made.label}"><img src="${made.src}" alt="">${tags}</div>`;
+  const page = `<div class="sh-page" style="--r:${made.ratio};--lf:${made.label}"><img src="${made.src}" alt="" decoding="async">${tags}</div>`;
   if (labels === 'key') {
     const rows = made.items.map((m, i) => { const s = bySci[m.sci || m.name] || {}; return `<li><em>${i + 1}.</em><span>${esc(m.name)}${s.sci ? `<i>${esc(s.sci)}</i>` : ''}</span><b>${s.count || ''}</b></li>`; }).join('');
     return `${head(d)}<div class="cl"><div class="cl-pic">${page}</div><ol class="cl-key">${rows}</ol></div>${foot(d, extra)}`;

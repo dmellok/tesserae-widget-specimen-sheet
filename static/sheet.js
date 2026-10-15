@@ -15,7 +15,17 @@
 
 const CELL = 6;
 
+/* The packer runs the same in the page and in a worker (client.js starts
+   one when it can, so the page stays responsive while the sheet is built);
+   in a worker a picture is an ImageBitmap and a canvas an OffscreenCanvas. */
+const IN_WORKER = typeof WorkerGlobalScope !== 'undefined' && typeof self !== 'undefined' && self instanceof WorkerGlobalScope;
+
 function loadImage(src) {
+  if (IN_WORKER) {
+    return fetch(src).then((r) => { if (!r.ok) throw new Error('picture would not load'); return r.blob(); }).then((b) => createImageBitmap(b)).then((bm) => {
+      bm.naturalWidth = bm.width; bm.naturalHeight = bm.height; return bm;
+    });
+  }
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
@@ -25,10 +35,22 @@ function loadImage(src) {
 }
 
 function canvas(w, h) {
+  const cw = Math.max(1, Math.round(w)), ch = Math.max(1, Math.round(h));
+  if (IN_WORKER) return new OffscreenCanvas(cw, ch);
   const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(w));
-  c.height = Math.max(1, Math.round(h));
+  c.width = cw;
+  c.height = ch;
   return c;
+}
+
+/* The finished sheet as a JPEG data URL, from either kind of canvas. */
+async function toJpeg(c) {
+  if (!IN_WORKER) return c.toDataURL('image/jpeg', 0.9);
+  const blob = await c.convertToBlob({ type: 'image/jpeg', quality: 0.9 });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return `data:image/jpeg;base64,${btoa(s)}`;
 }
 
 function median(values) {
@@ -195,7 +217,24 @@ export function cutout(img) {
     out.data[o + 3] = 255;
   }
   cctx.putImageData(out, 0, 0);
-  return { cut, mask: { w: bw, h: bh, data: hard }, paper, blend: 'multiply' };
+  return { cut, mask: { w: bw, h: bh, data: hard }, paper, blend: 'multiply', box, frame: [cw, ch] };
+}
+
+/* How much of a cut-out is drawing, in pixels of its mask. */
+function inkOf(got) { let n = 0; const d = got.mask.data; for (let i = 0; i < d.length; i++) n += d[i]; return n; }
+
+/* Whether a picture on plain paper is to be cut by its edges rather than by
+   the model's mask. The model keeps the bird and drops the branch it sits
+   on, the foliage round it, the log a fungus grows from, all of which are
+   the drawing; the edge cut keeps everything drawn on the paper. So a plate
+   or painting is cut by its edges whenever the paper was plain enough to
+   find: the cut is well under the whole frame and not just specks. An aged,
+   textured or vignetted plate fails this and keeps the model's mask. */
+function perchKept(edge) {
+  if (!edge) return false;
+  const [fw, fh] = edge.frame;
+  const edgeInk = inkOf(edge);
+  return edgeInk < 0.8 * fw * fh && edgeInk > 0.01 * fw * fh;
 }
 
 /* A picture that arrived already cut out (a PNG with alpha): its alpha is
@@ -232,7 +271,7 @@ export function fromAlpha(img, paper = null) {
     out.data[o + 3] = px[i + 3];
   }
   cctx.putImageData(out, 0, 0);
-  return { cut, mask: { w: bw, h: bh, data: hard }, paper: [255, 255, 255], blend: 'multiply' };
+  return { cut, mask: { w: bw, h: bh, data: hard }, paper: [255, 255, 255], blend: 'multiply', box, frame: [cw, ch] };
 }
 
 /* A photo as a soft oval vignette: an ellipse inscribed in the picture,
@@ -520,6 +559,27 @@ export function packSheet(items, W, H, label, gap = 2) {
     return 3 * sideways + 2 * updown + 0.6 * quadSpread + 0.5 * spread;
   };
 
+  /* the finished arrangement, scaled up as one about its centre until it
+     meets the page's margins: the packer stops growing once a pair can no
+     longer be placed by its search, which leaves paper round the group that
+     a plain enlargement of the whole group can use. Scaling everything by
+     the same factor keeps every clearance and the symmetry; the captions
+     keep their own size, so the strips reserved for them only get roomier.
+     The largest specimen stays under 0.72 of the short side and nothing is
+     blown up past 1.6 times, so pictures keep their detail. */
+  const fill = (placed) => {
+    const ps = placed.filter(Boolean);
+    if (!ps.length) return placed;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of ps) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + p.f.fw); y1 = Math.max(y1, p.y + p.f.fh); }
+    const ux0 = gw * 0.03, ux1 = gw * 0.97, uy0 = gh * 0.05, uy1 = gh * 0.95;
+    let s = Math.min((ux1 - ux0) / Math.max(1, x1 - x0), (uy1 - uy0) / Math.max(1, y1 - y0), 1.6);
+    for (const p of ps) s = Math.min(s, (0.72 * Math.min(W, H)) / Math.max(1, p.f.tw * CELL, p.f.th * CELL));
+    if (s <= 1.02) return placed;
+    const bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2, ucx = (ux0 + ux1) / 2, ucy = (uy0 + uy1) / 2;
+    return placed.map((p) => p && { ...p, x: ucx + (p.x - bcx) * s, y: ucy + (p.y - bcy) * s, scale: p.scale * s, f: { ...p.f, fw: p.f.fw * s, fh: p.f.fh * s, tw: p.f.tw * s, th: p.f.th * s, off: p.f.off * s, pad: p.f.pad * s } });
+  };
+
   const area = items.reduce((s, b) => s + b.mask.w * b.mask.h * b.factor ** 2, 0);
   let unit = Math.sqrt((0.55 * room * CELL * CELL) / Math.max(1, area));
   const starts = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
@@ -536,11 +596,12 @@ export function packSheet(items, W, H, label, gap = 2) {
   let best = null;
   for (let i = 0; i < 14 && !best; i++) { best = tryAll(unit); if (!best) unit *= 0.88; }
   if (!best) return items.map(() => [0, 0, 0, false]);
-  for (let i = 0; i < 18; i++) {
-    const bigger = tryAll(unit * 1.05);
+  for (let i = 0; i < 10; i++) {
+    const bigger = tryAll(unit * 1.06);
     if (!bigger) break;
-    unit *= 1.05; best = bigger;
+    unit *= 1.06; best = bigger;
   }
+  best = fill(best);
   return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip] : [0, 0, 0, false]));
 }
 
@@ -555,13 +616,18 @@ const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220
 export async function buildSheet({ specimens, ratio, size, label, paper = 'cream', ink = '#2a2116', spacing = 'airy' }) {
   const loaded = await Promise.all(specimens.map(async (b) => {
     try {
-      let got = null;
+      let got = null, byEdges = false;
       if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper) got.blend = 'source-over'; }
-      else if (b.src && b.on_paper) got = cutout(await loadImage(b.src));
-      else if (b.src) got = vignette(await loadImage(b.src));
+      if (b.src && b.on_paper) {
+        // a plate or painting on plain paper is cut by its edges when that keeps
+        // the perch, the foliage, the log a fungus grows from (perchKept)
+        const edge = cutout(await loadImage(b.src));
+        if (perchKept(edge)) { got = edge; byEdges = true; }
+      }
+      if (!got && b.src) got = vignette(await loadImage(b.src));
       if (!got) got = mount(0.8);
       // a plate cut by its edges may carry lettering, so it is never mirrored
-      const flippable = got.blend !== 'mount' && (!!b.cut || !b.on_paper);
+      const flippable = got.blend !== 'mount' && !byEdges && (!!b.cut || !b.on_paper);
       return { ...b, ...got, maskCanvas: maskCanvas(got.mask), flippable, face: flippable ? faceOf(got.mask) : null };
     } catch { return { ...b, ...mount(0.8), maskCanvas: null, flippable: false, face: null }; }
   })).then((all) => all.map((b) => (b.maskCanvas ? b : { ...b, maskCanvas: maskCanvas(b.mask) })));
@@ -599,5 +665,14 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
     shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', flip: !!flip, box: [x / W, y / H, w / W, h / H], at: [(x + w / 2) / W, (y + h) / H] });
   });
   if (!shown.length) return null;
-  return { src: sheet.toDataURL('image/jpeg', 0.9), items: shown, paper: `rgb(${bg.join(',')})`, ratio, label, w: W, h: H };
+  return { src: await toJpeg(sheet), items: shown, paper: `rgb(${bg.join(',')})`, ratio, label, w: W, h: H };
+}
+
+/* As a worker: one message in with buildSheet's argument, one out with its
+   result (or the error), then the page ends the worker. */
+if (IN_WORKER) {
+  self.onmessage = async (e) => {
+    try { self.postMessage({ ok: true, sheet: await buildSheet(e.data) }); }
+    catch (err) { self.postMessage({ ok: false, error: String(err && err.message || err) }); }
+  };
 }

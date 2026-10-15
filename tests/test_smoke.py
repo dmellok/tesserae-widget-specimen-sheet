@@ -1101,7 +1101,7 @@ def test_camera_heads_vary_by_species(tmp_path, offline_paint):
         tmp_path,
     )
     assert (
-        "anime" in prompt
+        "watercolour" in prompt
         and P.camera_for("Columba livia") in prompt
         and "{camera}" not in prompt
     )
