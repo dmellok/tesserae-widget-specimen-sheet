@@ -678,6 +678,16 @@ def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
     return len(begin), len(ready)
 
 
+LIVE_S = 6
+
+
+def _live_refresh(states: dict[str, int]) -> int:
+    """Seconds after which the editor should ask for the sheet again, while a
+    painting or a cut-out is on the way; 0 once there is nothing to wait for."""
+    busy = ("running", "paint_running", "paint_waiting")
+    return LIVE_S if any(states.get(k) for k in busy) else 0
+
+
 def _unpainted_hint(n: int, states: dict[str, int], has_key: bool, hold: bool) -> str:
     """What an only-painted sheet says while none of its species is painted."""
     many = f"{n} specimen{'' if n == 1 else 's'}"
@@ -1063,6 +1073,7 @@ def fetch(
             "night": night,
             "sky": {"dark": False},
             "asleep": None,
+            "live_refresh_s": 0,
             "state": "ok",
             "error": "",
             "hint": "",
@@ -1271,6 +1282,7 @@ def fetch(
                 hint=_unpainted_hint(unpainted, mask_states, bool(fal_key), hold),
                 sky=sky,
                 demo=demo,
+                live_refresh_s=_live_refresh(mask_states),
             )
     _size(shown, sizing)
     for r in shown:
@@ -1342,6 +1354,7 @@ def fetch(
         sky=sky,
         asleep=asleep,
         state="asleep" if asleep else "ok",
+        live_refresh_s=_live_refresh(mask_states),
         credits=([scene_out["pic"]["credit"]] if scene_out else credits),
         notices=notices,
         status=status,

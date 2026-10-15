@@ -989,6 +989,29 @@ def test_only_painted_leaves_the_rest_off_until_they_land(tmp_path, offline_pain
     assert len(r["species"]) == 4
 
 
+def test_sheet_asks_to_be_refreshed_while_paintings_are_on_the_way(
+    tmp_path, offline_paint
+):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["live_refresh_s"] == server.LIVE_S
+    for _ in range(4):
+        _settle_paint()
+        r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["live_refresh_s"] == 0
+    plain = server.fetch({**MELBOURNE, "url": "birdnet.local"}, {}, ctx=ctx)
+    assert plain["live_refresh_s"] == 0
+
+
 def test_paintings_need_a_key_and_respect_the_cap(tmp_path, offline_paint):
     options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen"}
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
