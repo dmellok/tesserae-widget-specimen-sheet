@@ -4,7 +4,7 @@
    out and packs the sheet in the render browser (static/sheet.js), then prints
    the labels, the header and the foot over it. Everything arrives inlined,
    because the render sandbox has no network. */
-import { buildSheet, quickSheet, drawIntoMount } from './static/sheet.js';
+import { buildSheet, quickSheet, drawIntoMount, wrapLabel } from './static/sheet.js';
 
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -150,7 +150,8 @@ async function build(d, onCut) {
 }
 
 function labelOf(s, lines) {
-  return (lines || [s.name]).map((t, i) => `<span class="sh-ln${i === 0 ? ' sh-name' : ''}${i > 0 && t === s.sci ? ' sh-sci' : ''}${i > 0 && t !== s.sci ? ' sh-sm' : ''}">${esc(t)}</span>`).join('');
+  // a long line is broken as the packer broke it, so the caption fills the strip it was given
+  return (lines || [s.name]).map((t, i) => `<span class="sh-ln${i === 0 ? ' sh-name' : ''}${i > 0 && t === s.sci ? ' sh-sci' : ''}${i > 0 && t !== s.sci ? ' sh-sm' : ''}">${esc(wrapLabel(t)).replace(/\n/g, '<br>')}</span>`).join('');
 }
 
 function sheet(d, made) {

@@ -419,10 +419,25 @@ export function faceOf(mask) {
   return d > 0 ? 'right' : 'left';
 }
 
+/* A label longer than ``max`` characters is broken at its spaces into lines of about that
+   length, so a long name does not claim a strip of paper far wider than its specimen. */
+export function wrapLabel(text, max = LABEL_CHARS) {
+  const out = [];
+  let cur = '';
+  for (const w of String(text).split(' ')) {
+    if (cur && (cur + ' ' + w).length > max) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
+  }
+  if (cur) out.push(cur);
+  return out.join('\n');
+}
+const LABEL_CHARS = 20;
+
 function labelStrip(lines, label, H) {
   if (!lines || !lines.length) return { rows: 0, nameW: 0 };
-  const rows = Math.max(2, Math.floor((label * 1.5 * H) / CELL)) * lines.length;
-  const nameW = Math.floor(Math.max(...lines.map((t, i) => t.length * (i === 0 ? 0.62 : 0.44))) * label * H / CELL) + 3;
+  // the name and its lines, each wrapped; the name's own lines are the wide small capitals
+  const segs = lines.flatMap((t, i) => wrapLabel(t).split('\n').map((u) => [u, i === 0 ? 0.62 : 0.44]));
+  const rows = Math.max(2, Math.floor((label * 1.5 * H) / CELL)) * segs.length;
+  const nameW = Math.floor(Math.max(...segs.map(([u, k]) => u.length * k)) * label * H / CELL) + 3;
   return { rows, nameW };
 }
 
@@ -472,6 +487,7 @@ function footprintOf(b, scale, flip, label, H, gap = 0) {
   // neighbours keep their distance; ``pad`` is where the picture sits inside it
   const pad = gap && Math.min(tw, th) > 4 ? gap : 0;
   let bw = tw, bh = th;
+  const raw = body;
   if (pad) {
     const grown = new Uint8Array((tw + 2 * pad) * (th + 2 * pad));
     for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) grown[(y + pad) * (tw + 2 * pad) + x + pad] = body[y * tw + x];
@@ -491,10 +507,14 @@ function footprintOf(b, scale, flip, label, H, gap = 0) {
     lt = Math.max(Math.floor(bh * 0.55), Math.min(bh + 1, low + 2));
   }
   const fh = Math.max(bh, rows ? lt + rows - 1 : 0);
-  const fp = new Uint8Array(fw * fh);
-  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) fp[y * fw + off + x] = body[y * bw + x];
-  if (rows) for (let y = lt; y < lt + rows - 1; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
-  return { fp, fw, fh, off: off + pad, pad, tw, th, mass, flip, lt };
+  // three layers: the body itself, the body with its air, and the label strip. The air of two
+  // neighbours may overlap, and a strip may lie in a neighbour's air, so footprints interlock;
+  // a body never touches anything, and a strip never crosses a body or another strip.
+  const fp = new Uint8Array(fw * fh), fb = new Uint8Array(fw * fh), fa = new Uint8Array(fw * fh), fs = new Uint8Array(fw * fh);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (body[y * bw + x]) { fa[y * fw + off + x] = 1; fp[y * fw + off + x] = 1; }
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) if (raw[y * tw + x]) fb[(y + pad) * fw + off + pad + x] = 1;
+  if (rows) for (let y = lt; y < lt + rows - 1; y++) for (let x = lx; x < lx + nameW; x++) { fs[y * fw + x] = 1; fp[y * fw + x] = 1; }
+  return { fp, fb, fa, fs, fw, fh, off: off + pad, pad, tw, th, mass, flip, lt };
 }
 
 /* Place cut-outs on a W x H page, balanced: the largest in the middle, the
@@ -530,8 +550,14 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
   }
   const cap = (0.55 * Math.min(W, H)); // the biggest specimen never dictates the scale
 
+  const grid = () => ({ b: new Uint16Array(gw * gh), a: new Uint16Array(gw * gh), s: new Uint16Array(gw * gh) });
   const overlaps = (occ, x, y, f) => {
-    for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) if (f.fp[yy * f.fw + xx] && occ[(y + yy) * gw + x + xx]) return true;
+    for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) {
+      const k = yy * f.fw + xx, g = (y + yy) * gw + x + xx;
+      if (f.fb[k] && (occ.a[g] || occ.s[g])) return true;
+      if (f.fa[k] && occ.b[g]) return true;
+      if (f.fs[k] && (occ.b[g] || occ.s[g])) return true;
+    }
     return false;
   };
   const within = (x, y, f) => {
@@ -540,7 +566,13 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     return true;
   };
   const stamp = (occ, x, y, f, on) => {
-    for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) if (f.fp[yy * f.fw + xx]) occ[(y + yy) * gw + x + xx] = on;
+    const d = on ? 1 : -1;
+    for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) {
+      const k = yy * f.fw + xx, g = (y + yy) * gw + x + xx;
+      if (f.fb[k]) occ.b[g] += d;
+      if (f.fa[k]) occ.a[g] += d;
+      if (f.fs[k]) occ.s[g] += d;
+    }
   };
   const free = (occ, x, y, f) => within(x, y, f) && !overlaps(occ, x, y, f);
 
@@ -570,7 +602,7 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
 
   /* one attempt: a start angle for the spiral, and which of each pair goes left */
   const attempt = (unit, start, leftFirst) => {
-    const occ = new Uint8Array(gw * gh);
+    const occ = grid();
     const placed = new Array(items.length).fill(null);
     const scaleOf = (b) => Math.min(unit * b.factor, cap / Math.max(b.mask.w, b.mask.h));
     const put = (i, f, x, y) => { stamp(occ, x, y, f, 1); placed[i] = { x, y, f, scale: scaleOf(items[i]) }; };
@@ -663,9 +695,17 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
         const steps = ps.length === 2 ? [[dx, dy, -dx, dy], [dx, 0, -dx, 0], [0, dy, 0, dy]] : [[dx, dy], [dx, 0], [0, dy]];
         for (const p of ps) stamp(occ, p.x, p.y, p.f, 0);
         let done = false;
+        // the members are off the grid while a move is tried, so each one's new spot is put down
+        // before the next is checked: a pair closing on the middle must not close on itself
+        const clear = (moves) => {
+          let ok = true, k = 0;
+          for (; k < ps.length && ok; k++) { ok = free(occ, moves[k][0], moves[k][1], ps[k].f); if (ok) stamp(occ, moves[k][0], moves[k][1], ps[k].f, 1); }
+          for (let j = 0; j < (ok ? k : k - 1); j++) stamp(occ, moves[j][0], moves[j][1], ps[j].f, 0);
+          return ok;
+        };
         for (const s of steps) {
           const moves = ps.map((p, k) => [p.x + s[k * 2], p.y + s[k * 2 + 1]]);
-          if (moves.every(([x, y], k) => (s[k * 2] || s[k * 2 + 1]) && free(occ, x, y, ps[k].f)) || (ps.length === 2 && moves.every(([x, y], k) => free(occ, x, y, ps[k].f)) && (s[0] || s[1]))) {
+          if ((moves.every((_m, k) => s[k * 2] || s[k * 2 + 1]) || (ps.length === 2 && (s[0] || s[1]))) && clear(moves)) {
             // both members may move; a member already on the axis skips its own step
             ps.forEach((p, k) => { p.x = moves[k][0]; p.y = moves[k][1]; });
             done = true;
@@ -684,27 +724,35 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
      it stands, the smallest first, for as long as its footprint (caption strip and air
      included) stays clear of the others and inside the margins. No specimen grows past twice
      its size, so the sizes still read as they were given. */
-  const expand = (placed) => {
-    const occ = new Uint8Array(gw * gh);
-    const live = placed.map((p, i) => p && { ...p, i, base: p.scale });
+  const expand = (placed, relocate = true) => {
+    const occ = grid();
+    const live = placed.map((p, i) => p && { ...p, i, base: p.scale, stuck: -9 });
     for (const p of live) if (p) stamp(occ, p.x, p.y, p.f, 1);
     const ps = live.filter(Boolean);
     const top = (0.6 * Math.min(W, H));
-    for (let round = 0; round < 60; round++) {
+    /* where a grown specimen may go: on its own spot, nudged a cell, then on rings round it, out
+       to a sixth of the page, so one hemmed in where it stands can still grow into a gap near by */
+    const R = Math.ceil(Math.min(gw, gh) * 0.16);
+    const near = function* (nx, ny) {
+      for (const [dx, dy] of [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) yield [nx + dx, ny + dy];
+      for (let r = 2; r <= R; r += 2) for (let k = -r; k <= r; k += 2) { yield [nx + k, ny - r]; yield [nx + k, ny + r]; yield [nx - r, ny + k]; yield [nx + r, ny + k]; }
+    };
+    for (let round = 0; round < 80; round++) {
       let grew = false;
       for (const p of [...ps].sort((a, b) => a.scale - b.scale)) {
+        if (round - p.stuck < 4) continue;
         const b = items[p.i];
-        const ns = p.scale * 1.04;
-        if (ns > p.base * 2 || ns * Math.max(b.mask.w, b.mask.h) > top) continue;
+        const ns = p.scale * 1.05;
+        if (ns > p.base * 2.5 || ns * Math.max(b.mask.w, b.mask.h) > top) continue;
         const nf = footprintOf(b, ns, p.f.flip, label, H, gap);
         const bx = p.x + p.f.off + p.f.tw / 2, by = p.y + p.f.pad + p.f.th / 2;
         const nx = Math.round(bx - nf.off - nf.tw / 2), ny = Math.round(by - nf.pad - nf.th / 2);
         stamp(occ, p.x, p.y, p.f, 0);
         let spot = null;
-        for (const [dx, dy] of [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [-1, 1], [1, -1], [-1, -1]]) {
-          if (free(occ, nx + dx, ny + dy, nf)) { spot = [nx + dx, ny + dy]; break; }
-        }
-        if (spot) { p.x = spot[0]; p.y = spot[1]; p.f = nf; p.scale = ns; grew = true; }
+        for (const [x, y] of near(nx, ny)) if (free(occ, x, y, nf)) { spot = [x, y]; break; }
+        // hemmed in where it stands: the innermost gap on the page that takes it, as the packer places
+        if (!spot && relocate) spot = findSpot(occ, nf, cx, cy, -Math.PI / 2, 0);
+        if (spot) { p.x = spot[0]; p.y = spot[1]; p.f = nf; p.scale = ns; grew = true; } else p.stuck = round;
         stamp(occ, p.x, p.y, p.f, 1);
       }
       if (!grew) break;
@@ -771,16 +819,25 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     return best;
   };
   let best = null;
-  for (let i = 0; i < 14 && !best; i++) { best = tryAll(unit); if (!best) unit *= 0.88; }
+  for (let i = 0; i < 24 && !best; i++) { best = tryAll(unit); if (!best) unit *= 0.93; }
   if (!best) return items.map(() => [0, 0, 0, false]);
   // a packed page grows in smaller steps, since each specimen is placed on its own
   const grow = packed ? 1.03 : 1.06;
-  for (let i = 0; i < (fast ? 0 : packed ? 30 : 10); i++) {
+  for (let i = 0; i < (fast ? 0 : packed ? 30 : 16); i++) {
     const bigger = tryAll(unit * grow);
     if (!bigger) break;
     unit *= grow; best = bigger;
   }
-  if (!fast && !scatter) best = expand(best);
+  if (!fast && !scatter) {
+    // grow, pull everything in to close the gaps growth opened, grow again
+    best = expand(best);
+    for (let k = 0; k < 2; k++) {
+      const occ = grid();
+      for (const p of best) if (p) stamp(occ, p.x, p.y, p.f, 1);
+      settle(occ, best, best.map((_p, i) => [i]));
+      best = expand(best);
+    }
+  }
   best = fill(best);
   return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip, (p.y + p.f.lt - p.f.pad - 1) * CELL] : [0, 0, 0, false]));
 }
