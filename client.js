@@ -1,10 +1,10 @@
 /* Specimen Sheet: the birds and wildlife around the panel, cut out and laid
    out together on one printed page. The server (server.py) reduces the
    source to species rows with a picture each; this file cuts the pictures
-   out and packs the sheet in the render browser (sheet.js), then prints
+   out and packs the sheet in the render browser (static/sheet.js), then prints
    the labels, the header and the foot over it. Everything arrives inlined,
    because the render sandbox has no network. */
-import { buildSheet } from './sheet.js';
+import { buildSheet } from './static/sheet.js';
 
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
