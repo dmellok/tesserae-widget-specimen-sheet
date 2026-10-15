@@ -1685,3 +1685,13 @@ def test_style_previews_come_from_paintings_of_the_preview_species(tmp_path):
     }
     assert files["gould"] == "parus_major--gould.jpg" and files["engraving"]
     assert not files["anime"]
+
+
+def test_every_option_type_is_one_the_server_installs():
+    allowed = {
+        "string", "textarea", "variables_textarea", "entity_overrides", "location_search",
+        "number", "slider", "select", "multiselect", "boolean", "color",
+    }
+    manifest = json.loads((Path(__file__).resolve().parent.parent / "plugin.json").read_text(encoding="utf-8"))
+    bad = [(o["name"], o["type"]) for o in manifest["cell_options"] if o["type"] not in allowed]
+    assert not bad
