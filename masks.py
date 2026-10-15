@@ -6,9 +6,10 @@ in a background thread and kept beside it under data/masks/. Loaded by
 server.py by path.
 
 The check (plan, section 3.2): the foreground must cover 4 to 85 percent
-of the frame, touch at most two of the frame's edges, and be mostly one
-piece; the largest piece is kept, small holes in it are filled, and the
-edge is feathered a pixel."""
+of the frame, touch at most two of the frame's edges, and have one piece
+that clearly outweighs the rest; that piece is kept (a plate's second bird
+or its caption is dropped), small holes in it are filled, and the edge is
+feathered a pixel."""
 
 from __future__ import annotations
 
@@ -48,7 +49,7 @@ RETRY_S = 6 * 3600  # after the model or the network failed
 BAD_S = 30 * 86400  # after the model answered but the mask was no good
 MIN_COVER, MAX_COVER = 0.04, 0.85
 MAX_EDGES = 2
-MAIN_SHARE = 0.8  # the largest piece must hold this much of the foreground
+MAIN_SHARE = 0.35  # the largest piece must hold this much of the foreground (a plate's second bird is dropped)
 HOLE_SHARE = 0.01  # holes smaller than this share of the piece are filled
 
 _RUNNING: set[str] = set()
@@ -132,7 +133,7 @@ def check(alpha: Any) -> tuple[Any | None, str]:
     if main_n < MAIN_SHARE * total:
         return (
             None,
-            f"the largest piece holds only {main_n / total:.0%} of the foreground",
+            f"the largest of {len(pieces)} pieces holds only {main_n / total:.0%} of the foreground",
         )
     if min(main.any(axis=0).sum(), main.any(axis=1).sum()) < 20 * k:
         return None, "the piece is too small"

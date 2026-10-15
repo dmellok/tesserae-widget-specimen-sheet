@@ -497,6 +497,9 @@ def _attach_pictures(
                 st = "running"
         elif st == "none" and not fal_key:
             st = "no_key"
+        if st == "bad":
+            # the model could not find one specimen in it: a soft oval, never a rectangle
+            pic["on_paper"] = False
         pic["cut_state"] = st
         pic.pop("file", None)
         states[st] = states.get(st, 0) + 1

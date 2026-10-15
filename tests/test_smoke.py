@@ -602,11 +602,20 @@ def test_mask_check_rejects_backgrounds_edges_and_pairs():
         in M.check(_alpha(draw=lambda d: d.rectangle((0, 0, 299, 250), fill=255)))[1]
     )
 
-    def two(d):
-        d.ellipse((20, 100, 140, 300), fill=255)
-        d.ellipse((160, 100, 280, 300), fill=255)
+    def three(d):
+        d.ellipse((10, 150, 90, 250), fill=255)
+        d.ellipse((110, 150, 190, 250), fill=255)
+        d.ellipse((210, 150, 290, 250), fill=255)
 
-    assert "largest piece" in M.check(_alpha(draw=two))[1]
+    assert "largest of 3 pieces" in M.check(_alpha(draw=three))[1]
+
+    def pair(d):  # a plate with two birds keeps the larger
+        d.ellipse((20, 60, 180, 340), fill=255)
+        d.ellipse((200, 150, 280, 250), fill=255)
+
+    cleaned, why = M.check(_alpha(draw=pair))
+    assert cleaned is not None and why == ""
+    assert cleaned.getpixel((100, 200)) > 200 and cleaned.getpixel((240, 200)) < 40
 
 
 def _settle(timeout=10.0):

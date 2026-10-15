@@ -8,9 +8,10 @@
    A specimen with no picture yet is packed as an empty mount of the size it
    will take, so nothing jumps when its picture lands.
 
-   Step 1 of the v2 plan: the packer is the v1 oval packer with the other
-   arrangements removed; mirrored pairing, the balance score and the label
-   pass come in step 3. */
+   The packer lays the page out balanced: the largest specimen in the
+   middle, the rest in pairs of like size mirrored across the page's axis
+   and turned to face in, several attempts scored for balance and the best
+   kept, then settled inward as pairs. */
 
 const CELL = 6;
 
@@ -198,7 +199,8 @@ export function cutout(img) {
 }
 
 /* A picture that arrived already cut out (a PNG with alpha): its alpha is
-   the mask and nothing is guessed. Printed by multiply over white. */
+   the mask and nothing is guessed; the alpha travels with the cut, so a
+   plate prints by multiply and a photo over the paper. */
 export function fromAlpha(img) {
   const k0 = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
   const cw = Math.max(1, Math.round(img.naturalWidth * k0)), ch = Math.max(1, Math.round(img.naturalHeight * k0));
@@ -222,10 +224,10 @@ export function fromAlpha(img) {
     const i = ((box[1] + y) * cw + box[0] + x) * 4, o = (y * bw + x) * 4;
     const a = px[i + 3] / 255;
     hard[y * bw + x] = a > 0.5 ? 1 : 0;
-    out.data[o] = Math.round(px[i] * a + 255 * (1 - a));
-    out.data[o + 1] = Math.round(px[i + 1] * a + 255 * (1 - a));
-    out.data[o + 2] = Math.round(px[i + 2] * a + 255 * (1 - a));
-    out.data[o + 3] = 255;
+    out.data[o] = px[i];
+    out.data[o + 1] = px[i + 1];
+    out.data[o + 2] = px[i + 2];
+    out.data[o + 3] = px[i + 3];
   }
   cctx.putImageData(out, 0, 0);
   return { cut, mask: { w: bw, h: bh, data: hard }, paper: [255, 255, 255], blend: 'multiply' };
@@ -283,122 +285,250 @@ function maskCanvas(mask) {
 /* Place cut-outs on a W x H page in an oval, biggest first, each with room
    under it for its label, then nudged inward until the group is tight.
    (x, y, scale) per specimen; scale 0 when one does not fit at all. */
+/* ---------------- the packer ---------------- */
+
+/* Which way a specimen faces, read from its mask: the head of a bird or an
+   animal in profile sits in the top rows, off to one side of the body's
+   centre. 'left', 'right', or null when the mask has no say (a plant, a
+   fungus, a bird seen head-on). */
+export function faceOf(mask) {
+  const { w, h, data } = mask;
+  let sx = 0, n = 0, hx = 0, hn = 0;
+  const headRows = Math.max(1, Math.floor(h * 0.3));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x]) {
+    sx += x; n++;
+    if (y < headRows) { hx += x; hn++; }
+  }
+  if (!n || !hn) return null;
+  const d = hx / hn - sx / n;
+  if (Math.abs(d) < w * 0.03) return null;
+  return d > 0 ? 'right' : 'left';
+}
+
+function labelStrip(lines, label, H) {
+  if (!lines || !lines.length) return { rows: 0, nameW: 0 };
+  const rows = Math.max(2, Math.floor((label * 1.5 * H) / CELL)) * lines.length;
+  const nameW = Math.floor(Math.max(...lines.map((t, i) => t.length * (i === 0 ? 0.74 : 0.5))) * label * H / CELL) + 3;
+  return { rows, nameW };
+}
+
+/* A specimen's footprint on the cell grid at ``scale``, mirrored when
+   ``flip``: the body (alpha over 40), with a strip under it for the label.
+   ``mass`` is the body's cell count, for the balance score. */
+function footprintOf(b, scale, flip, label, H) {
+  const tw = Math.max(1, Math.floor((b.mask.w * scale) / CELL)), th = Math.max(1, Math.floor((b.mask.h * scale) / CELL));
+  const c = canvas(tw, th);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (flip) { ctx.translate(tw, 0); ctx.scale(-1, 1); }
+  ctx.drawImage(b.maskCanvas, 0, 0, tw, th);
+  const d = ctx.getImageData(0, 0, tw, th).data;
+  const body = new Uint8Array(tw * th);
+  let mass = 0;
+  for (let i = 0; i < tw * th; i++) if (d[i * 4] > 40) { body[i] = 1; mass++; }
+  const { rows, nameW } = labelStrip(b.lines, label, H);
+  const fw = Math.max(tw, nameW), fh = th + rows + (rows ? 1 : 0);
+  const fp = new Uint8Array(fw * fh);
+  const off = Math.floor((fw - tw) / 2);
+  for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) fp[y * fw + off + x] = body[y * tw + x];
+  if (rows) {
+    const lx = Math.floor((fw - nameW) / 2);
+    for (let y = th + 1; y < th + rows; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
+  }
+  return { fp, fw, fh, off, tw, th, mass, flip };
+}
+
+/* Place cut-outs on a W x H page, balanced: the largest in the middle, the
+   rest in pairs of like size on either side of it, each pair mirrored
+   across the page's axis and turned to face in; several attempts, the best
+   by a balance score kept. (x, y, scale, flip) per specimen in the order
+   given; scale 0 when one did not fit. */
 export function packSheet(items, W, H, label) {
   const gw = Math.floor(W / CELL), gh = Math.floor(H / CELL);
-  const cx = gw / 2, cy = gh * 0.47, rx = gw * 0.48, ry = gh * 0.45;
+  const cx = gw / 2, cy = gh * 0.52, rx = gw * 0.48, ry = gh * 0.44;
   const inside = new Uint8Array(gw * gh);
+  let room = 0;
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-    inside[y * gw + x] = x >= gw * 0.04 && x < gw * 0.96 && y >= gh * 0.06 && y < gh * 0.93 ? 1 : 0;
+    const ok = x >= gw * 0.03 && x < gw * 0.97 && y >= gh * 0.05 && y < gh * 0.95;
+    inside[y * gw + x] = ok ? 1 : 0;
+    room += ok;
   }
-  const labelRows = Math.max(2, Math.floor((label * 1.5 * H) / CELL));
-  const gap = 1;
-
-  const footprint = (b, scale) => {
-    const mw = b.mask.w, mh = b.mask.h;
-    const tw = Math.max(1, Math.floor((mw * scale) / CELL)), th = Math.max(1, Math.floor((mh * scale) / CELL));
-    const c = canvas(tw, th);
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(b.maskCanvas, 0, 0, tw, th);
-    const d = ctx.getImageData(0, 0, tw, th).data;
-    let body = new Uint8Array(tw * th);
-    for (let i = 0; i < tw * th; i++) body[i] = d[i * 4] > 40 ? 1 : 0;
-    if (Math.min(tw, th) > 2) body = dilate(body, tw, th, gap);
-    const lines = b.lines && b.lines.length ? b.lines : [];
-    const rows = lines.length ? labelRows * lines.length : 0;
-    const nameW = lines.length ? Math.floor(Math.max(...lines.map((t, i) => t.length * (i === 0 ? 0.74 : 0.5))) * label * H / CELL) + 3 : 0;
-    const fw = Math.max(tw, nameW), fh = th + rows + gap;
-    const fp = new Uint8Array(fw * fh);
-    const off = Math.floor((fw - tw) / 2);
-    for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) fp[y * fw + off + x] = body[y * tw + x];
-    if (lines.length) {
-      const lx = Math.floor((fw - nameW) / 2);
-      for (let y = th + 1; y < th + rows; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
-    }
-    return { fp, fw, fh, off };
-  };
+  const cap = (0.55 * Math.min(W, H)); // the biggest specimen never dictates the scale
 
   const overlaps = (occ, x, y, f) => {
     for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) if (f.fp[yy * f.fw + xx] && occ[(y + yy) * gw + x + xx]) return true;
     return false;
   };
   const within = (x, y, f) => {
+    if (x < 0 || y < 0 || x + f.fw > gw || y + f.fh > gh) return false;
     for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) if (f.fp[yy * f.fw + xx] && !inside[(y + yy) * gw + x + xx]) return false;
     return true;
   };
   const stamp = (occ, x, y, f, on) => {
     for (let yy = 0; yy < f.fh; yy++) for (let xx = 0; xx < f.fw; xx++) if (f.fp[yy * f.fw + xx]) occ[(y + yy) * gw + x + xx] = on;
   };
-  const order = (f) => {
-    const cands = [];
-    for (let ty = 0; ty < gh - f.fh; ty += 2) for (let tx = 0; tx < gw - f.fw; tx += 2) {
-      const d = ((tx + f.fw / 2 - cx) / rx) ** 2 + ((ty + f.fh / 2 - cy) / ry) ** 2;
-      cands.push({ tx, ty, d });
+  const free = (occ, x, y, f) => within(x, y, f) && !overlaps(occ, x, y, f);
+
+  /* candidate top-left spots for a footprint, along an outward spiral on
+     the oval from (ox, oy), one turn every 0.05 of the radius; ``side``
+     keeps to one half of the page (-1 left, 1 right, 0 either) */
+  const spiral = function* (f, ox, oy, start, side, maxR = 1.7) {
+    const seen = new Set();
+    for (let r = 0; r <= maxR; r += 0.03) {
+      const n = Math.max(8, Math.round(r * 72));
+      for (let k = 0; k < n; k++) {
+        const t = start + (2 * Math.PI * k) / n;
+        const x = Math.round((ox + r * rx * Math.cos(t) - f.fw / 2) / 2) * 2;
+        const y = Math.round((oy + r * ry * Math.sin(t) - f.fh / 2) / 2) * 2;
+        if (side && Math.sign(x + f.fw / 2 - cx) === -side && Math.abs(x + f.fw / 2 - cx) > 1) continue;
+        const key = y * gw + x;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        yield [x, y];
+      }
     }
-    cands.sort((a, b) => a.d - b.d);
-    return cands;
   };
-  const sgn = (v) => (v > 0 ? 1 : v < 0 ? -1 : 0);
-  const pull = (x, y, f) => {
-    const bx = x + f.fw / 2, by = y + f.fh / 2;
-    return [Math.abs(cx - bx) > 2 ? sgn(cx - bx) : 0, Math.abs(cy - by) > 2 ? sgn(cy - by) : 0];
+  const findSpot = (occ, f, ox, oy, start, side, maxR) => {
+    for (const [x, y] of spiral(f, ox, oy, start, side, maxR)) if (free(occ, x, y, f)) return [x, y];
+    return null;
   };
-  const compact = (occ, placed) => {
-    for (let round = 0; round < 600; round++) {
-      let moved = false;
-      for (let i = placed.length - 1; i >= 0; i--) {
-        const p = placed[i];
-        const [dx, dy] = pull(p.x, p.y, p.f);
-        if (!dx && !dy) continue;
-        stamp(occ, p.x, p.y, p.f, 0);
-        for (const [sx, sy] of [[dx, dy], [dx, 0], [0, dy]]) {
-          if (!sx && !sy) continue;
-          const nx = p.x + sx, ny = p.y + sy;
-          if (nx < 0 || ny < 0 || nx + p.f.fw > gw || ny + p.f.fh > gh) continue;
-          if (overlaps(occ, nx, ny, p.f) || !within(nx, ny, p.f)) continue;
-          p.x = nx; p.y = ny; moved = true;
-          break;
+
+  /* one attempt: a start angle for the spiral, and which of each pair goes left */
+  const attempt = (unit, start, leftFirst) => {
+    const occ = new Uint8Array(gw * gh);
+    const placed = new Array(items.length).fill(null);
+    const scaleOf = (b) => Math.min(unit * b.factor, cap / Math.max(b.mask.w, b.mask.h));
+    const put = (i, f, x, y) => { stamp(occ, x, y, f, 1); placed[i] = { x, y, f, scale: scaleOf(items[i]) }; };
+    /* the facing a specimen needs on a side: toward the middle */
+    const flipFor = (b, side) => {
+      if (!b.flippable || !b.face) return false;
+      return side < 0 ? b.face === 'left' : b.face === 'right';
+    };
+    const order = items.map((_b, i) => i); // already largest first
+    const groups = [];
+    if (order.length) groups.push([order[0]]);
+    for (let i = 1; i + 1 < order.length; i += 2) groups.push([order[i], order[i + 1]]);
+    if (order.length > 1 && order.length % 2 === 0) groups.push([order[order.length - 1]]);
+    let centreTurn = 0;
+    for (const g of groups) {
+      if (g.length === 1) {
+        const i = g[0], b = items[i];
+        const f = footprintOf(b, scaleOf(b), false, label, H);
+        if (f.fh >= gh || f.fw >= gw) return null;
+        let spot = null;
+        if (!placed.some(Boolean)) spot = findSpot(occ, f, cx, cy, start, 0);
+        else {
+          // the leftover goes on the centre line, above or below, whichever balances
+          const [a, bb] = (centreTurn++ % 2 === 0) ? [-Math.PI / 2, Math.PI / 2] : [Math.PI / 2, -Math.PI / 2];
+          for (const ang of [a, bb]) {
+            for (const [x, y] of spiral(f, cx, cy, ang, 0)) {
+              if (Math.abs(x + f.fw / 2 - cx) > gw * 0.08) continue;
+              if (free(occ, x, y, f)) { spot = [x, y]; break; }
+            }
+            if (spot) break;
+          }
+          if (!spot) spot = findSpot(occ, f, cx, cy, start, 0);
         }
-        stamp(occ, p.x, p.y, p.f, 1);
+        if (!spot) return null;
+        put(i, f, spot[0], spot[1]);
+        continue;
+      }
+      const [p, q] = leftFirst ? g : [g[1], g[0]];
+      const bp = items[p], bq = items[q];
+      const fp = footprintOf(bp, scaleOf(bp), flipFor(bp, -1), label, H);
+      const fq = footprintOf(bq, scaleOf(bq), flipFor(bq, 1), label, H);
+      if (fp.fh >= gh || fp.fw >= gw || fq.fh >= gh || fq.fw >= gw) return null;
+      const sp = findSpot(occ, fp, cx, cy, start, -1) || findSpot(occ, fp, cx, cy, start, 0);
+      if (!sp) return null;
+      put(p, fp, sp[0], sp[1]);
+      // the mirror of p's spot, then the nearest free spot to it, then anywhere on the right
+      const mx = Math.round((2 * cx - (sp[0] + fp.fw / 2) - fq.fw / 2) / 2) * 2;
+      const my = Math.round((sp[1] + fp.fh / 2 - fq.fh / 2) / 2) * 2;
+      let sq = free(occ, mx, my, fq) ? [mx, my] : findSpot(occ, fq, mx + fq.fw / 2, my + fq.fh / 2, 0, 1, 0.5);
+      if (!sq) sq = findSpot(occ, fq, cx, cy, start + Math.PI, 1) || findSpot(occ, fq, cx, cy, start + Math.PI, 0);
+      if (!sq) return null;
+      put(q, fq, sq[0], sq[1]);
+    }
+    settle(occ, placed, groups);
+    return placed;
+  };
+
+  /* nudge everything inward one cell at a time while it stays clear; a pair
+     moves as a pair, mirrored, so the symmetry it was given is kept */
+  const settle = (occ, placed, groups) => {
+    const sgn = (v) => (v > 0 ? 1 : v < 0 ? -1 : 0);
+    const pull = (p) => {
+      const bx = p.x + p.f.fw / 2, by = p.y + p.f.fh / 2;
+      return [Math.abs(cx - bx) > 2 ? sgn(cx - bx) : 0, Math.abs(cy - by) > 2 ? sgn(cy - by) : 0];
+    };
+    for (let round = 0; round < 400; round++) {
+      let moved = false;
+      for (const g of groups) {
+        const ps = g.map((i) => placed[i]).filter(Boolean);
+        if (!ps.length) continue;
+        const [dx, dy] = pull(ps[0]);
+        if (!dx && !dy) continue;
+        const steps = ps.length === 2 ? [[dx, dy, -dx, dy], [dx, 0, -dx, 0], [0, dy, 0, dy]] : [[dx, dy], [dx, 0], [0, dy]];
+        for (const p of ps) stamp(occ, p.x, p.y, p.f, 0);
+        let done = false;
+        for (const s of steps) {
+          const moves = ps.map((p, k) => [p.x + s[k * 2], p.y + s[k * 2 + 1]]);
+          if (moves.every(([x, y], k) => (s[k * 2] || s[k * 2 + 1]) && free(occ, x, y, ps[k].f)) || (ps.length === 2 && moves.every(([x, y], k) => free(occ, x, y, ps[k].f)) && (s[0] || s[1]))) {
+            // both members may move; a member already on the axis skips its own step
+            ps.forEach((p, k) => { p.x = moves[k][0]; p.y = moves[k][1]; });
+            done = true;
+            break;
+          }
+        }
+        for (const p of ps) stamp(occ, p.x, p.y, p.f, 1);
+        if (done) moved = true;
       }
       if (!moved) break;
     }
   };
-  const attempt = (unit) => {
-    const occ = new Uint8Array(gw * gh);
-    const placed = [];
-    for (const b of items) {
-      const scale = unit * b.factor;
-      const f = footprint(b, scale);
-      if (f.fh >= gh || f.fw >= gw) return null;
-      let spot = null;
-      for (const c of order(f)) {
-        if (c.d > 2.2) break;
-        if (overlaps(occ, c.tx, c.ty, f) || !within(c.tx, c.ty, f)) continue;
-        spot = c;
-        break;
-      }
-      if (!spot) return null;
-      stamp(occ, spot.tx, spot.ty, f, 1);
-      placed.push({ x: spot.tx, y: spot.ty, f, scale });
-      compact(occ, placed);
+
+  /* how balanced a finished attempt is: lower is better */
+  const score = (placed) => {
+    let M = 0, mx = 0, my = 0;
+    const quad = [0, 0, 0, 0];
+    let x0 = gw, y0 = gh, x1 = 0, y1 = 0;
+    for (const p of placed) {
+      if (!p) continue;
+      const bx = p.x + p.f.off + p.f.tw / 2, by = p.y + p.f.th / 2;
+      M += p.f.mass; mx += p.f.mass * bx; my += p.f.mass * by;
+      quad[(bx < cx ? 0 : 1) + (by < cy ? 0 : 2)] += p.f.mass;
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + p.f.fw); y1 = Math.max(y1, p.y + p.f.fh);
     }
-    return placed.map((p) => [(p.x + p.f.off) * CELL, p.y * CELL, p.scale]);
+    if (!M) return 1e9;
+    const sideways = Math.abs(mx / M - cx) / gw;
+    const updown = Math.abs(my / M - cy) / gh;
+    const qm = M / 4;
+    const quadSpread = Math.sqrt(quad.reduce((s, q) => s + (q - qm) ** 2, 0) / 4) / qm;
+    const spread = 1 - ((x1 - x0) * (y1 - y0)) / room; // a group that fills the page scores better
+    return 3 * sideways + 2 * updown + 0.6 * quadSpread + 0.5 * spread;
   };
 
   const area = items.reduce((s, b) => s + b.mask.w * b.mask.h * b.factor ** 2, 0);
-  let room = 0;
-  for (let i = 0; i < inside.length; i++) room += inside[i];
-  room *= CELL * CELL;
-  let unit = Math.sqrt((0.5 * room) / Math.max(1, area));
+  let unit = Math.sqrt((0.55 * room * CELL * CELL) / Math.max(1, area));
+  const starts = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+  const tryAll = (u) => {
+    let best = null, bestScore = Infinity;
+    for (const start of starts) for (const leftFirst of [true, false]) {
+      const got = attempt(u, start, leftFirst);
+      if (!got) continue;
+      const sc = score(got);
+      if (sc < bestScore) { best = got; bestScore = sc; }
+    }
+    return best;
+  };
   let best = null;
-  for (let i = 0; i < 12 && !best; i++) { best = attempt(unit); if (!best) unit *= 0.88; }
-  if (!best) return items.map(() => [0, 0, 0]);
-  for (let i = 0; i < 16; i++) {
-    const bigger = attempt(unit * 1.05);
+  for (let i = 0; i < 14 && !best; i++) { best = tryAll(unit); if (!best) unit *= 0.88; }
+  if (!best) return items.map(() => [0, 0, 0, false]);
+  for (let i = 0; i < 18; i++) {
+    const bigger = tryAll(unit * 1.05);
     if (!bigger) break;
     unit *= 1.05; best = bigger;
   }
-  return best;
+  return best.map((p) => (p ? [(p.x + p.f.off) * CELL, p.y * CELL, p.scale, p.f.flip] : [0, 0, 0, false]));
 }
 
 const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220, 192] };
@@ -415,8 +545,10 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       else if (b.src && b.on_paper) got = cutout(await loadImage(b.src));
       else if (b.src) got = vignette(await loadImage(b.src));
       if (!got) got = mount(0.8);
-      return { ...b, ...got, maskCanvas: maskCanvas(got.mask) };
-    } catch { return { ...b, ...mount(0.8), maskCanvas: null }; }
+      // a plate cut by its edges may carry lettering, so it is never mirrored
+      const flippable = got.blend !== 'mount' && (!!b.cut || !b.on_paper);
+      return { ...b, ...got, maskCanvas: maskCanvas(got.mask), flippable, face: flippable ? faceOf(got.mask) : null };
+    } catch { return { ...b, ...mount(0.8), maskCanvas: null, flippable: false, face: null }; }
   })).then((all) => all.map((b) => (b.maskCanvas ? b : { ...b, maskCanvas: maskCanvas(b.mask) })));
   if (!loaded.length) return null;
   const W = ratio >= 1 ? size : Math.round(size * ratio), H = ratio >= 1 ? Math.round(size / ratio) : size;
@@ -429,7 +561,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
   const spots = packSheet(loaded, W, H, label);
   const shown = [];
   loaded.forEach((b, i) => {
-    const [x, y, scale] = spots[i];
+    const [x, y, scale, flip] = spots[i];
     if (scale <= 0) return;
     const w = Math.max(1, Math.round(b.mask.w * scale)), h = Math.max(1, Math.round(b.mask.h * scale));
     if (b.blend === 'mount') {
@@ -443,11 +575,13 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       ctx.stroke();
       ctx.restore();
     } else {
+      ctx.save();
       ctx.globalCompositeOperation = b.blend;
-      ctx.drawImage(b.cut, x, y, w, h);
-      ctx.globalCompositeOperation = 'source-over';
+      if (flip) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(b.cut, 0, 0, w, h); }
+      else ctx.drawImage(b.cut, x, y, w, h);
+      ctx.restore();
     }
-    shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', box: [x / W, y / H, w / W, h / H], at: [(x + w / 2) / W, (y + h) / H] });
+    shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', flip: !!flip, box: [x / W, y / H, w / W, h / H], at: [(x + w / 2) / W, (y + h) / H] });
   });
   if (!shown.length) return null;
   return { src: sheet.toDataURL('image/jpeg', 0.9), items: shown, paper: `rgb(${bg.join(',')})`, ratio, label, w: W, h: H };
