@@ -352,9 +352,26 @@ CAMERAS = (
 )
 
 
+# How often each camera comes up: the video cameras three times as often as
+# the stills cameras, the bellows camera rarest of all.
+CAMERA_WEIGHTS = {
+    "bellows": 1,
+    "DSLR": 2,
+    "webcam": 2,
+    "doorbell": 2,
+    "dome": 2,
+    "gimbal": 2,
+}
+
+
 def camera_for(sci: str) -> str:
-    return CAMERAS[
-        int(hashlib.sha1(("camera|" + sci).encode()).hexdigest()[:4], 16) % len(CAMERAS)
+    pool = [
+        c
+        for c in CAMERAS
+        for _ in range(next((w for k, w in CAMERA_WEIGHTS.items() if k in c), 3))
+    ]
+    return pool[
+        int(hashlib.sha1(("camera|" + sci).encode()).hexdigest()[:4], 16) % len(pool)
     ]
 
 
