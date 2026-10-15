@@ -1006,3 +1006,19 @@ def test_scene_is_painted_once_everything_is_cut_out(tmp_path, offline_paint):
         timeout=30,
     )
     assert out.returncode == 0, out.stderr
+
+
+def test_every_style_is_grouped():
+    grouped = [k for _g, ids in P.STYLE_GROUPS for k in ids]
+    assert sorted(grouped) == sorted(P.STYLES) and len(grouped) == len(set(grouped))
+    m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    art = next(o for o in m["cell_options"] if o["name"] == "art_style")
+    assert [c["value"] for c in art["choices"]] == grouped + ["custom"]
+    assert {c["group"] for c in art["choices"]} == {g for g, _ in P.STYLE_GROUPS} | {
+        "Your own"
+    }
+    for k, (label, how) in P.STYLES.items():
+        assert "pure white paper" in how, k
+        assert label and len(label) < 40, k
+    # a style that names the kind gets the noun, and the dapper line fits any of them
+    assert "the bird" in P.style_of("drone")[1].replace("{kind}", "bird")

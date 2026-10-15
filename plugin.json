@@ -759,6 +759,96 @@
           "group": "Plates and prints"
         },
         {
+          "value": "mucha",
+          "label": "Art Nouveau (Mucha)",
+          "group": "Colour, clean"
+        },
+        {
+          "value": "gouache",
+          "label": "Gouache poster",
+          "group": "Colour, clean"
+        },
+        {
+          "value": "keulemans",
+          "label": "Scientific plate (Keulemans)",
+          "group": "Colour, clean"
+        },
+        {
+          "value": "stamp",
+          "label": "Vintage stamp",
+          "group": "Colour, clean"
+        },
+        {
+          "value": "stainedglass",
+          "label": "Stained glass",
+          "group": "Colour, clean"
+        },
+        {
+          "value": "risograph",
+          "label": "Risograph print",
+          "group": "Colour, clean"
+        },
+        {
+          "value": "scraperboard",
+          "label": "Scraperboard",
+          "group": "Black and white, for 1-bit panels"
+        },
+        {
+          "value": "woodcut",
+          "label": "Woodcut",
+          "group": "Black and white, for 1-bit panels"
+        },
+        {
+          "value": "stipple",
+          "label": "Stipple",
+          "group": "Black and white, for 1-bit panels"
+        },
+        {
+          "value": "silhouette",
+          "label": "Silhouette",
+          "group": "Black and white, for 1-bit panels"
+        },
+        {
+          "value": "inkbrush",
+          "label": "Ink brush",
+          "group": "Black and white, for 1-bit panels"
+        },
+        {
+          "value": "pencil",
+          "label": "Pencil study",
+          "group": "Four greys"
+        },
+        {
+          "value": "litho_toned",
+          "label": "Lithograph, toned",
+          "group": "Four greys"
+        },
+        {
+          "value": "halftone",
+          "label": "Halftone print",
+          "group": "Four greys"
+        },
+        {
+          "value": "blueprint",
+          "label": "Technical drawing",
+          "group": "Four greys"
+        },
+        {
+          "value": "platinum",
+          "label": "Platinum print",
+          "group": "Greyscale"
+        },
+        {
+          "value": "charcoal",
+          "label": "Charcoal",
+          "group": "Greyscale"
+        },
+        {
+          "value": "mezzotint",
+          "label": "Mezzotint",
+          "group": "Greyscale"
+        },
+        {
           "value": "pixel",
           "label": "Pixel art",
           "group": "Playful"
@@ -774,11 +864,32 @@
           "group": "Playful"
         },
         {
+          "value": "surveillance",
+          "label": "Surveillance unit (watercolour)",
+          "group": "Birds aren't real"
+        },
+        {
+          "value": "patent",
+          "label": "Patent drawing",
+          "group": "Birds aren't real"
+        },
+        {
+          "value": "automaton",
+          "label": "Clockwork automaton",
+          "group": "Birds aren't real"
+        },
+        {
+          "value": "drone",
+          "label": "Drone",
+          "group": "Birds aren't real"
+        },
+        {
           "value": "custom",
           "label": "Your own prompt",
           "group": "Your own"
         }
-      ]
+      ],
+      "help": "Thirty-three styles in seven groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
     },
     {
       "name": "art_prompt",

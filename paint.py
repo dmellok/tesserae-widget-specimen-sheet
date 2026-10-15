@@ -105,6 +105,103 @@ STYLES: dict[str, tuple[str, str]] = {
         "a realistic hand-coloured lithograph in the manner of John Gould on plain pure white paper, except that the {kind} wears a small hat that suits its personality, and perhaps a monocle, painted with the same care",
     ),
 }
+# ---- black and white, for 1-bit panels: no mid-tones to dither ----
+STYLES.update(
+    {
+        "scraperboard": (
+            "Scraperboard",
+            "a scraperboard illustration: white lines scratched out of solid black, crisp high contrast, every feather and texture made of fine white strokes, no grey tones at all, the {kind} alone on plain pure white paper",
+        ),
+        "woodcut": (
+            "Woodcut",
+            "a bold woodcut print in solid black ink: heavy carved white gouges for the light, no second colour and no grey, the {kind} alone on plain pure white paper",
+        ),
+        "stipple": (
+            "Stipple",
+            "a stipple engraving made entirely of small black dots on white, denser where it is dark, as on a banknote portrait, no lines and no grey wash, the {kind} alone on plain pure white paper",
+        ),
+        "silhouette": (
+            "Silhouette",
+            "a solid black paper-cut silhouette of the {kind} in profile, as in a Victorian scissor-cut, with a single small white cut for the eye and a crisp edge, on plain pure white paper",
+        ),
+        "inkbrush": (
+            "Ink brush",
+            "the {kind} in a few confident strokes of a loaded ink brush, bold and calligraphic, pure black on white with no grey wash, on plain pure white paper",
+        ),
+        # ---- four greys ----
+        "pencil": (
+            "Pencil study",
+            "a graphite pencil study with firm outlines and hatching in three distinct tones, no soft gradients, as in a draughtsman's notebook, the {kind} alone on plain pure white paper",
+        ),
+        "litho_toned": (
+            "Lithograph, toned",
+            "an uncoloured lithographic proof of a nineteenth-century natural history plate: crayon on stone in three flat greys with fine linework, no colour, the {kind} alone on plain pure white paper",
+        ),
+        "halftone": (
+            "Halftone print",
+            "a coarse halftone screen print of the {kind}: the picture made of a regular grid of black dots, larger where it is dark, in black, white and one mid grey, the {kind} alone on plain pure white paper",
+        ),
+        "blueprint": (
+            "Technical drawing",
+            "a precise technical line drawing of the {kind} in dark blue ink as on an engineer's sheet: clean contour lines, a few dimension lines and small labels in draughtsman's lettering, no shading, on plain pure white paper",
+        ),
+        # ---- greyscale ----
+        "platinum": (
+            "Platinum print",
+            "a soft, tonal monochrome study of the {kind} in warm greys, finely detailed, like an early platinum print, the {kind} alone against plain pure white paper",
+        ),
+        "charcoal": (
+            "Charcoal",
+            "a dramatic charcoal drawing with rich blacks, smudged soft tones and a few white chalk highlights, the {kind} alone on plain pure white paper",
+        ),
+        "mezzotint": (
+            "Mezzotint",
+            "a mezzotint engraving: velvety dark tones with the {kind} emerging from deep black into light, very fine grain, no colour, the {kind} alone on plain pure white paper",
+        ),
+        # ---- colour, clean ----
+        "mucha": (
+            "Art Nouveau (Mucha)",
+            "an Art Nouveau illustration in the manner of Alphonse Mucha: the {kind} set in a halo roundel with a flowing ornamental border, pastel flat colour with a crisp dark outline, on plain pure white paper",
+        ),
+        "gouache": (
+            "Gouache poster",
+            "a mid-century travel-poster illustration in flat opaque gouache: the {kind} in five or six clean tones with no gradients and crisp edges, on plain pure white paper",
+        ),
+        "keulemans": (
+            "Scientific plate (Keulemans)",
+            "a precise scientific bird-plate in the manner of J. G. Keulemans: tight accurate drawing with every feather tract defined, hand-coloured, the {kind} alone on plain pure white paper",
+        ),
+        "stamp": (
+            "Vintage stamp",
+            "a postage-stamp engraving of the {kind}: fine engraved line work in one dark ink with a single flat spot colour, the {kind} alone on plain pure white paper",
+        ),
+        "stainedglass": (
+            "Stained glass",
+            "a stained-glass panel of the {kind}: thick black lead lines round pieces of jewel-coloured glass in the species' colours, the {kind} alone on plain pure white paper",
+        ),
+        "risograph": (
+            "Risograph print",
+            "a risograph print of the {kind} in two overprinted spot colours with grainy texture and slight misregistration, bold and graphic, on plain pure white paper",
+        ),
+        # ---- birds aren't real ----
+        "surveillance": (
+            "Surveillance unit (watercolour)",
+            "a loose watercolour field-guide painting of a government surveillance robot built to look like the {kind}: the plumage painted true to the species, but plainly a machine where it shows, with a large glass camera lens for an eye, a thin antenna rising from its head, an open panel on its side showing circuitry and a small battery, and a serial number stencilled on its leg ring, on plain pure white paper",
+        ),
+        "patent": (
+            "Patent drawing",
+            "a cutaway patent drawing of the {kind} as a machine: fine black line work on white, parts numbered with leader lines, a camera module, a battery and a transmitter labelled, 'Fig. 1' in draughtsman's lettering, no shading, on plain pure white paper",
+        ),
+        "automaton": (
+            "Clockwork automaton",
+            "a Victorian clockwork automaton of the {kind}: brass and enamel feathers, visible gears at the wing joint, a wind-up key in its back, painted as a natural-history plate, the {kind} alone on plain pure white paper",
+        ),
+        "drone": (
+            "Drone",
+            "a flat vector-style illustration of a military drone built to look like the {kind}: the body a matte grey machine with panel seams and a registration number, four small rotors set into the wings, a camera lens for an eye, a red LED and a landing skid for feet, only the colours and markings of the species painted on, clean flat colour, on plain pure white paper",
+        ),
+    }
+)
 STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "Plates and prints",
@@ -119,9 +216,37 @@ STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "sketch",
         ),
     ),
+    (
+        "Colour, clean",
+        ("mucha", "gouache", "keulemans", "stamp", "stainedglass", "risograph"),
+    ),
+    (
+        "Black and white, for 1-bit panels",
+        ("scraperboard", "woodcut", "stipple", "silhouette", "inkbrush"),
+    ),
+    ("Four greys", ("pencil", "litho_toned", "halftone", "blueprint")),
+    ("Greyscale", ("platinum", "charcoal", "mezzotint")),
     ("Playful", ("pixel", "origami", "hats")),
+    ("Birds aren't real", ("surveillance", "patent", "automaton", "drone")),
 )
 STYLE_IDS = (*STYLES, "custom")
+# Styles drawn without colour: the prompt asks for the markings, not the colours.
+MONO = {
+    "engraving",
+    "scraperboard",
+    "woodcut",
+    "stipple",
+    "silhouette",
+    "inkbrush",
+    "pencil",
+    "litho_toned",
+    "halftone",
+    "blueprint",
+    "platinum",
+    "charcoal",
+    "mezzotint",
+    "patent",
+}
 CUSTOM_EXAMPLE = (
     "an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, "
     "ochre and dusty rose, on plain pure white paper"
@@ -438,7 +563,13 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     _label, how = style_of(job.get("style"))
     how = str(job.get("how") or how).replace("{kind}", noun)
     words = about(job.get("sci") or "", data_dir)
-    return GEN.format(
+    gen = GEN
+    if str(job.get("style") or "") in MONO:
+        gen = GEN.replace(
+            "Keep its colours, markings, shape and proportions exactly as in the photo",
+            "Keep its markings, shape and proportions exactly as in the photo, rendered without any colour: black and white (and grey where the style has it) only",
+        )
+    return gen.format(
         kind=noun,
         name=job.get("name") or job.get("sci") or "",
         sci=job.get("sci") or "",
