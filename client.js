@@ -209,6 +209,7 @@ export default async function render(shadow, ctx) {
   if (!d.source) body = `<div class="msg"><div class="msg-t">Specimen Sheet</div><div class="msg-b">No data from the server yet.</div></div>`;
   else if (d.state === 'error' || d.state === 'nowhere') body = message(d, d.title || 'Specimen Sheet', d.error || 'Something went wrong.', d.hint);
   else if (d.state === 'empty') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', `Nothing ${d.source === 'birdnet_go' ? 'heard' : 'recorded'} ${[d.area, d.period.replace(/^heard /, '')].filter(Boolean).join(' ')}.`, d.hint);
+  else if (d.state === 'painting') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', 'Nothing painted yet.', d.hint);
   else if (d.state === 'asleep') body = asleep(d);
   else if (d.scene && d.scene.pic) body = scenePage(d);
   else {

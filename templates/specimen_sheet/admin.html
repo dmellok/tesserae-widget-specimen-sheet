@@ -11,7 +11,7 @@
 <section class="card">
   {{ card_head('Paint a species', icon_name='paint-brush', level=2,
                blurb='Paints one species now, from an openly licensed photo of it, at about US$0.04.') }}
-  <div class="bb-budget">
+  <div class="bb-budget" id="bb-budget">
     {{ g.used }}{% if g.cap < 1000000 %} of {{ g.cap }}{% endif %} paintings made to-day{% if g.masks_used %} · {{ g.masks_used }} cut-outs{% endif %}.
     {% if g.used %}
     <form method="post" action="{{ url_for('specimen_sheet_admin.budget_reset') }}" class="bb-inline"
@@ -21,7 +21,7 @@
     {% endif %}
     {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
   </div>
-  <div class="bb-held">
+  <div class="bb-held" id="bb-held-box">
     <div>
       <strong>{% if held %}{{ held }} painting{{ '' if held == 1 else 's' }} waiting.{% else %}Render now{% endif %}</strong>
       {% if held %}A sheet set to start paintings with a button found these and held them back; nothing is spent until you press Start.
@@ -94,7 +94,7 @@
   </form>
 </section>
 
-<section class="card">
+<section class="card" id="bb-styles-card">
   {{ card_head('Styles', icon_name='palette', level=2,
                blurb='Every style, grouped as realistic, decorative or fun, with a preview painted from a Great Tit. A style without one has a button that paints it (about US$0.04); the painting is kept and the sheet uses it whenever a Great Tit is shown.') }}
   {% for top in g.style_tree %}
@@ -133,7 +133,7 @@
   </details>
 </section>
 
-<section class="card">
+<section class="card" id="bb-paintings-card">
   {{ card_head('Paintings', icon_name='images', level=2) }}
   {% if g.paintings %}
   {% set present = g.paintings|selectattr('active')|map(attribute='style')|unique|list %}
@@ -246,7 +246,7 @@
     const title = document.getElementById('bb-queue-title');
     const list = document.getElementById('bb-queue-list');
     const plain = (s) => s.replace(/ \(.*$/, '').toLowerCase();
-    let seen = null;
+    let sig = null;
     const post = (url, key) => {
       const body = new FormData();
       if (key) body.append('key', key);
@@ -278,9 +278,12 @@
       if (p.queued.length) parts.push(`${p.queued.length} waiting`);
       if (p.cutting.length) parts.push(`${p.cutting.length} cutting out`);
       title.textContent = rows.length ? `${parts.join(', ')} · ${p.used}${p.cap < 1e6 ? ` of ${p.cap}` : ''} to-day` : '';
-      const latest = p.finished.length ? p.finished[p.finished.length - 1].at : 0;
-      if (seen === null) seen = latest;
-      else if (latest > seen && !p.running.length && !p.queued.length) location.reload();
+      const now = p.finished.map((f) => f.key + ':' + f.at).join(',');
+      if (sig === null) sig = now;
+      else if (now !== sig) {
+        sig = now;
+        if (window.bbRefresh) window.bbRefresh(); else location.reload();
+      }
     }
     const fold = document.getElementById('bb-queue-fold');
     const setFold = (on) => {
@@ -306,7 +309,7 @@
     try { d.open = localStorage.getItem('bb-species-open') === '1'; } catch {}
     d.addEventListener('toggle', () => { try { localStorage.setItem('bb-species-open', d.open ? '1' : '0'); } catch {} });
   })();
-  (function () {
+  function bbInitPaintings() {
     const chips = document.querySelectorAll('.bb-chip');
     const cards = document.querySelectorAll('.bb-bird');
     const all = document.getElementById('bb-all');
@@ -334,9 +337,19 @@
       shown().forEach((c) => { const p = c.querySelector('.bb-pick'); if (p) p.checked = all.checked; });
       count();
     });
-    document.addEventListener('change', (ev) => { if (ev.target.classList.contains('bb-pick')) count(); });
     count();
-  })();
+  }
+  document.addEventListener('change', (ev) => {
+    if (ev.target.classList.contains('bb-pick')) {
+      const del = document.getElementById('bb-del'), n = document.getElementById('bb-n'), all = document.getElementById('bb-all');
+      const k = document.querySelectorAll('.bb-pick:checked').length;
+      del.disabled = !k;
+      n.textContent = k ? `(${k})` : '';
+      const picks = [...document.querySelectorAll('.bb-bird:not([hidden]) .bb-pick')];
+      all.checked = picks.length > 0 && picks.every((p) => p.checked);
+    }
+  });
+  bbInitPaintings();
 </script>
 
 <script>
@@ -352,6 +365,32 @@
     };
     sel.addEventListener('change', show);
     show();
+
+    // a painting landed: swap in the cards that show paintings, keeping what is open, picked and filtered
+    let busy = false;
+    window.bbRefresh = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const html = await (await fetch(location.href, { headers: { Accept: 'text/html' } })).text();
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const opens = [...document.querySelectorAll('#bb-styles-card details')].map((d) => d.open);
+        const picked = new Set([...document.querySelectorAll('.bb-pick:checked')].map((c) => c.value));
+        const chip = document.querySelector('.bb-chip.on');
+        const filter = chip ? chip.dataset.style : '';
+        for (const id of ['bb-budget', 'bb-held-box', 'bb-styles-card', 'bb-paintings-card']) {
+          const fresh = doc.getElementById(id), old = document.getElementById(id);
+          if (fresh && old) old.replaceWith(fresh);
+        }
+        document.querySelectorAll('#bb-styles-card details').forEach((d, i) => { if (i in opens) d.open = opens[i]; });
+        bbInitPaintings();
+        document.querySelectorAll('.bb-pick').forEach((c) => { c.checked = picked.has(c.value); });
+        const again = [...document.querySelectorAll('.bb-chip')].find((c) => (c.dataset.style || '') === filter);
+        if (again && filter) again.click();
+        else if (document.getElementById('bb-all')) document.getElementById('bb-all').dispatchEvent(new Event('change'));
+        show();
+      } catch { location.reload(); } finally { busy = false; }
+    };
   })();
 </script>
 

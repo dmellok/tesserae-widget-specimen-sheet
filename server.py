@@ -678,6 +678,18 @@ def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
     return len(begin), len(ready)
 
 
+def _unpainted_hint(n: int, states: dict[str, int], has_key: bool, hold: bool) -> str:
+    """What an only-painted sheet says while none of its species is painted."""
+    many = f"{n} specimen{'' if n == 1 else 's'}"
+    if not has_key:
+        return "Painting needs a fal.ai key in the plugin settings."
+    if states.get("paint_held") or hold:
+        return f"{many} waiting for Start painting on the paintings page."
+    if states.get("paint_capped"):
+        return f"{many} to paint; today's painting limit is used up."
+    return f"Painting {many}. The sheet fills in as each one finishes."
+
+
 def _attach_pictures(
     rows: list[dict[str, Any]],
     base: str,
@@ -700,6 +712,7 @@ def _attach_pictures(
     states: dict[str, int] = {}
     folder = P.gen_dir(data_dir) if gen else None
     started_paint = 0
+    only_painted = bool(gen and gen.get("only_painted"))
 
     def wanted(row: dict[str, Any]) -> dict[str, Any] | None:
         nonlocal started_paint
@@ -746,7 +759,10 @@ def _attach_pictures(
     painted = [wanted(r) for r in rows]
     with ThreadPoolExecutor(max_workers=6) as pool:
         pics = list(
-            pool.map(lambda rp: rp[1] or best(rp[0]), zip(rows, painted, strict=True))
+            pool.map(
+                lambda rp: rp[1] or (None if only_painted else best(rp[0])),
+                zip(rows, painted, strict=True),
+            )
         )
     started = 0
     for row, pic in zip(rows, pics, strict=True):
@@ -995,6 +1011,7 @@ def fetch(
         art_style = P.register_custom(how)
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
     hold = options.get("paint_start") == "button"
+    only_painted = options.get("unpainted") == "hide"
     plates = _choice(options.get("plate_source"), PLATE_SOURCES)
     ref_mode = _choice(options.get("paint_ref"), REF_MODES)
     model = P.model_of(options.get("model"))
@@ -1226,6 +1243,7 @@ def fetch(
             "model": model,
             "cap": P.daily_cap(settings),
             "hold": hold,
+            "only_painted": only_painted,
             "ref_mode": ref_mode,
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
@@ -1238,6 +1256,22 @@ def fetch(
     mask_states = _attach_pictures(
         shown, base, token, data_dir, levels, fal_key, gen, plates == "classic"
     )
+    unpainted = 0
+    if gen and only_painted:
+        unpainted = len([r for r in shown if not r.get("pic")])
+        shown = [r for r in shown if r.get("pic")]
+        if not shown:
+            return out(
+                state="painting",
+                title=title,
+                area=area,
+                period=period,
+                species_total=species_total,
+                excluded=excluded,
+                hint=_unpainted_hint(unpainted, mask_states, bool(fal_key), hold),
+                sky=sky,
+                demo=demo,
+            )
     _size(shown, sizing)
     for r in shown:
         r["count_text"] = _count_text(r, source, window)

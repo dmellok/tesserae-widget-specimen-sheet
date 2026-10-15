@@ -784,6 +784,26 @@
       ]
     },
     {
+      "name": "unpainted",
+      "type": "select",
+      "label": "Until a species is painted",
+      "default": "show",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "Show the classic plate or the record's photo while a painting is on its way, or leave the species off the sheet until it is painted, so every picture on the page is in the style.",
+      "choices": [
+        {
+          "value": "show",
+          "label": "Show its plate or photo"
+        },
+        {
+          "value": "hide",
+          "label": "Leave it off the sheet"
+        }
+      ]
+    },
+    {
       "name": "paint_ref",
       "type": "select",
       "label": "Reference picture",

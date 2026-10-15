@@ -962,6 +962,33 @@ def test_paintings_climb_the_ladder(tmp_path, offline_paint):
     )
 
 
+def test_only_painted_leaves_the_rest_off_until_they_land(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "12"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "art_style": "engraving",
+        "unpainted": "hide",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["state"] == "painting" and not r.get("species")
+    assert "Painting 4 specimens" in r["hint"]
+    _settle_paint()
+    r = server.fetch(options, settings, ctx=ctx)
+    assert len(r["species"]) == 3 and all(
+        s["pic"]["kind"] == "painting" for s in r["species"]
+    )
+    shown = server.N.read_json(tmp_path / "species_shown.json", {})
+    assert len(shown) == 4, "the unpainted one is still noted for Render now"
+    _settle_paint()
+    r = server.fetch(options, settings, ctx=ctx)
+    assert len(r["species"]) == 4
+    r = server.fetch({**options, "unpainted": "show"}, settings, ctx=ctx)
+    assert len(r["species"]) == 4
+
+
 def test_paintings_need_a_key_and_respect_the_cap(tmp_path, offline_paint):
     options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen"}
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
