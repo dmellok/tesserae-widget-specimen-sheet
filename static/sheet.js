@@ -388,15 +388,22 @@ function footprintOf(b, scale, flip, label, H, gap = 0) {
     body = dilate(grown, bw, bh, pad);
   }
   const { rows, nameW } = labelStrip(b.lines, label, H);
-  const fw = Math.max(bw, nameW), fh = bh + rows + (rows ? 1 : 0);
-  const fp = new Uint8Array(fw * fh);
+  const fw = Math.max(bw, nameW);
   const off = Math.floor((fw - bw) / 2);
-  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) fp[y * fw + off + x] = body[y * bw + x];
-  if (rows) {
-    const lx = Math.floor((fw - nameW) / 2);
-    for (let y = bh + 1; y < bh + rows; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
+  const lx = Math.floor((fw - nameW) / 2);
+  // the name rises into the air beside a leg or under a perch: it sits just
+  // under the lowest ink in its own columns, never above the body's lower half
+  let lt = bh + 1;
+  if (rows && lt > 0) {
+    let low = -1;
+    for (let y = bh - 1; y >= 0 && low < 0; y--) for (let x = Math.max(0, lx - off); x < Math.min(bw, lx - off + nameW); x++) if (body[y * bw + x]) { low = y; break; }
+    lt = Math.max(Math.floor(bh * 0.55), Math.min(bh + 1, low + 2));
   }
-  return { fp, fw, fh, off: off + pad, pad, tw, th, mass, flip };
+  const fh = Math.max(bh, rows ? lt + rows - 1 : 0);
+  const fp = new Uint8Array(fw * fh);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) fp[y * fw + off + x] = body[y * bw + x];
+  if (rows) for (let y = lt; y < lt + rows - 1; y++) for (let x = lx; x < lx + nameW; x++) fp[y * fw + x] = 1;
+  return { fp, fw, fh, off: off + pad, pad, tw, th, mass, flip, lt };
 }
 
 /* Place cut-outs on a W x H page, balanced: the largest in the middle, the
@@ -620,7 +627,7 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     for (const p of ps) s = Math.min(s, (0.72 * Math.min(W, H)) / Math.max(1, p.f.tw * CELL, p.f.th * CELL));
     if (s <= 1.02) return placed;
     const bcx = (x0 + x1) / 2, bcy = (y0 + y1) / 2, ucx = (ux0 + ux1) / 2, ucy = (uy0 + uy1) / 2;
-    return placed.map((p) => p && { ...p, x: ucx + (p.x - bcx) * s, y: ucy + (p.y - bcy) * s, scale: p.scale * s, f: { ...p.f, fw: p.f.fw * s, fh: p.f.fh * s, tw: p.f.tw * s, th: p.f.th * s, off: p.f.off * s, pad: p.f.pad * s } });
+    return placed.map((p) => p && { ...p, x: ucx + (p.x - bcx) * s, y: ucy + (p.y - bcy) * s, scale: p.scale * s, f: { ...p.f, fw: p.f.fw * s, fh: p.f.fh * s, tw: p.f.tw * s, th: p.f.th * s, off: p.f.off * s, pad: p.f.pad * s, lt: p.f.lt * s } });
   };
 
   const area = items.reduce((s, b) => s + b.mask.w * b.mask.h * b.factor ** 2, 0);
@@ -650,7 +657,7 @@ export function packSheet(items, W, H, label, gap = 2, fast = false, layout = 'c
     unit *= grow; best = bigger;
   }
   best = fill(best);
-  return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip] : [0, 0, 0, false]));
+  return best.map((p) => (p ? [(p.x + p.f.off) * CELL, (p.y + p.f.pad) * CELL, p.scale, p.f.flip, (p.y + p.f.lt - p.f.pad - 1) * CELL] : [0, 0, 0, false]));
 }
 
 const PAPERS = { cream: [243, 234, 214], white: [255, 255, 255], aged: [233, 220, 192] };
@@ -759,7 +766,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
     try {
       let got = null, byEdges = false;
       if (b.whole && b.src) got = whole(await loadImage(b.src));
-      else if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper) got.blend = 'source-over'; }
+      else if (b.cut) { got = fromAlpha(await loadImage(b.cut), b.neutral && b.on_paper ? b.paper : null); if (got && !b.on_paper && !b.classic) got.blend = 'source-over'; }
       if (!b.whole && b.src && b.on_paper) {
         // a plate or painting on plain paper is cut by its edges when that keeps
         // the perch, the foliage, the log a fungus grows from (perchKept)
@@ -786,7 +793,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
   const spots = layout === 'grid' ? gridSpots(loaded, W, H, label, gapN) : packSheet(loaded, W, H, label, gapN, false, layout, facing);
   const shown = [];
   loaded.forEach((b, i) => {
-    const [x, y, scale, flip] = spots[i];
+    const [x, y, scale, flip, labelY] = spots[i];
     if (scale <= 0) return;
     const w = Math.max(1, Math.round(b.mask.w * scale)), h = Math.max(1, Math.round(b.mask.h * scale));
     if (b.blend === 'mount') {
@@ -798,7 +805,7 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       else ctx.drawImage(b.cut, x, y, w, h);
       ctx.restore();
     }
-    shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', flip: !!flip, box: [x / W, y / H, w / W, h / H], at: [(x + w / 2) / W, (y + h) / H] });
+    shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', flip: !!flip, box: [x / W, y / H, w / W, h / H], at: [(x + w / 2) / W, (labelY !== undefined ? Math.min(labelY, y + h + 2 * CELL) : y + h) / H] });
   });
   if (!shown.length) return null;
   return { src: await toJpeg(sheet), items: shown, paper: `rgb(${bg.join(',')})`, ratio, label, w: W, h: H };

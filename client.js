@@ -91,7 +91,7 @@ function packOffThread(args, onCut) {
 }
 const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 function keyOf(a) {
-  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}|${x.whole ? 1 : 0}|${x.neutral ? 1 : 0}|${(x.paper || []).join(',')}|${(x.lines || []).join('/')}`);
+  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}${x.classic ? 'c' : ''}|${x.whole ? 1 : 0}|${x.neutral ? 1 : 0}|${(x.paper || []).join(',')}|${(x.lines || []).join('/')}`);
   return `ss1:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.ink}:${a.spacing}:${a.layout}:${a.facing}:${fnv(parts.join(';'))}`;
 }
 const SHEETS = new Map();
@@ -124,7 +124,7 @@ function buildArgs(d) {
   const w = d.cell_w || 800, h = d.cell_h || 480;
   const specimens = d.species.map((s) => ({
     name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null,
-    on_paper: !!(s.pic && s.pic.on_paper), whole: !!(s.pic && s.pic.whole), factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
+    on_paper: !!(s.pic && s.pic.on_paper), classic: !!(s.pic && s.pic.classic), whole: !!(s.pic && s.pic.whole), factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
     paper: hexRgb(s.pic && s.pic.paper), neutral: !!d.neutral,
     lines: d.labels === 'none' ? [] : d.labels === 'key' ? ['00'] : (s.lines || [s.name]),
   }));

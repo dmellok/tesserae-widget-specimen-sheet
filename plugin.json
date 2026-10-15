@@ -1360,11 +1360,15 @@
       "name": "sizing",
       "type": "select",
       "label": "Sizes",
-      "default": "true",
+      "default": "compact",
       "choices": [
         {
           "value": "true",
           "label": "True to life: a crow large, a wren small"
+        },
+        {
+          "value": "compact",
+          "label": "Close to life, narrower: the page packs tighter"
         },
         {
           "value": "busy",

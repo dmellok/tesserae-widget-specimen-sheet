@@ -58,7 +58,7 @@ WINDOWS = ("today", "week")
 DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90, "365d": 365}
 RADII = ("10", "2", "5", "25", "50")
 QUALITIES = ("research", "")
-SIZINGS = ("true", "busy", "same")
+SIZINGS = ("compact", "true", "busy", "same")
 LABELS = ("caption", "tag", "key", "none")
 LABEL_LINES = ("name", "sci", "count", "last", "flag", "who", "size")
 TEXT_SCALES = ("100", "60", "80", "125", "150")
@@ -803,7 +803,8 @@ def _lengths() -> dict[str, float]:
 def _size(rows: list[dict[str, Any]], sizing: str) -> None:
     """``factor``: how large each is drawn against the others. True to
     life from the bird length table (against a 20 cm bird) or the kind's
-    factor, compressed so a wren stays readable beside a crow; the busiest
+    factor, compressed so a wren stays readable beside a crow, or compressed
+    further so the page packs close; the busiest
     biggest on a gentle curve; or all alike."""
     lengths = _lengths()
     top = max((r["count"] for r in rows), default=1) or 1
@@ -815,6 +816,8 @@ def _size(rows: list[dict[str, Any]], sizing: str) -> None:
             r["factor"] = 1.0
         elif sizing == "busy":
             r["factor"] = round(0.65 + (r["count"] / top) ** 0.325, 2)
+        elif cm and sizing == "compact":
+            r["factor"] = round(max(0.7, min(1.6, (cm / 20.0) ** 0.4)), 2)
         elif cm:
             r["factor"] = round(max(0.55, min(2.0, (cm / 20.0) ** 0.75)), 2)
         else:

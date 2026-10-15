@@ -139,6 +139,34 @@ def _over(im: Any, colour: tuple[int, int, int], longest: int) -> bytes:
     return out.getvalue()
 
 
+def _whiten(im: Any) -> Any:
+    """The plate with its scan paper scaled to white, so that printed by
+    multiply the ring of paper the cut keeps takes the sheet's own tone and
+    never shows as a lighter patch. The tone is the median of the opaque pixels
+    next to the cut; a plate with too little ring is left as it is."""
+    import numpy as np
+    from PIL import Image
+
+    arr = np.asarray(im.convert("RGBA")).copy()
+    opaque = arr[..., 3] > 24
+    pad = np.pad(~opaque, 4, constant_values=True)
+    near = np.zeros(opaque.shape, dtype=bool)
+    for dy in range(9):
+        for dx in range(9):
+            near |= pad[dy : dy + opaque.shape[0], dx : dx + opaque.shape[1]]
+    ring = near & opaque
+    if ring.sum() < 50:
+        return im
+    paper = np.median(arr[..., :3][ring], axis=0).astype(np.float32)
+    if paper.min() < 150:
+        return im
+    gain = np.minimum(255.0 / np.maximum(paper, 1.0), 1.35)
+    arr[..., :3] = np.clip(arr[..., :3].astype(np.float32) * gain, 0, 255).astype(
+        np.uint8
+    )
+    return Image.fromarray(arr, "RGBA")
+
+
 def plate(sci: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
     """The sheet's picture of a species: the plate's own cut-out kept as its
     mask (so no cut-out job is ever needed) and a flat copy on paper."""
@@ -159,7 +187,7 @@ def plate(sci: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
             return None
         from PIL import Image
 
-        small = im.copy()
+        small = _whiten(im)
         small.thumbnail((PLATE_PX, PLATE_PX), Image.Resampling.LANCZOS)
         out = io.BytesIO()
         small.save(out, "PNG", optimize=True)
