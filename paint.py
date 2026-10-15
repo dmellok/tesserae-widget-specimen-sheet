@@ -276,8 +276,8 @@ STYLES.update(
             "a Victorian clockwork automaton of the {kind}: brass and enamel feathers, visible gears at the wing joint, a wind-up key in its back, painted as a natural-history plate, the {kind} alone on plain pure white paper",
         ),
         "cctv": (
-            "Security camera",
-            "a hand-coloured natural-history plate of a creature whose whole body is, plainly and unmistakably, a white bullet-style CCTV security camera, with its black glass lens at the front, a sun hood, a small red recording light and a steel mounting bracket, and the {kind}'s real head, wings, tail and feet attached to the camera housing in the species' true colours and markings, on plain pure white paper",
+            "Camera head (anime)",
+            "a clean anime illustration of the {kind} in the species' true colours and markings, with crisp line art and soft cel shading, except that its head is, plainly and unmistakably, {camera}, mounted where the head should be and turned the way the head would face, the body, wings, tail and feet still those of the {kind}, on plain pure white paper",
         ),
         "drone": (
             "Drone",
@@ -313,6 +313,29 @@ STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Birds aren't real", ("surveillance", "cctv", "patent", "automaton", "drone")),
 )
 STYLE_IDS = (*STYLES, "custom")
+# The camera a species gets for a head, picked from its name so a sheet has a mix.
+CAMERAS = (
+    "a white bullet-style CCTV security camera with a black lens and a sun hood",
+    "a black dome security camera, the lens behind its smoked glass hemisphere",
+    "a pan-tilt-zoom security camera on a little motorised mount",
+    "a vintage 1960s cine camera with a turret of three lenses",
+    "a boxy 1980s camcorder with a red recording light",
+    "a round webcam with a glowing blue ring round its lens",
+    "a big DSLR camera with a long telephoto lens and a lens hood",
+    "an old brass-and-leather bellows camera",
+    "a tiny spy camera lens on a thin stalk, like a periscope",
+    "a doorbell camera with a wide fisheye lens",
+    "a traffic speed camera in a grey weatherproof box",
+    "a drone's gimbal camera, three-axis, with a small lens",
+)
+
+
+def camera_for(sci: str) -> str:
+    return CAMERAS[
+        int(hashlib.sha1(("camera|" + sci).encode()).hexdigest()[:4], 16) % len(CAMERAS)
+    ]
+
+
 # Styles drawn without colour: the prompt asks for the markings, not the colours.
 MONO = {
     "engraving",
@@ -657,7 +680,11 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     if job.get("kind") == "Aves":
         pose = POSES["flight" if "--flight" in job["key"] else "perched"]
     _label, how = style_of(job.get("style"))
-    how = str(job.get("how") or how).replace("{kind}", noun)
+    how = (
+        str(job.get("how") or how)
+        .replace("{kind}", noun)
+        .replace("{camera}", camera_for(job.get("sci") or ""))
+    )
     words = about(job.get("sci") or "", data_dir)
     gen = GEN
     if str(job.get("style") or "") in MONO:

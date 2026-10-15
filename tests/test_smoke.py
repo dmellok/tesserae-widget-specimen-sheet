@@ -1075,3 +1075,33 @@ def test_models_have_their_own_keys_and_request_shapes(tmp_path, offline_paint):
     )
     # the unknown-style fallback is gone: an unknown id fails rather than painting Gould
     assert P.style_of("nope")[1] == ""
+
+
+def test_camera_heads_vary_by_species(tmp_path, offline_paint):
+    cams = {
+        P.camera_for(sci)
+        for sci in (
+            "Gymnorhina tibicen",
+            "Trichoglossus moluccanus",
+            "Dacelo novaeguineae",
+            "Malurus cyaneus",
+            "Columba livia",
+            "Manorina melanocephala",
+        )
+    }
+    assert len(cams) >= 3 and all(c in P.CAMERAS for c in cams)
+    prompt = P.prompt_for(
+        {
+            "key": "x--cctv",
+            "style": "cctv",
+            "name": "Rock Dove",
+            "sci": "Columba livia",
+            "kind": "Aves",
+        },
+        tmp_path,
+    )
+    assert (
+        "anime" in prompt
+        and P.camera_for("Columba livia") in prompt
+        and "{camera}" not in prompt
+    )
