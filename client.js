@@ -4,7 +4,7 @@
    out and packs the sheet in the render browser (static/sheet.js), then prints
    the labels, the header and the foot over it. Everything arrives inlined,
    because the render sandbox has no network. */
-import { buildSheet, quickSheet, drawIntoMount, wrapLabel } from './static/sheet.js';
+import { buildSheet, quickSheet, drawIntoMount, wrapLabel, wrapsAt } from './static/sheet.js';
 
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -149,19 +149,21 @@ async function build(d, onCut) {
   } catch { return null; }
 }
 
-function labelOf(s, lines) {
+function labelOf(s, lines, wrap = false) {
   // a long line is broken as the packer broke it, so the caption fills the strip it was given
-  return (lines || [s.name]).map((t, i) => `<span class="sh-ln${i === 0 ? ' sh-name' : ''}${i > 0 && t === s.sci ? ' sh-sci' : ''}${i > 0 && t !== s.sci ? ' sh-sm' : ''}">${esc(wrapLabel(t)).replace(/\n/g, '<br>')}</span>`).join('');
+  return (lines || [s.name]).map((t, i) => `<span class="sh-ln${i === 0 ? ' sh-name' : ''}${i > 0 && t === s.sci ? ' sh-sci' : ''}${i > 0 && t !== s.sci ? ' sh-sm' : ''}">${esc(wrap ? wrapLabel(t) : t).replace(/\n/g, '<br>')}</span>`).join('');
 }
 
 function sheet(d, made) {
   const bySci = Object.fromEntries(d.species.map((s) => [s.sci || s.name, s]));
   const labels = d.labels || 'caption';
+  const args = buildArgs(d);
+  const wrap = wrapsAt(args.label / Math.max(0.3, Math.min(1, Number(args.zoom) || 1)));
   const tags = made.items.map((m, i) => {
     const s = bySci[m.sci || m.name] || { name: m.name, sci: m.sci, lines: [m.name] };
     const [x, y] = m.at;
     if (labels === 'none') return '';
-    const text = labels === 'key' ? String(i + 1) : labelOf(s, s.lines);
+    const text = labels === 'key' ? String(i + 1) : labelOf(s, s.lines, wrap);
     return `<span class="sh-l${labels === 'tag' ? ' sh-tag' : ''}${labels === 'key' ? ' sh-num' : ''}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%">${text}</span>`;
   }).join('');
   const mounts = made.items.filter((m) => m.mount).length;

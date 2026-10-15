@@ -420,8 +420,10 @@ export function faceOf(mask) {
 }
 
 /* A label longer than ``max`` characters is broken at its spaces into lines of about that
-   length, so a long name does not claim a strip of paper far wider than its specimen. */
+   length, so a long name does not claim a strip of paper far wider than its specimen. A line
+   only a little over is left whole, since two short lines cost more height than they save. */
 export function wrapLabel(text, max = LABEL_CHARS) {
+  if (String(text).length <= max + 2) return String(text);
   const out = [];
   let cur = '';
   for (const w of String(text).split(' ')) {
@@ -431,11 +433,15 @@ export function wrapLabel(text, max = LABEL_CHARS) {
   return out.join('\n');
 }
 const LABEL_CHARS = 20;
+/* Whether labels are wrapped on a sheet whose caption height is ``label`` of its own: only when
+   the sheet is at least thirty captions tall. In a small cell the caption floor makes every row
+   tall, and rows do not shrink with the specimens, so wrapped captions would leave nothing to fit. */
+export const wrapsAt = (label) => label <= 1 / 30;
 
 function labelStrip(lines, label, H) {
   if (!lines || !lines.length) return { rows: 0, nameW: 0 };
   // the name and its lines, each wrapped; the name's own lines are the wide small capitals
-  const segs = lines.flatMap((t, i) => wrapLabel(t).split('\n').map((u) => [u, i === 0 ? 0.62 : 0.44]));
+  const segs = lines.flatMap((t, i) => (wrapsAt(label) ? wrapLabel(t).split('\n') : [String(t)]).map((u) => [u, i === 0 ? 0.62 : 0.44]));
   const rows = Math.max(2, Math.floor((label * 1.5 * H) / CELL)) * segs.length;
   const nameW = Math.floor(Math.max(...segs.map(([u, k]) => u.length * k)) * label * H / CELL) + 3;
   return { rows, nameW };
