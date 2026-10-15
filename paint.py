@@ -175,10 +175,6 @@ STYLES: dict[str, tuple[str, str]] = {
         "Anime",
         "a hand-drawn anime film illustration of the {kind}: clean confident line art, soft cel shading, gentle colour, large expressive eyes, still true to the species' markings, on plain pure white paper",
     ),
-    "chibi": (
-        "Chibi",
-        "a chibi anime illustration of the {kind}: round, small and cute with a big head, huge shining eyes and a tiny body, flat bright cel colour with a clean outline, true to the species' colours, on plain pure white paper",
-    ),
     "shonen": (
         "Shonen action",
         "a bold shonen manga illustration of the {kind} in a dynamic action pose: thick confident ink lines, hard cel shading, dramatic foreshortening, vivid colour, true to the species' markings, on plain pure white paper",
@@ -329,7 +325,7 @@ STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("Four greys", ("pencil", "litho_toned", "halftone", "blueprint")),
     ("Greyscale", ("platinum", "charcoal", "mezzotint")),
-    ("Anime", ("anime", "chibi", "shonen", "manga", "anime_retro")),
+    ("Anime", ("anime", "shonen", "manga", "anime_retro")),
     ("Playful", ("pixel", "origami", "hats")),
     ("Birds aren't real", ("surveillance", "cctv", "patent", "automaton", "drone")),
 )

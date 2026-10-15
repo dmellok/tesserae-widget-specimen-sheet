@@ -854,11 +854,6 @@
           "group": "Anime"
         },
         {
-          "value": "chibi",
-          "label": "Chibi",
-          "group": "Anime"
-        },
-        {
           "value": "shonen",
           "label": "Shonen action",
           "group": "Anime"
@@ -919,7 +914,7 @@
           "group": "Your own"
         }
       ],
-      "help": "39 styles in eight groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
+      "help": "38 styles in eight groups. The black-and-white group is drawn without mid-tones for 1-bit panels; four greys and greyscale suit the grey panels; the rest are for colour."
     },
     {
       "name": "art_prompt",
