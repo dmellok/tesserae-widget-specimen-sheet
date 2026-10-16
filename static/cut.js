@@ -272,7 +272,7 @@ function dropShadows(sm, sd, sw, sh, paper) {
 }
 
 /* How much of a cut-out is drawing, in pixels of its mask. */
-function inkOf(got) { let n = 0; const d = got.mask.data; for (let i = 0; i < d.length; i++) n += d[i]; return n; }
+export function inkOf(got) { let n = 0; const d = got.mask.data; for (let i = 0; i < d.length; i++) n += d[i]; return n; }
 
 /* Whether a picture on plain paper is to be cut by its edges rather than by
    the model's mask. The model keeps the bird and drops the branch it sits

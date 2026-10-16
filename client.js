@@ -73,6 +73,19 @@ function keyOf(a) {
 }
 const SHEETS = new Map();
 
+/* A word to the server log about what this page did (a GET, which the renderer may make), so a
+   panel that came out wrong can be read from the log: the path taken and what it drew. */
+function beacon(d, what, extra = {}) {
+  if (typeof fetch !== 'function') return;
+  try {
+    const url = new URL('./beacon', import.meta.url);
+    url.searchParams.set('what', what);
+    url.searchParams.set('cell', d.cell_id || '');
+    for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, String(v));
+    fetch(url, { credentials: 'same-origin' }).catch(() => {});
+  } catch { /* no fetch here */ }
+}
+
 /* The finished sheet goes back to the server, which inlines it with the next data for this cell. */
 function send(d, key, sheet) {
   if (!d.cell_id || typeof fetch !== 'function') return;
@@ -132,11 +145,13 @@ async function build(d, args, key, onCut) {
   if (typeof document === 'undefined') return null;
   try {
     let sheet = await packOffThread(args, onCut);
-    if (sheet && !(await inked(sheet))) sheet = await buildSheet({ ...args, onCut: null });
-    if (sheet && !(await inked(sheet))) return null;
-    if (sheet) { SHEETS.set(key, sheet); send(d, key, sheet); }
+    let how = 'worker';
+    if (sheet && !(await inked(sheet))) { sheet = await buildSheet({ ...args, onCut: null }); how = 'page'; }
+    if (sheet && !(await inked(sheet))) { beacon(d, 'blank', { how }); return null; }
+    if (sheet) { SHEETS.set(key, sheet); send(d, key, sheet); beacon(d, 'built', { how, n: sheet.items.length, mounts: sheet.items.filter((m) => m.mount).length }); }
+    else beacon(d, 'nothing', { how });
     return sheet;
-  } catch { return null; }
+  } catch (e) { beacon(d, 'failed', { error: String(e && e.message || e).slice(0, 120) }); return null; }
 }
 
 function captionOf(s, lines) {
@@ -227,6 +242,7 @@ export default async function render(shadow, ctx) {
     if (!made && d.sheet && d.sheet.key === key && d.sheet.sheet && typeof document !== 'undefined') {
       const kept = d.sheet.sheet;
       if (typeof kept.src === 'string' && kept.src.startsWith('data:image/') && await decodes(kept.src) && await inked(kept)) made = kept;
+      beacon(d, made ? 'kept' : 'kept_unusable', { n: (kept.items || []).length });
     }
     if (!made && typeof document !== 'undefined') {
       let quick = null;

@@ -1900,6 +1900,15 @@ def blueprint() -> Any:
             wanted=len(wanted_configs(dd)),
         )
 
+    @bp.get("/beacon")
+    def beacon() -> Any:
+        """A word from a page about what it drew, into the server log; the
+        renderer's own browser can say it too, since a GET is allowed through."""
+        what = re.sub(r"[^a-z_]", "", str(request.args.get("what") or ""))[:20]
+        bits = {k: str(v)[:120] for k, v in request.args.items() if k != "what"}
+        logger.info("specimen_sheet: page %s %s", what or "?", " ".join(f"{k}={v}" for k, v in sorted(bits.items())))
+        return ("", 204)
+
     @bp.post("/sheet")
     def sheet_back() -> Any:
         """The page sends the sheet it packed; the next fetch for that cell inlines it."""

@@ -2,7 +2,7 @@
    cut out (cut.js), the cut-outs are packed onto one page (pack.js), and the page comes back as
    one JPEG with each specimen's box, caption anchor and caption lines as fractions of the page.
    A specimen with no picture yet is packed as an empty mount of about the size it will take. */
-import { IN_WORKER, canvas, cutout, faceOf, fromAlpha, loadImage, maskCanvas, mount, perchKept, toJpeg, vignette, whole } from './cut.js';
+import { IN_WORKER, canvas, cutout, faceOf, fromAlpha, inkOf, loadImage, maskCanvas, mount, perchKept, toJpeg, vignette, whole } from './cut.js';
 import { packSheet } from './pack.js';
 export { captionPlan, wrapLabel } from './pack.js';
 
@@ -113,8 +113,11 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       else if (b.cut) {
         const cutImg = await loadImage(b.cut);
         got = fromAlpha(cutImg, b.neutral && b.on_paper ? b.paper : null);
+        // a cut-out with next to nothing opaque in it (a mask that missed the subject) is no
+        // cut-out: the picture is cut by its edges or shown as a soft oval instead
+        if (got && inkOf(got) < 0.01 * got.mask.w * got.mask.h) got = null;
         if (got && !b.on_paper && !b.classic) got.blend = 'source-over';
-        if (!b.classic) model = cutImg;
+        if (got && !b.classic) model = cutImg;
       }
       if (!b.whole && b.src && b.on_paper) {
         // a plate or painting on plain paper is cut by its edges when that keeps the perch
