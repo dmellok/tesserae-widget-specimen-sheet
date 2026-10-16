@@ -989,6 +989,10 @@
           "label": "Stained glass"
         },
         {
+          "value": "pointillism",
+          "label": "Pointillism"
+        },
+        {
           "value": "builder",
           "label": "Build my own"
         }
@@ -1277,6 +1281,30 @@
         "style": "builder"
       },
       "help": "Optional words added to the style, for example: with a little gold leaf on the wing edges. The bird is always painted alone with its perch, with no background."
+    },
+    {
+      "name": "pose",
+      "type": "select",
+      "label": "Pose",
+      "default": "mixed",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "choices": [
+        {
+          "value": "mixed",
+          "label": "Mixed: about a third of the birds in flight"
+        },
+        {
+          "value": "perched",
+          "label": "All perched"
+        },
+        {
+          "value": "flight",
+          "label": "All in flight"
+        }
+      ],
+      "help": "How the birds are painted. A perched bird sits on a plant native to the cell's location when the place is known. Changing the pose paints every bird again, within the daily limit; the earlier paintings stay on the paintings page."
     },
     {
       "name": "model",

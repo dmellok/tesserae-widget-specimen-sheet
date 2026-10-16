@@ -527,7 +527,7 @@ STYLE_TREE: tuple[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], ...] = (
 # "Realistic · Plates and paintings" so a flat dropdown still reads as a tree.
 KEPT_STYLES = (
     "gould", "audubon", "watercolour", "engraving", "sketch", "pencil",
-    "woodblock", "linocut", "mucha", "folkart", "sumie", "stainedglass",
+    "woodblock", "linocut", "mucha", "folkart", "sumie", "stainedglass", "pointillism",
 )
 STYLES = {k: STYLES[k] for k in KEPT_STYLES}
 STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (("Styles", KEPT_STYLES),)
@@ -799,6 +799,12 @@ DAPPER = (
 # A bird is painted perched or in flight; the sheet mixes them so a page is
 # not eight profiles on branches. A third of species fly.
 POSES = {
+    "native": (
+        "perched on a natural, gently curving branch of {plant}, a plant of the country "
+        "where it was seen, with a few of its leaves (and its berry, bud or blossom where "
+        "it would have one), painted with the same care as the bird, the whole bird and "
+        "its perch, the branch ending cleanly well inside the margin"
+    ),
     "perched": (
         "perched on a natural, gently curving branch with a few leaves (and a berry, "
         "bud or blossom where the species would have one), painted with the same care "
@@ -855,8 +861,9 @@ GEN_SCENE = (
     "This picture is a collage of {n} specimens, each painted on its own: {names}. Repaint it "
     "as one seamless picture, {style}, with all of them together in a single natural "
     "scene: {scene}, one continuous background, the same light and paper throughout. "
-    "{fidelity} No text, no labels, no numbers, no border, no signature."
+    "{fidelity}{plants} No text, no labels, no numbers, no border, no signature."
 )
+GEN_PLANTS = " The plants and trees in the scene are those native to where these were seen: {plants}."
 SCENE_EVERY = ("3", "1", "6", "24")
 # What "auto" means for a page that is mostly one kind of thing.
 SCENE_AUTO_BY_KIND = {
@@ -946,21 +953,74 @@ def flies(sci: str) -> bool:
     return int(hashlib.sha1(sci.encode()).hexdigest()[:4], 16) % 3 == 0
 
 
+PLANT_REGIONS: tuple[tuple[str, float, float, float, float, tuple[str, ...]], ...] = (
+    ("Australia", -45, -10, 110, 155, ("eucalyptus", "banksia", "golden wattle", "bottlebrush", "grevillea", "tea-tree", "she-oak", "lilly pilly")),
+    ("New Zealand", -48, -34, 165, 179, ("pōhutukawa", "kōwhai", "mānuka", "harakeke flax", "tōtara", "kahikatea")),
+    ("British Isles", 49, 61, -11, 2, ("oak", "hawthorn", "blackthorn", "hazel", "rowan", "elder", "silver birch", "holly")),
+    ("Mediterranean", 35, 45, -10, 36, ("olive", "cork oak", "fig", "almond", "Aleppo pine", "carob", "wild rose")),
+    ("Northern Europe", 45, 71, -5, 32, ("oak", "beech", "Scots pine", "silver birch", "rowan", "hazel", "lime", "wild cherry")),
+    ("Japan and Korea", 30, 46, 125, 146, ("cherry", "Japanese maple", "bamboo", "plum", "pine", "camellia", "zelkova")),
+    ("East Asia", 18, 54, 97, 125, ("ginkgo", "bamboo", "plum", "magnolia", "camphor", "pine")),
+    ("South Asia", 5, 36, 66, 97, ("neem", "banyan", "mango", "peepal", "tamarind", "flame of the forest")),
+    ("Southeast Asia", -11, 24, 95, 141, ("frangipani", "rambutan", "banana", "bamboo", "mangrove", "flame tree")),
+    ("Eastern North America", 24, 50, -100, -52, ("red oak", "sugar maple", "flowering dogwood", "American beech", "sumac", "sassafras", "eastern redbud", "serviceberry")),
+    ("Western North America", 24, 60, -170, -100, ("Douglas fir", "Pacific madrone", "manzanita", "Garry oak", "red alder", "big-leaf maple", "ponderosa pine", "toyon")),
+    ("Mexico and Central America", 7, 24, -118, -77, ("ceiba", "mesquite", "guava", "ahuehuete cypress", "frangipani")),
+    ("South America", -56, 12, -82, -34, ("araucaria", "ceibo", "jacaranda", "brazilwood", "yerba mate", "quebracho", "ombú")),
+    ("Southern Africa", -35, -15, 10, 41, ("protea", "sweet thorn acacia", "aloe", "yellowwood", "wild olive", "coral tree")),
+    ("Tropical Africa", -15, 20, -18, 52, ("umbrella thorn acacia", "baobab", "marula", "fig", "mopane")),
+    ("North Africa and the Middle East", 20, 42, -18, 66, ("date palm", "olive", "cedar of Lebanon", "pomegranate", "tamarisk")),
+    ("Russia and Central Asia", 40, 75, 32, 180, ("silver birch", "Siberian larch", "Scots pine", "aspen", "bird cherry")),
+)
+
+
+def plants_for(lat: float | None, lon: float | None) -> list[str]:
+    """Plants native to where the panel is, for a perch and a scene; the first
+    region whose box holds the place, [] when none does."""
+    if lat is None or lon is None:
+        return []
+    for _name, lat0, lat1, lon0, lon1, plants in PLANT_REGIONS:
+        if lat0 <= lat <= lat1 and lon0 <= lon <= lon1:
+            return list(plants)
+    return []
+
+
+def perch_for(sci: str, plants: list[str]) -> str:
+    """The plant a species perches on: one of the place's, the same one for the
+    species every time, '' with no plants."""
+    if not plants:
+        return ""
+    return plants[int(hashlib.sha1(("perch|" + sci).encode()).hexdigest()[:6], 16) % len(plants)]
+
+
+def in_flight(sci: str, kind: str, pose: str = "mixed") -> bool:
+    """Whether a specimen is painted in flight: a bird, when the pose asks for
+    it, or for the mixed pose a third of species by name."""
+    if kind != "Aves":
+        return False
+    return pose == "flight" or (pose != "perched" and flies(sci))
+
+
 def key_for(
     sci: str,
     style: str,
     kind: str = "Aves",
     dapper: bool = False,
     model: str = DEFAULT_MODEL,
+    pose: str = "mixed",
+    perch: str = "",
 ) -> str:
     """The painting's file key: species slug, style, flight for a flying
-    bird, dapper for the day's dapper specimen, the model when it is not the
+    bird, the plant a perched bird sits on when the place has native ones,
+    dapper for the day's dapper specimen, the model when it is not the
     default (so switching models never repaints what another made)."""
     key = f"{N.slug(sci)}--{style}"
     if style in STYLE_REVISIONS:
         key += f"--r{STYLE_REVISIONS[style]}"
-    if kind == "Aves" and flies(sci):
+    if in_flight(sci, kind, pose):
         key += "--flight"
+    elif perch and kind == "Aves":
+        key += f"--on_{N.slug(perch)}"
     if dapper:
         key += "--dapper"
     if model_of(model) != DEFAULT_MODEL:
@@ -1182,6 +1242,8 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     flying = job.get("kind") == "Aves" and "--flight" in job["key"]
     if job.get("kind") == "Aves":
         pose = POSES["flight" if flying else "perched"]
+        if not flying and job.get("perch"):
+            pose = POSES["native"].format(plant=job["perch"])
     _label, how = style_of(job.get("style"))
     how = str(job.get("how") or how)
     if flying:
@@ -1358,6 +1420,7 @@ def paint(
             scene=str(job.get("scene_text") or "").strip()
             or SCENES.get(job.get("scene") or "auto", SCENES["auto"]),
             fidelity=FIDELITY.get(job.get("fidelity") or "exact", FIDELITY["exact"]),
+            plants=GEN_PLANTS.format(plants=job["plants"]) if job.get("plants") else "",
         )
         aspect = str(job.get("aspect") or "4:3")
     else:

@@ -1129,11 +1129,39 @@ def test_dapper_is_one_species_a_day(tmp_path, offline_paint):
     assert len(list((tmp_path / "gen").glob("*--dapper.jpg"))) == 1
 
 
+def test_pose_and_native_plants(tmp_path, offline_paint):
+    P = server.P
+    assert P.plants_for(-37.81, 144.96)[0] == "eucalyptus" and P.plants_for(51.5, -0.1)[0] == "oak"
+    assert P.plants_for(None, None) == [] and P.plants_for(0, -160) == []
+    plants = P.plants_for(-37.81, 144.96)
+    assert P.perch_for("Gymnorhina tibicen", plants) in plants
+    assert P.perch_for("Gymnorhina tibicen", plants) == P.perch_for("Gymnorhina tibicen", plants)
+    assert P.key_for("Gymnorhina tibicen", "gould", pose="flight").endswith("--flight")
+    assert "--on_" in P.key_for("Gymnorhina tibicen", "gould", pose="perched", perch="golden wattle")
+    assert P.key_for("Gymnorhina tibicen", "gould", pose="flight", perch="golden wattle").endswith("--flight")
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "pose": "perched", "count": "3"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    assert len(offline_paint) == 3
+    for pr in offline_paint:
+        assert "in flight" not in pr["prompt"] and "a plant of the country where it was seen" in pr["prompt"]
+        assert any(p in pr["prompt"] for p in plants)
+    names = {f.name for f in (tmp_path / "gen").glob("*.jpg")}
+    assert names and all("--on_" in n for n in names)
+    # all in flight: no perch, new paintings
+    server.fetch({**options, "pose": "flight"}, settings, ctx=ctx)
+    _settle_paint()
+    assert len(offline_paint) == 6 and all("in flight" in pr["prompt"] for pr in offline_paint[3:])
+    assert all("--flight" in f.name for f in (tmp_path / "gen").glob("*.jpg") if "--on_" not in f.name)
+
+
 def test_every_style_is_offered():
     m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     art = next(o for o in m["cell_options"] if o["name"] == "style")
     assert [c["value"] for c in art["choices"]] == list(P.STYLES) + ["builder"]
-    assert len(P.STYLES) == 12
+    assert len(P.STYLES) == 13
     for k, (label, how) in P.STYLES.items():
         assert "pure white paper" in how, k
         assert label and len(label) < 40, k

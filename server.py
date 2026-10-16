@@ -571,6 +571,9 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
         "model": gen.get("model", P.DEFAULT_MODEL),
         "ref_mode": gen.get("ref_mode", "photo"),
     }
+    if gen.get("plants"):
+        job["perch"] = P.perch_for(row["sci"], gen["plants"])
+        job["plants"] = ", ".join(gen["plants"])
     if row.get("ref"):
         job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
     return job
@@ -592,11 +595,14 @@ def _note_wanted(data_dir: Path, gen: dict[str, Any]) -> None:
         if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S
     }
     model = gen.get("model", P.DEFAULT_MODEL)
-    got[f"{gen['style']}|{model}|{gen.get('ref_mode', 'photo')}"] = {
+    plants = list(gen.get("plants") or [])
+    got[f"{gen['style']}|{model}|{gen.get('pose', 'mixed')}|{','.join(plants)}"] = {
         "style": gen["style"],
         "how": gen.get("how") or "",
         "model": model,
         "ref_mode": gen.get("ref_mode", "photo"),
+        "pose": gen.get("pose", "mixed"),
+        "plants": plants,
         "at": now,
     }
     N.write(path, json.dumps(got).encode())
@@ -623,7 +629,10 @@ def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
     jobs: dict[str, dict[str, Any]] = {}
     for cfg in wanted_configs(data_dir):
         for name, sci, kind in on_frame_species(data_dir):
-            key = P.key_for(sci, cfg["style"], kind, False, cfg["model"])
+            key = P.key_for(
+                sci, cfg["style"], kind, False, cfg["model"], cfg.get("pose", "mixed"),
+                P.perch_for(sci, cfg.get("plants") or []),
+            )
             jobs.setdefault(
                 key,
                 _paint_job(
@@ -699,6 +708,8 @@ def _attach_pictures(
             row.get("kind") or "Aves",
             dapper,
             gen.get("model", P.DEFAULT_MODEL),
+            gen.get("pose", "mixed"),
+            P.perch_for(row["sci"], gen.get("plants") or []),
         )
         pic = _painting(key, data_dir, levels)
         if pic:
@@ -980,6 +991,7 @@ def fetch(
         art_style = _choice(style, P.STYLE_IDS)
     only_painted = options.get("unpainted") == "hide"
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
+    pose = _choice(options.get("pose"), ("mixed", "perched", "flight"))
     model = P.model_of(options.get("model"))
     arrangement = (
         _choice(options.get("arrangement"), ARRANGEMENTS) if pictures == "gen" else "sheet"
@@ -1213,6 +1225,8 @@ def fetch(
             "cap": P.daily_cap(settings),
             "only_painted": only_painted,
             "ref_mode": "photo",
+            "pose": pose,
+            "plants": P.plants_for(*place[:2]) if place else [],
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
             )
@@ -1385,6 +1399,7 @@ def _scene(
                     for b in boxes
                 ],
                 "scene_text": text,
+                "plants": ", ".join(gen.get("plants") or []),
                 "fidelity": fidelity,
                 "aspect": "4:3" if ratio >= 1 else "3:4",
             }
