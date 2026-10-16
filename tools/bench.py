@@ -85,8 +85,8 @@ def build() -> None:
         print(tag, len(case["specimens"]), "specimens")
 
 
-_PAGE_JS = """async ([spec, cell]) => {
-  const m = await import('/static/sheet.js');
+_PAGE_JS = """async ([spec, cell, mod]) => {
+  const m = await import(mod);
   const [w, h] = cell;
   const label = Math.max(0.017, 13 / h);
   const t = performance.now();
@@ -103,12 +103,13 @@ _PAGE_JS = """async ([spec, cell]) => {
   x.fillStyle = '#2a2116'; x.textAlign = 'center'; x.textBaseline = 'top';
   const fs = label * c.height; x.font = `${fs}px Georgia`;
   for (const it of sheet.items) { const s = spec.find((q) => (q.sci || q.name) === (it.sci || it.name)); const lines = (s && s.lines) || [it.name];
-    lines.flatMap((l) => (m.wrapLabel && m.wrapsAt && m.wrapsAt(label) ? m.wrapLabel(l) : l).split('\\n')).forEach((ln, k) => x.fillText(ln, it.at[0] * c.width, it.at[1] * c.height + fs * 0.25 + k * fs * 1.15)); }
+    const shown = it.lines ? it.lines : lines.map((l) => (m.wrapLabel && m.wrapsAt && m.wrapsAt(label) ? m.wrapLabel(l) : l));
+    shown.flatMap((l) => String(l).split('\\n')).forEach((ln, k) => x.fillText(ln, it.at[0] * c.width, it.at[1] * c.height + fs * 0.25 + k * fs * 1.15)); }
   return { src: c.toDataURL('image/jpeg', 0.9), ink: ink / (c.width * c.height), boxes, smallest: Math.round(smallest), ms: Math.round(ms), n: sheet.items.length, w: c.width, h: c.height };
 }"""
 
 
-def run(sheet_dir: Path, cases: list[str] | None, tag: str) -> None:
+def run(sheet_dir: Path, cases: list[str] | None, tag: str, module: str) -> None:
     from playwright.sync_api import sync_playwright
 
     (OUT / "bench").mkdir(parents=True, exist_ok=True)
@@ -128,7 +129,7 @@ def run(sheet_dir: Path, cases: list[str] | None, tag: str) -> None:
         pg.goto(f"http://127.0.0.1:{port}/README.md")
         for f in files:
             case = json.loads(f.read_text(encoding="utf-8"))
-            res = pg.evaluate(_PAGE_JS, [case["specimens"], case["cell"]])
+            res = pg.evaluate(_PAGE_JS, [case["specimens"], case["cell"], module])
             if res.get("none"):
                 print(f"{f.stem:18} nothing placed ({res['ms']} ms)")
                 continue
@@ -144,8 +145,9 @@ if __name__ == "__main__":
     ap.add_argument("--sheet", default=str(ROOT), help="directory whose static/sheet.js is packed with")
     ap.add_argument("--cases", default="")
     ap.add_argument("--tag", default="run")
+    ap.add_argument("--module", default="/static/sheet.js")
     a = ap.parse_args()
     if a.what == "build":
         build()
     else:
-        run(Path(a.sheet), [c for c in a.cases.split(",") if c], a.tag)
+        run(Path(a.sheet), [c for c in a.cases.split(",") if c], a.tag, a.module)
