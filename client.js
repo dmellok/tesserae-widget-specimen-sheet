@@ -226,7 +226,7 @@ export default async function render(shadow, ctx) {
     // one that does not (a browser that could not encode it) is packed again rather than shown blank
     if (!made && d.sheet && d.sheet.key === key && d.sheet.sheet && typeof document !== 'undefined') {
       const kept = d.sheet.sheet;
-      if (typeof kept.src === 'string' && kept.src.startsWith('data:image/') && await decodes(kept.src)) made = kept;
+      if (typeof kept.src === 'string' && kept.src.startsWith('data:image/') && await decodes(kept.src) && await inked(kept)) made = kept;
     }
     if (!made && typeof document !== 'undefined') {
       let quick = null;

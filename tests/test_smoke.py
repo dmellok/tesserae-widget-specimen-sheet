@@ -1617,3 +1617,14 @@ def test_a_stored_sheet_has_to_be_a_picture(tmp_path):
     tiny = io.BytesIO(); Image.new("RGB", (8, 8)).save(tiny, "PNG")
     assert not server._decodes("data:image/png;base64," + base64.b64encode(tiny.getvalue()).decode())
 
+
+def test_a_blank_stored_sheet_is_dropped_when_read(tmp_path):
+    import base64, io
+    from PIL import Image
+    blank = io.BytesIO(); Image.new("RGB", (120, 160), (243, 234, 214)).save(blank, "JPEG")
+    src = "data:image/jpeg;base64," + base64.b64encode(blank.getvalue()).decode()
+    server.store_sheet(tmp_path, "a" * 16, "k", {"src": src, "items": [{"name": "x"}]})
+    assert (tmp_path / "sheets" / ("a" * 16 + ".json")).exists()
+    assert server.stored_sheet(tmp_path, "a" * 16) is None
+    assert not (tmp_path / "sheets" / ("a" * 16 + ".json")).exists()
+

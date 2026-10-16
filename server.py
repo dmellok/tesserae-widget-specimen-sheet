@@ -1608,7 +1608,14 @@ def stored_sheet(data_dir: Path, cell_id: str) -> dict[str, Any] | None:
         got = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return got if isinstance(got, dict) and got.get("key") and got.get("sheet") else None
+    if not (isinstance(got, dict) and got.get("key") and isinstance(got.get("sheet"), dict)):
+        return None
+    # a sheet kept before the ink check, by a browser that drew nothing into it, goes
+    if not _decodes(str(got["sheet"].get("src") or "")):
+        with contextlib.suppress(OSError):
+            path.unlink()
+        return None
+    return got
 
 
 def store_sheet(data_dir: Path, cell_id: str, key: str, sheet: dict[str, Any]) -> None:
