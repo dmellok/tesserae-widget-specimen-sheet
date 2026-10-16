@@ -1708,6 +1708,27 @@
       ]
     },
     {
+      "name": "header",
+      "type": "select",
+      "label": "Title line",
+      "default": "top",
+      "choices": [
+        {
+          "value": "top",
+          "label": "Above the page"
+        },
+        {
+          "value": "bottom",
+          "label": "Below the page"
+        },
+        {
+          "value": "hidden",
+          "label": "Hidden: the page alone"
+        }
+      ],
+      "help": "Where the title line (the place, the period and the date) goes. Below or hidden gives the specimens the room."
+    },
+    {
       "name": "footer",
       "type": "select",
       "label": "Foot of the page",

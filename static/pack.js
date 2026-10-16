@@ -16,7 +16,7 @@
 
 export const CELL = 5;
 const MARGIN = 0.02;
-const AIR = 2;            // cells of air round a body
+const AIR = 1;            // cells of air round a body: bodies sit two apart, their air may overlap
 const GROW = 1.05;        // growth per round
 const RELATIVE_CAP = 3;   // no specimen grows past this times its given size
 const TOP = 0.8;          // nor past this share of the page's short side
@@ -320,7 +320,7 @@ function fill(page, placed) {
    a quick first guess for a placeholder page, ``budget`` milliseconds for the growing. Returns,
    per item in the order given, { x, y, w, h, flip, cap: [cx, cy], lines } in pixels, or null for
    one that found no room; captions are the lines actually reserved for. */
-export function packSheet(items, W, H, label, { facing = 'inward', fast = false, budget = 2500, air = AIR } = {}) {
+export function packSheet(items, W, H, label, { facing = 'inward', fast = false, budget = 4000, air = AIR } = {}) {
   const t0 = performance.now();
   const px = label * H;
   const plan = items.map((it) => captionPlan(it.lines, label, items.length));

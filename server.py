@@ -981,6 +981,7 @@ def fetch(
     levels = _choice(options.get("panel"), LEVELS)
     night = _choice(options.get("night"), NIGHTS) if source == "birdnet_go" else "off"
     footer = _choice(options.get("footer"), FOOTERS)
+    header = _choice(options.get("header"), ("top", "bottom", "hidden"))
     title = str(options.get("title") or "").strip()
     min_conf = _int(options.get("min_confidence"), 70, 10, 99)
     refresh_min = _int(options.get("refresh_min"), 15, 1, 24 * 60)
@@ -1048,6 +1049,7 @@ def fetch(
             "layout": layout,
             "panel": levels,
             "footer": footer,
+            "header": header,
             "night": night,
             "sky": {"dark": False},
             "asleep": None,

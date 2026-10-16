@@ -10,9 +10,12 @@ const hexRgb = (hex) => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/
 const SOURCE_NAME = { birdnet_go: 'BirdNET-Go', inaturalist: 'iNaturalist', gbif: 'GBIF' };
 
 /* the printed header: the place and the period in small capitals, the date to the right, over a double rule */
-function head(d) {
+/* the title line goes above the page, below it (the rule on its other side), or nowhere */
+function head(d, where = 'top') {
+  if (d.header === 'hidden' || (d.header === 'bottom') !== (where === 'bottom')) return '';
   const bits = [d.title, d.area, d.period].filter(Boolean).map(esc).join(' · ');
-  return `<div class="ph"><span class="ph-k">${bits}</span><b class="ph-d">${esc(d.date)}</b></div><div class="ph-rule"></div>`;
+  const line = `<div class="ph"><span class="ph-k">${bits}</span><b class="ph-d">${esc(d.date)}</b></div>`;
+  return where === 'bottom' ? `<div class="ph-rule"></div>${line}` : `${line}<div class="ph-rule"></div>`;
 }
 
 function foot(d, extra = []) {
@@ -119,7 +122,7 @@ function sheet(d, made) {
   const extra = made.quick ? ['cutting the pictures out'] : mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
   const frame = d.layout === 'hero' && d.hero_frame === 'ornate' ? ORNAMENT : '';
   const page = `<div class="sh-page${frame ? ' framed' : ''}" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="async">`}${tags}${frame}</div>`;
-  return `${head(d)}<div class="sh">${page}</div>${heroFoot(d, false)}${foot(d, extra)}`;
+  return `${head(d)}<div class="sh">${page}</div>${heroFoot(d, false)}${head(d, 'bottom')}${foot(d, extra)}`;
 }
 
 /* An ornate rule frame drawn on the page: a double rule stopping short of each corner, and a
@@ -142,7 +145,7 @@ function heroFoot(d, named) {
 function heroPage(d) {
   const s = d.species[0];
   const ratio = d.cell_w && d.cell_h ? d.cell_w / d.cell_h : 1.6;
-  return `${head(d)}<div class="sh"><div class="sh-page hero-whole" style="--r:${ratio}"><img src="${s.pic.src}" alt="" decoding="async"></div></div>${heroFoot(d, true)}${foot(d)}`;
+  return `${head(d)}<div class="sh"><div class="sh-page hero-whole" style="--r:${ratio}"><img src="${s.pic.src}" alt="" decoding="async"></div></div>${heroFoot(d, true)}${head(d, 'bottom')}${foot(d)}`;
 }
 
 /* The scene: the sheet repainted by the model as one picture, shown whole. The model moves the
@@ -156,7 +159,7 @@ function scenePage(d) {
     return `<span class="sc-n">${esc(s.name)}${labels !== 'none' && s.count_text ? `<i> ${esc(s.count_text)}</i>` : ''}</span>`;
   }).join('<span class="sc-dot">·</span>');
   const ratio = d.cell_w && d.cell_h ? d.cell_w / d.cell_h : 1.6;
-  return `${head(d)}<div class="sc" style="background:${esc(S.pic.paper || 'transparent')}"><div class="sc-pic" style="--r:${ratio}"><img src="${S.pic.src}" alt=""></div>${labels === 'none' ? '' : `<div class="sc-legend">${names}</div>`}</div>${foot(d)}`;
+  return `${head(d)}<div class="sc" style="background:${esc(S.pic.paper || 'transparent')}"><div class="sc-pic" style="--r:${ratio}"><img src="${S.pic.src}" alt=""></div>${labels === 'none' ? '' : `<div class="sc-legend">${names}</div>`}</div>${head(d, 'bottom')}${foot(d)}`;
 }
 
 /* With no canvas (a test in node, or a browser that refused): the pictures as a plain grid. */
@@ -201,7 +204,7 @@ function paint(shadow, d, size, body) {
   const paper = { cream: '#f3ead6', white: '#ffffff', aged: '#e9dcc0' }[d.paper] || '#f3ead6';
   shadow.innerHTML = `
     <style>${d.font_css || ''}</style>
-    <div class="ss size-${esc(size)} lv-${esc(d.panel || 'colour')}" style="--paper:${paper};--ts:${Number(d.text_scale) > 0 ? Number(d.text_scale) : 1}">${body}</div>
+    <div class="ss size-${esc(size)} lv-${esc(d.panel || 'colour')}${d.header === 'hidden' ? ' no-head' : ''}" style="--paper:${paper};--ts:${Number(d.text_scale) > 0 ? Number(d.text_scale) : 1}">${body}</div>
     <style>
       :host { display: block; height: 100%; }
       .ss { container-type: size; height: 100%; width: 100%; overflow: hidden; position: relative; display: flex; flex-direction: column; background: var(--paper); color: #2a2116;
@@ -217,6 +220,7 @@ function paint(shadow, d, size, body) {
       /* the sheet fills what is left between the rule and the foot */
       .sh { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 .6cqmin; }
       .sh-page { position: relative; aspect-ratio: var(--r); max-width: 100%; max-height: 100%; width: min(100%, calc((100cqh - 9cqmin) * var(--r))); container-type: size; }
+      .ss.no-head .sh-page { width: min(100%, calc((100cqh - 4cqmin) * var(--r))); }
       .sh-page > img, .sh-page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
       .orn { position: absolute; inset: 0; pointer-events: none; }
       .orn-rules { position: absolute; inset: 0; width: 100%; height: 100%; }
