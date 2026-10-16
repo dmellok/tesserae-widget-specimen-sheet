@@ -95,6 +95,15 @@ function send(d, key, sheet) {
   } catch { /* no fetch here */ }
 }
 
+/* The picture's bitmap made ready ahead of the page showing it, within a moment. */
+async function predecode(src) {
+  try {
+    const img = new Image();
+    img.src = src;
+    await Promise.race([img.decode(), new Promise((r) => setTimeout(r, 6000))]);
+  } catch { /* shown as it is */ }
+}
+
 /* Whether a picture decodes in this browser, within a moment. */
 function decodes(src) {
   return new Promise((resolve) => {
@@ -169,7 +178,7 @@ function sheet(d, made) {
   const mounts = made.items.filter((m) => m.mount).length;
   const extra = made.quick ? ['cutting the pictures out'] : mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
   const frame = d.layout === 'hero' && d.hero_frame === 'ornate' ? ORNAMENT : '';
-  const page = `<div class="sh-page${frame ? ' framed' : ''}" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="async">`}${tags}${frame}</div>`;
+  const page = `<div class="sh-page${frame ? ' framed' : ''}" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="sync">`}${tags}${frame}</div>`;
   return `${head(d)}<div class="sh">${page}</div>${heroFoot(d, false)}${head(d, 'bottom')}${foot(d, extra)}`;
 }
 
@@ -193,7 +202,7 @@ function heroFoot(d, named) {
 function heroPage(d) {
   const s = d.species[0];
   const ratio = d.cell_w && d.cell_h ? d.cell_w / d.cell_h : 1.6;
-  return `${head(d)}<div class="sh"><div class="sh-page hero-whole" style="--r:${ratio}"><img src="${s.pic.src}" alt="" decoding="async"></div></div>${heroFoot(d, true)}${head(d, 'bottom')}${foot(d)}`;
+  return `${head(d)}<div class="sh"><div class="sh-page hero-whole" style="--r:${ratio}"><img src="${s.pic.src}" alt="" decoding="sync"></div></div>${heroFoot(d, true)}${head(d, 'bottom')}${foot(d)}`;
 }
 
 /* The scene: the sheet repainted by the model as one picture, shown whole. The model moves the
@@ -207,7 +216,7 @@ function scenePage(d) {
     return `<span class="sc-n">${esc(s.name)}${labels !== 'none' && s.count_text ? `<i> ${esc(s.count_text)}</i>` : ''}</span>`;
   }).join('<span class="sc-dot">·</span>');
   const ratio = d.cell_w && d.cell_h ? d.cell_w / d.cell_h : 1.6;
-  return `${head(d)}<div class="sc" style="background:${esc(S.pic.paper || 'transparent')}"><div class="sc-pic" style="--r:${ratio}"><img src="${S.pic.src}" alt=""></div>${labels === 'none' ? '' : `<div class="sc-legend">${names}</div>`}</div>${head(d, 'bottom')}${foot(d)}`;
+  return `${head(d)}<div class="sc" style="background:${esc(S.pic.paper || 'transparent')}"><div class="sc-pic" style="--r:${ratio}"><img src="${S.pic.src}" alt="" decoding="sync"></div>${labels === 'none' ? '' : `<div class="sc-legend">${names}</div>`}</div>${head(d, 'bottom')}${foot(d)}`;
 }
 
 /* With no canvas (a test in node, or a browser that refused): the pictures as a plain grid. */
@@ -228,8 +237,8 @@ export default async function render(shadow, ctx) {
   else if (d.state === 'empty') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', `Nothing ${d.source === 'birdnet_go' ? 'heard' : 'recorded'} ${[d.area, d.period.replace(/^heard /, '')].filter(Boolean).join(' ')}.`, d.hint);
   else if (d.state === 'painting') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', 'Nothing painted yet.', d.hint);
   else if (d.state === 'asleep') body = asleep(d);
-  else if (d.scene && d.scene.pic) body = scenePage(d);
-  else if (d.layout === 'hero' && d.species[0] && d.species[0].pic && d.species[0].pic.whole) body = heroPage(d);
+  else if (d.scene && d.scene.pic) { await predecode(d.scene.pic.src); body = scenePage(d); }
+  else if (d.layout === 'hero' && d.species[0] && d.species[0].pic && d.species[0].pic.whole) { await predecode(d.species[0].pic.src); body = heroPage(d); }
   else {
     const args = buildArgs(d);
     const key = keyOf(args);
@@ -250,6 +259,9 @@ export default async function render(shadow, ctx) {
       if (quick) { paint(shadow, d, size, sheet(d, quick)); const slot = shadow.querySelector('[data-quick]'); if (slot) slot.prepend(quick.canvas); }
       made = await build(d, args, key, quick ? (i, pic, blend) => drawIntoMount(quick, i, pic, blend) : null);
     }
+    // the sheet's picture is decoded before it goes on the page: a renderer captures its frame
+    // as soon as the pictures have loaded, and a big one still decoding would show as blank paper
+    if (made && !made.quick) await predecode(made.src);
     body = made ? sheet(d, made) : montage(d);
   }
   paint(shadow, d, size, body);
