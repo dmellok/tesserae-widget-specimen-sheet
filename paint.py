@@ -791,7 +791,12 @@ GEN = (
     "sky, scenery, other creatures, text, border or signature. The style says how the {kind} "
     "and its perch are drawn and nothing else: no background, backdrop, frame, roundel, "
     "halo, panel, pattern, sunburst or ornament round or behind them."
-    "{about}{dapper}"
+    "{outline}{about}{dapper}"
+)
+# A white bird on white paper is lost to the cut-out: it gets a contour line.
+OUTLINE = (
+    " A white or very pale {kind} is drawn with a fine, clear dark contour line along its whole "
+    "outline, so that none of it is lost against the white paper."
 )
 # The hero plate: one specimen large on an ornate backdrop in its style, the whole picture kept.
 GEN_HERO = (
@@ -1282,6 +1287,8 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         pose=pose,
         about=f" About the subject: {words}" if words else "",
         dapper=DAPPER.format(kind=noun) if job["key"].endswith("--dapper") else "",
+        # a cut-out subject needs its edge even when it is white; a whole plate does not
+        outline=OUTLINE.format(kind=noun) if gen is not GEN_HERO and gen is not GEN_WHOLE else "",
     )
     used = job.get("ref_used")
     if used == "plate":

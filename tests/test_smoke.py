@@ -1059,6 +1059,7 @@ def test_admin_template_renders(tmp_path, offline_paint):
     )
     assert "Cut out again" in html and "No paintings yet" not in html
     assert "Not on a dashboard" in html or "bb-group" in html
+    assert "bb-tab" in html
     assert any(e["cut"] == "ready" for e in g["paintings"])
 
 
@@ -1761,11 +1762,17 @@ def test_paintings_group_by_dashboard(tmp_path, offline_paint):
     got = server.dashboards(tmp_path)
     assert [d["name"] for d in got] == ["Study", "Kitchen"]
     g = server._gallery(tmp_path, 24)
-    assert [(x["name"], x["style_label"], len(x["paintings"])) for x in g["groups"]] == [
-        ("Study", "Japanese woodblock print", 2),
-        ("Kitchen", "Hand-coloured lithograph (Gould)", 3),
+    assert [(x["name"], [(t["style_label"], len(t["paintings"])) for t in x["tabs"]]) for x in g["groups"]] == [
+        ("Study", [("Japanese woodblock print", 2)]),
+        ("Kitchen", [("Hand-coloured lithograph (Gould)", 3)]),
     ]
     assert g["rest"] == []
+    # the kitchen rendered in a second style: one group, a tab per style, the latest first
+    server.fetch({**options, "style": "linocut"}, settings, ctx=ctx)
+    _settle_paint()
+    g = server._gallery(tmp_path, 24)
+    kitchen = next(x for x in g["groups"] if x["name"] == "Kitchen")
+    assert [t["style"] for t in kitchen["tabs"]] == ["linocut", "gould"] and len(g["groups"]) == 2
     # the dashboard edited to show fewer: once its old self has not rendered for an hour it goes,
     # and the painting nothing shows any more falls under the rest
     data = json.loads((tmp_path / "dashboards.json").read_text())
@@ -1775,7 +1782,8 @@ def test_paintings_group_by_dashboard(tmp_path, offline_paint):
     (tmp_path / "dashboards.json").write_text(json.dumps(data))
     server.fetch({**options, "count": "2"}, settings, ctx=ctx)
     g = server._gallery(tmp_path, 24)
-    assert [(x["name"], len(x["paintings"])) for x in g["groups"]] == [("Kitchen", 2), ("Study", 2)]
+    # the kitchen keeps its linocut tab (3) and its gould tab now wants 2; the third gould is left over
+    assert [(x["name"], sum(len(t["paintings"]) for t in x["tabs"])) for x in g["groups"]] == [("Kitchen", 5), ("Study", 2)]
     assert len(g["rest"]) == 1
 
 
@@ -1876,3 +1884,48 @@ def test_dawn_and_dusk_pages(tmp_path, offline, monkeypatch):
     # midday: no page; and none without the option
     assert server._day_page(rows, sky, datetime(2026, 10, 17, 12, 0)) is None
     assert _fetch(tmp_path, offline, url="birdnet.local", count="8")["day_page"] is None
+
+
+def test_render_now_paints_only_what_the_panels_ask_for(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    kitchen = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    study = {**kitchen, "style": "woodblock", "count": "2"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "page_name": "Kitchen"}
+    server.fetch(kitchen, settings, ctx=ctx)
+    server.fetch(study, settings, ctx={**ctx, "page_name": "Study"})
+    _settle_paint()
+    # an editor-only look paints nothing and asks for nothing
+    server.fetch({**kitchen, "style": "linocut", "count": "4"}, settings, ctx={**ctx, "preview": True})
+    assert len(offline_paint) == 5
+    gen = tmp_path / "gen"
+    gone = sorted(gen.glob("*--gould*.jpg"))[0]
+    gone.unlink()
+    (gen / gone.name.replace(".jpg", ".json")).unlink()
+    started, found = server.render_now(tmp_path, "k", 24)
+    _settle_paint()
+    assert (started, found) == (1, 1), "one painting missing from one panel: one painted, not every species in every style"
+    assert len(offline_paint) == 6 and gone.exists()
+    assert not list(gen.glob("*--linocut*")), "the editor's look is not a panel's"
+    # nothing missing: nothing painted
+    assert server.render_now(tmp_path, "k", 24) == (0, 0)
+    # one dashboard's own button
+    gone2 = sorted(gen.glob("*--woodblock*.jpg"))[0]
+    gone2.unlink()
+    who = next(d["id"] for d in server.dashboards(tmp_path) if d["name"] == "Kitchen")
+    assert server.render_now(tmp_path, "k", 24, who) == (0, 0), "the kitchen is whole; the study's gap is not its"
+    who = next(d["id"] for d in server.dashboards(tmp_path) if d["name"] == "Study")
+    assert server.render_now(tmp_path, "k", 24, who) == (1, 1)
+    _settle_paint()
+
+
+def test_a_pale_bird_gets_a_contour_line(tmp_path, offline_paint):
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "2"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
+    _settle_paint()
+    assert offline_paint and all("very pale bird is drawn with a fine, clear dark contour line" in pr["prompt"] for pr in offline_paint)
+    # the whole plate (a hero on its backdrop) keeps the paper out of it: no contour clause
+    server.fetch({**options, "layout": "hero", "hero_frame": "painted", "count": "1"}, {"fal_api_key": "k"}, ctx=ctx)
+    _settle_paint()
+    assert "contour line" not in offline_paint[-1]["prompt"] and "ornate" in offline_paint[-1]["prompt"]
+

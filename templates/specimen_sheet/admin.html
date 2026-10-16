@@ -139,9 +139,26 @@
     <h3 class="bb-group-head">
       {% if grp.icon %}<i class="ph {{ grp.icon if grp.icon.startswith('ph-') else 'ph-' ~ grp.icon }}" aria-hidden="true"></i>{% else %}<i class="ph ph-squares-four" aria-hidden="true"></i>{% endif %}
       {{ grp.name or 'A dashboard without a name' }}
-      <span class="bb-meta">{{ grp.style_label }} · {{ grp.paintings|length }} painting{{ '' if grp.paintings|length == 1 else 's' }}{% if grp.missing %} · {{ grp.missing }} still to paint{% endif %}</span>
+      {% if grp.tabs|length > 1 %}
+      <span class="bb-tabs" role="tablist">
+        {% for tab in grp.tabs %}<button type="button" role="tab" class="bb-tab{% if loop.first %} on{% endif %}" data-tab="{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab.style_label }}{% if tab.missing %} <span class="bb-tab-n">{{ tab.missing }}</span>{% endif %}</button>{% endfor %}
+      </span>
+      {% endif %}
     </h3>
-    <div class="bb-grid">{% for b in grp.paintings %}{{ card(b) }}{% endfor %}</div>
+    {% for tab in grp.tabs %}
+    <div class="bb-pane" data-pane="{{ loop.index0 }}"{% if not loop.first %} hidden{% endif %}>
+      <p class="bb-pane-line">
+        <span class="bb-meta">{{ tab.style_label }} · {{ tab.paintings|length }} painting{{ '' if tab.paintings|length == 1 else 's' }}{% if tab.missing %} · {{ tab.missing }} still to paint{% endif %}{% if not tab.on_panel %} · not on a panel to-day{% endif %}</span>
+        {% if tab.missing %}
+        <form method="post" action="{{ url_for('specimen_sheet_admin.render_now_route') }}" class="bb-inline">
+          <input type="hidden" name="who" value="{{ tab.id }}">
+          <button type="submit" class="ghost bb-link" {% if not has_key %}disabled{% endif %}>Paint the {{ tab.missing }} missing</button>
+        </form>
+        {% endif %}
+      </p>
+      <div class="bb-grid">{% for b in tab.paintings %}{{ card(b) }}{% endfor %}</div>
+    </div>
+    {% endfor %}
   </section>
   {% endfor %}
   {% if g.rest %}
@@ -298,6 +315,14 @@
     tick();
     setInterval(tick, 3000);
   })();
+  // a dashboard's style tabs
+  document.addEventListener('click', (ev) => {
+    const tab = ev.target.closest('.bb-tab');
+    if (!tab) return;
+    const group = tab.closest('[data-group]');
+    group.querySelectorAll('.bb-tab').forEach((t) => { const on = t === tab; t.classList.toggle('on', on); t.setAttribute('aria-selected', String(on)); });
+    group.querySelectorAll('.bb-pane').forEach((p) => { p.hidden = p.dataset.pane !== tab.dataset.tab; });
+  });
   // the folded cards remember whether they were open
   document.querySelectorAll('details.bb-fold-card').forEach((d) => {
     try { if (localStorage.getItem('bb-open-' + d.id) === '1') d.open = true; } catch {}
@@ -438,6 +463,13 @@
   .bb-group[hidden] { display: none; }
   .bb-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0 0 10px; font-size: 15px; }
   .bb-group-head i { color: var(--t-fg-soft); }
+  .bb-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: 6px; }
+  .bb-tab { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--t-border); background: var(--t-surface); color: var(--t-fg-soft); cursor: pointer; }
+  .bb-tab.on { background: var(--t-fg, #111); color: var(--t-surface, #fff); border-color: transparent; }
+  .bb-tab-n { font-size: 10px; font-weight: 700; margin-left: 4px; padding: 0 5px; border-radius: 999px; background: var(--t-surface-hover); color: var(--t-fg); }
+  .bb-tab.on .bb-tab-n { background: var(--t-surface); }
+  .bb-pane[hidden] { display: none; }
+  .bb-pane-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0 0 8px; }
   .bb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; align-items: start; }
   .bb-bird { border: 1px solid var(--t-border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--t-surface); }
   .bb-bird[hidden] { display: none; }

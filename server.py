@@ -863,40 +863,15 @@ def start_held(data_dir: Path, fal_key: str, cap: int, subject: str = "") -> int
 WANTED_S = 30 * 86400
 
 
-def _note_wanted(data_dir: Path, gen: dict[str, Any]) -> None:
-    """The painting settings a sheet last rendered with, so Render now can paint
-    the species on a frame in them without waiting for the next refresh."""
-    path = data_dir / "wanted_paints.json"
-    now = time.time()
-    got = N.read_json(path, {})
-    got = got if isinstance(got, dict) else {}
-    got = {
-        k: v
-        for k, v in got.items()
-        if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S
-    }
-    model = gen.get("model", P.DEFAULT_MODEL)
-    plants = list(gen.get("plants") or [])
-    got[f"{gen['style']}|{model}|{gen.get('pose', 'mixed')}|{','.join(plants)}"] = {
-        "style": gen["style"],
-        "how": gen.get("how") or "",
-        "model": model,
-        "ref_mode": gen.get("ref_mode", "photo"),
-        "pose": gen.get("pose", "mixed"),
-        "plants": plants,
-        "at": now,
-    }
-    N.write(path, json.dumps(got).encode())
-
-
 def _note_dashboard(
     data_dir: Path, ctx: dict[str, Any], subject: str, gen: dict[str, Any], shown: list[dict[str, Any]]
 ) -> None:
     """Which dashboard a panel's sheet is on and the paintings it wants, so the
     paintings page can group them by dashboard. Kept for WANTED_S. A dashboard
-    is its name and subject; an edit to the dashboard makes a new subject, and
-    the old one goes once it has not rendered for an hour, two sheets on one
-    dashboard rendering together both staying."""
+    is its name, style and subject: a new style is a tab of its own; an edit
+    to the dashboard makes a new subject, and the old one goes once it has
+    not rendered for an hour, two sheets on one dashboard rendering together
+    both staying."""
     path = data_dir / "dashboards.json"
     now = time.time()
     got = N.read_json(path, {})
@@ -907,17 +882,25 @@ def _note_dashboard(
         if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S
     }
     name = " ".join(str(ctx.get("page_name") or "").split())[:80]
+    rid = f"{name}|{gen['style']}|{subject}"
     got = {
         k: v
         for k, v in got.items()
-        if not (v.get("name") == name and k != f"{name}|{subject}" and now - float(v.get("at") or 0) > 3600)
+        if not (
+            v.get("name") == name
+            and v.get("style") == gen["style"]
+            and k != rid
+            and now - float(v.get("at") or 0) > 3600
+        )
     }
-    got[f"{name}|{subject}"] = {
+    got[rid] = {
         "name": name,
         "icon": str(ctx.get("page_icon") or "")[:40],
         "style": gen["style"],
         "style_label": P.style_of(gen["style"])[0],
         "keys": list(dict.fromkeys(gen.get("keys") or [])),
+        # the painting each key asks for, so Render now can paint exactly what this sheet wants
+        "jobs": {k: j for k, j in (gen.get("jobs") or {}).items() if k in set(gen.get("keys") or [])},
         "species": [r["name"] for r in shown if r.get("sci")][:60],
         "at": now,
     }
@@ -931,52 +914,29 @@ def dashboards(data_dir: Path) -> list[dict[str, Any]]:
         return []
     now = time.time()
     out = [
-        v
-        for v in got.values()
+        {**v, "id": k}
+        for k, v in got.items()
         if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S and isinstance(v.get("keys"), list)
     ]
     return sorted(out, key=lambda v: -float(v.get("at") or 0))
 
 
-def wanted_configs(data_dir: Path) -> list[dict[str, Any]]:
-    got = N.read_json(data_dir / "wanted_paints.json", {})
-    if not isinstance(got, dict):
-        return []
-    now = time.time()
-    return [
-        v
-        for v in got.values()
-        if isinstance(v, dict)
-        and now - float(v.get("at") or 0) < WANTED_S
-        and (v.get("style") in P.STYLES or P._CUSTOM_RE.fullmatch(str(v.get("style"))))
-    ]
-
-
-def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
-    """Paint what is missing now: the species on a frame in the last three days
-    in each setting a sheet last used. (started, found)."""
+def render_now(data_dir: Path, fal_key: str, cap: int, who: str = "") -> tuple[int, int]:
+    """Paint what the panels are missing: the paintings the sheets rendered to
+    a panel in the last ON_FRAME_S asked for and do not have, nothing more;
+    one dashboard's when ``who`` names it. (started, found)."""
     folder = P.gen_dir(data_dir)
+    now = time.time()
     jobs: dict[str, dict[str, Any]] = {}
-    for cfg in wanted_configs(data_dir):
-        for name, sci, kind in on_frame_species(data_dir):
-            key = P.key_for(
-                sci, cfg["style"], kind, False, cfg["model"], cfg.get("pose", "mixed"),
-                P.perch_for(sci, cfg.get("plants") or []),
-            )
-            jobs.setdefault(
-                key,
-                _paint_job(
-                    key,
-                    {"name": name, "sci": sci, "kind": kind},
-                    cfg,
-                ),
-            )
-    ready = [
-        j
-        for j in jobs.values()
-        if not (folder / f"{j['key']}.jpg").exists()
-        and not (j.get("collage") and not Path(j["collage"]).exists())
-    ]
+    for d in dashboards(data_dir):
+        if who and d["id"] != who:
+            continue
+        if not who and now - float(d.get("at") or 0) > ON_FRAME_S:
+            continue
+        for key, job in (d.get("jobs") or {}).items():
+            if isinstance(job, dict) and job.get("key") == key:
+                jobs.setdefault(key, {**job, "origin": "panel"})
+    ready = [j for j in jobs.values() if not (folder / f"{j['key']}.jpg").exists()]
     room = max(0, cap - P.budget_used(folder))
     begin = [j for j in ready if P.state(j["key"], folder) == "none"][:room]
     P.start_batch(begin, data_dir, fal_key, cap)
@@ -1050,6 +1010,7 @@ def _attach_pictures(
             hero,
         )
         gen.setdefault("keys", []).append(key)
+        gen.setdefault("jobs", {})[key] = _paint_job(key, row, gen)
         pic = _painting(key, data_dir, levels, HERO_PX if hero else PICTURE_PX)
         if pic:
             states["painted"] = states.get("painted", 0) + 1
@@ -1629,8 +1590,6 @@ def fetch(
             if dapper
             else "",
         }
-    if gen and not demo and not ctx.get("preview"):
-        _note_wanted(data_dir, gen)
     mask_states = _attach_pictures(
         shown, base, token, data_dir, levels, fal_key, gen, True
     )
@@ -2056,21 +2015,31 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
         entries.values(),
         key=lambda e: (e["active"] is None, e["name"].lower(), e["style"]),
     )
-    # the paintings grouped by the dashboard showing them, in the sheet's order, then the rest
+    # the paintings grouped by the dashboard showing them, a tab per style (a dashboard
+    # rendered in more than one style, or with more than one sheet), in the sheet's order
     groups: list[dict[str, Any]] = []
+    by_name: dict[str, dict[str, Any]] = {}
     placed: set[str] = set()
+    now = time.time()
     for d in dashboards(data_dir):
         have = [entries[k] for k in d["keys"] if k in entries]
-        if not have:
+        missing = len([k for k in d["keys"] if k not in entries or not entries[k]["active"]])
+        if not have and not missing:
             continue
         placed.update(e["slug"] for e in have)
-        groups.append(
+        grp = by_name.get(d.get("name") or "")
+        if grp is None:
+            grp = {"name": d.get("name") or "", "icon": d.get("icon") or "", "tabs": []}
+            by_name[grp["name"]] = grp
+            groups.append(grp)
+        grp["tabs"].append(
             {
-                "name": d.get("name") or "",
-                "icon": d.get("icon") or "",
+                "id": d["id"],
+                "style": d.get("style") or "",
                 "style_label": d.get("style_label") or "",
                 "paintings": have,
-                "missing": len([k for k in d["keys"] if k not in entries or not entries[k]["active"]]),
+                "missing": missing,
+                "on_panel": now - float(d.get("at") or 0) <= ON_FRAME_S,
             }
         )
     rest = [e for e in ordered if e["slug"] not in placed]
@@ -2226,7 +2195,7 @@ def blueprint() -> Any:
             g=_gallery(dd, cap()),
             known=known_species(dd),
             has_key=bool(fal_key()),
-            wanted=len(wanted_configs(dd)),
+            wanted=len(dashboards(dd)),
             held=len(held(dd)),
         )
 
@@ -2461,10 +2430,10 @@ def blueprint() -> Any:
         if not key:
             flash("Add a fal.ai key in this widget's settings first.", "warn")
             return back()
-        n, found = render_now(data_dir(), key, cap())
+        n, found = render_now(data_dir(), key, cap(), request.form.get("who", ""))
         if not found:
             flash(
-                "Nothing is missing: every species on a frame already has its painting. A sheet that has not rendered yet shows nothing here; open the dashboard or the editor once.",
+                "Nothing is missing: every painting the panels' sheets ask for is there. A sheet that has not rendered to a panel yet asks for nothing here.",
                 "info",
             )
         elif not n:
