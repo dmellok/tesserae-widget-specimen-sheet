@@ -2,72 +2,7 @@
 {% from "_components.html" import card_head, button, empty_state %}
 {% block title %}Specimen Sheet, Tesserae{% endblock %}
 
-{% block main %}
-<div class="page-head">
-  <h1><i class="ph-bold ph-feather" aria-hidden="true"></i> Specimen Sheet</h1>
-  <p class="page-blurb">The AI paintings this widget has made through fal.ai: one per species and style, kept and reused on every render. Repainting keeps the earlier version.</p>
-</div>
-
-<section class="card" id="bb-today-card">
-  {{ card_head('To-day', icon_name='gauge', level=2) }}
-  <div class="bb-today">
-    <div class="bb-budget" id="bb-budget">
-      <strong>{{ g.used }}{% if g.cap < 1000000 %} of {{ g.cap }}{% endif %}</strong> paintings made to-day{% if g.masks_used %} · <strong>{{ g.masks_used }}</strong> cut-outs{% endif %}
-      {% if g.used %}
-      <form method="post" action="{{ url_for('specimen_sheet_admin.budget_reset') }}" class="bb-inline"
-            onsubmit="return confirm('Reset to-day\'s count to 0? The widget can then make {% if g.cap < 1000000 %}up to {{ g.cap }}{% else %}any number of{% endif %} more paintings to-day, at about US$0.04 each.');">
-        <button type="submit" class="ghost bb-link">Reset</button>
-      </form>
-      {% endif %}
-      {% if not has_key %}<span class="bb-warn"><i class="ph ph-warning" aria-hidden="true"></i> No fal.ai key yet: add one in this widget's settings.</span>{% endif %}
-    </div>
-    <div class="bb-held" id="bb-held-box">
-      <form method="post" action="{{ url_for('specimen_sheet_admin.render_now_route') }}" class="bb-inline">
-        <button type="submit" {% if not has_key %}disabled title="Add a fal.ai key in this widget's settings"{% endif %} title="Paints what the panels showed in the last day and are missing, in the styles their sheets use, within the daily limit"><i class="ph ph-play" aria-hidden="true"></i> Render now</button>
-      </form>
-      {% if held %}
-      <form method="post" action="{{ url_for('specimen_sheet_admin.paint_held') }}" class="bb-inline">
-        <button type="submit" {% if not has_key %}disabled{% endif %} title="Paintings the editor's previews held back"><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint the {{ held }} waiting</button>
-      </form>
-      {% endif %}
-      <span class="bb-meta">Render now paints what the panels are missing{% if not wanted %}; no sheet has rendered with AI paintings yet{% endif %}.</span>
-      <form method="post" action="{{ url_for('specimen_sheet_admin.purge') }}" class="bb-inline bb-purge"
-            onsubmit="return confirm('Delete every painting, every earlier version and every painting\'s cut-out? Nothing comes back; with AI paintings on, the sheets paint their species again as they are shown, within the daily limit.');">
-        <button type="submit" class="ghost danger"><i class="ph ph-trash" aria-hidden="true"></i> Purge everything</button>
-      </form>
-    </div>
-  </div>
-  <div id="bb-queue" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('specimen_sheet_admin.progress') }}"
-       data-stop="{{ url_for('specimen_sheet_admin.stop_one') }}" data-stop-all="{{ url_for('specimen_sheet_admin.stop_all') }}">
-    <div class="bb-queue-head">
-      <span class="bb-tick-dot" aria-hidden="true"></span><strong id="bb-queue-title"></strong>
-      <button type="button" class="ghost bb-link bb-fold" id="bb-queue-fold" aria-expanded="true" aria-controls="bb-queue-list"><i class="ph ph-caret-down" aria-hidden="true"></i> Hide</button>
-      <button type="button" class="ghost danger bb-queue-all" id="bb-stop-all"><i class="ph ph-stop" aria-hidden="true"></i> Stop all</button>
-    </div>
-    <ul class="bb-queue-list" id="bb-queue-list"></ul>
-  </div>
-</section>
-
-<section class="card" id="bb-paintings-card">
-  {{ card_head('Paintings', icon_name='images', level=2) }}
-  {% if g.paintings %}
-  {% set present = g.paintings|selectattr('active')|map(attribute='style')|unique|list %}
-  <div class="bb-tools">
-    <div class="bb-filter" role="group" aria-label="Show paintings in a style">
-      <button type="button" class="bb-chip on" data-style="">All</button>
-      {% for value, label in g.styles if value in present %}
-      <button type="button" class="bb-chip" data-style="{{ value }}">{{ label }}</button>
-      {% endfor %}
-    </div>
-    <input type="search" id="bb-search" class="bb-search" placeholder="Find a species" aria-label="Find a species">
-    <form id="bb-bulk" method="post" action="{{ url_for('specimen_sheet_admin.bulk_delete') }}" class="bb-bulk"
-          onsubmit="return confirm('Move the selected paintings to earlier versions? The widget paints these species again as they are shown.');">
-      <label class="bb-check"><input type="checkbox" id="bb-all"> All shown</label>
-      <button type="submit" class="ghost danger" id="bb-del" disabled><i class="ph ph-trash" aria-hidden="true"></i> Delete <span id="bb-n"></span></button>
-    </form>
-  </div>
-  <div class="bb-grid">
-    {% for b in g.paintings %}
+{% macro card(b) %}
     <article class="bb-bird" data-style="{{ b.style }}" data-name="{{ (b.name ~ ' ' ~ b.sci)|lower }}">
       {% if b.active %}
       <a href="{{ url_for('specimen_sheet_admin.image', name=b.active.file) }}" data-lightbox aria-label="{{ b.name }}, {{ b.style_label }}" class="bb-main">
@@ -132,8 +67,92 @@
         {% endif %}
       </div>
     </article>
-    {% endfor %}
+{% endmacro %}
+
+{% block main %}
+<div class="page-head">
+  <h1><i class="ph-bold ph-feather" aria-hidden="true"></i> Specimen Sheet</h1>
+  <p class="page-blurb">The AI paintings this widget has made through fal.ai: one per species and style, kept and reused on every render. Repainting keeps the earlier version.</p>
+</div>
+
+<section class="card" id="bb-today-card">
+  {{ card_head('To-day', icon_name='gauge', level=2) }}
+  <div class="bb-today">
+    <div class="bb-budget" id="bb-budget">
+      <strong>{{ g.used }}{% if g.cap < 1000000 %} of {{ g.cap }}{% endif %}</strong> paintings made to-day{% if g.masks_used %} · <strong>{{ g.masks_used }}</strong> cut-outs{% endif %}
+      {% if g.used %}
+      <form method="post" action="{{ url_for('specimen_sheet_admin.budget_reset') }}" class="bb-inline"
+            onsubmit="return confirm('Reset to-day\'s count to 0? The widget can then make {% if g.cap < 1000000 %}up to {{ g.cap }}{% else %}any number of{% endif %} more paintings to-day, at about US$0.04 each.');">
+        <button type="submit" class="ghost bb-link">Reset</button>
+      </form>
+      {% endif %}
+      {% if not has_key %}<span class="bb-warn"><i class="ph ph-warning" aria-hidden="true"></i> No fal.ai key yet: add one in this widget's settings.</span>{% endif %}
+    </div>
+    <div class="bb-held" id="bb-held-box">
+      <form method="post" action="{{ url_for('specimen_sheet_admin.render_now_route') }}" class="bb-inline">
+        <button type="submit" {% if not has_key %}disabled title="Add a fal.ai key in this widget's settings"{% endif %} title="Paints what the panels showed in the last day and are missing, in the styles their sheets use, within the daily limit"><i class="ph ph-play" aria-hidden="true"></i> Render now</button>
+      </form>
+      {% if held %}
+      <form method="post" action="{{ url_for('specimen_sheet_admin.paint_held') }}" class="bb-inline">
+        <button type="submit" {% if not has_key %}disabled{% endif %} title="Paintings the editor's previews held back"><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint the {{ held }} waiting</button>
+      </form>
+      {% endif %}
+      <span class="bb-meta">Render now paints what the panels are missing{% if not wanted %}; no sheet has rendered with AI paintings yet{% endif %}.</span>
+      <form method="post" action="{{ url_for('specimen_sheet_admin.purge') }}" class="bb-inline bb-purge"
+            onsubmit="return confirm('Delete every painting, every earlier version and every painting\'s cut-out? Nothing comes back; with AI paintings on, the sheets paint their species again as they are shown, within the daily limit.');">
+        <button type="submit" class="ghost danger"><i class="ph ph-trash" aria-hidden="true"></i> Purge everything</button>
+      </form>
+    </div>
   </div>
+  <div id="bb-queue" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('specimen_sheet_admin.progress') }}"
+       data-stop="{{ url_for('specimen_sheet_admin.stop_one') }}" data-stop-all="{{ url_for('specimen_sheet_admin.stop_all') }}">
+    <div class="bb-queue-head">
+      <span class="bb-tick-dot" aria-hidden="true"></span><strong id="bb-queue-title"></strong>
+      <button type="button" class="ghost bb-link bb-fold" id="bb-queue-fold" aria-expanded="true" aria-controls="bb-queue-list"><i class="ph ph-caret-down" aria-hidden="true"></i> Hide</button>
+      <button type="button" class="ghost danger bb-queue-all" id="bb-stop-all"><i class="ph ph-stop" aria-hidden="true"></i> Stop all</button>
+    </div>
+    <ul class="bb-queue-list" id="bb-queue-list"></ul>
+  </div>
+</section>
+
+<section class="card" id="bb-paintings-card">
+  {{ card_head('Paintings', icon_name='images', level=2) }}
+  {% if g.paintings %}
+  {% set present = g.paintings|selectattr('active')|map(attribute='style')|unique|list %}
+  <div class="bb-tools">
+    <div class="bb-filter" role="group" aria-label="Show paintings in a style">
+      <button type="button" class="bb-chip on" data-style="">All</button>
+      {% for value, label in g.styles if value in present %}
+      <button type="button" class="bb-chip" data-style="{{ value }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <input type="search" id="bb-search" class="bb-search" placeholder="Find a species" aria-label="Find a species">
+    <form id="bb-bulk" method="post" action="{{ url_for('specimen_sheet_admin.bulk_delete') }}" class="bb-bulk"
+          onsubmit="return confirm('Move the selected paintings to earlier versions? The widget paints these species again as they are shown.');">
+      <label class="bb-check"><input type="checkbox" id="bb-all"> All shown</label>
+      <button type="submit" class="ghost danger" id="bb-del" disabled><i class="ph ph-trash" aria-hidden="true"></i> Delete <span id="bb-n"></span></button>
+    </form>
+  </div>
+  {% if g.groups %}
+  {% for grp in g.groups %}
+  <section class="bb-group" data-group>
+    <h3 class="bb-group-head">
+      {% if grp.icon %}<i class="ph {{ grp.icon if grp.icon.startswith('ph-') else 'ph-' ~ grp.icon }}" aria-hidden="true"></i>{% else %}<i class="ph ph-squares-four" aria-hidden="true"></i>{% endif %}
+      {{ grp.name or 'A dashboard without a name' }}
+      <span class="bb-meta">{{ grp.style_label }} · {{ grp.paintings|length }} painting{{ '' if grp.paintings|length == 1 else 's' }}{% if grp.missing %} · {{ grp.missing }} still to paint{% endif %}</span>
+    </h3>
+    <div class="bb-grid">{% for b in grp.paintings %}{{ card(b) }}{% endfor %}</div>
+  </section>
+  {% endfor %}
+  {% if g.rest %}
+  <section class="bb-group" data-group>
+    <h3 class="bb-group-head"><i class="ph ph-archive" aria-hidden="true"></i> Not on a dashboard <span class="bb-meta">{{ g.rest|length }} painting{{ '' if g.rest|length == 1 else 's' }} no panel has shown in the last month</span></h3>
+    <div class="bb-grid">{% for b in g.rest %}{{ card(b) }}{% endfor %}</div>
+  </section>
+  {% endif %}
+  {% else %}
+  <div class="bb-grid">{% for b in g.paintings %}{{ card(b) }}{% endfor %}</div>
+  {% endif %}
   {% else %}
   {{ empty_state('paint-brush', 'No paintings yet',
                  'Set a Specimen Sheet cell\'s Pictures to AI paintings, or paint a species below.') }}
@@ -309,6 +328,7 @@
         const pick = card.querySelector('.bb-pick');
         if (card.hidden && pick) pick.checked = false;
       });
+      document.querySelectorAll('[data-group]').forEach((g) => { g.hidden = !g.querySelector('.bb-bird:not([hidden])'); });
       count();
     };
     chips.forEach((chip) => chip.addEventListener('click', () => { chips.forEach((c) => c.classList.toggle('on', c === chip)); apply(); }));
@@ -414,6 +434,10 @@
   .bb-known { margin: 0; }
   .bb-bulk { display: flex; gap: 8px; align-items: center; margin: 0; flex-wrap: wrap; }
   .bb-batch { margin-top: 12px; }
+  .bb-group { margin-bottom: 22px; }
+  .bb-group[hidden] { display: none; }
+  .bb-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0 0 10px; font-size: 15px; }
+  .bb-group-head i { color: var(--t-fg-soft); }
   .bb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; align-items: start; }
   .bb-bird { border: 1px solid var(--t-border); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--t-surface); }
   .bb-bird[hidden] { display: none; }

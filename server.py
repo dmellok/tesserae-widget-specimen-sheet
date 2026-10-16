@@ -761,6 +761,55 @@ def _note_wanted(data_dir: Path, gen: dict[str, Any]) -> None:
     N.write(path, json.dumps(got).encode())
 
 
+def _note_dashboard(
+    data_dir: Path, ctx: dict[str, Any], subject: str, gen: dict[str, Any], shown: list[dict[str, Any]]
+) -> None:
+    """Which dashboard a panel's sheet is on and the paintings it wants, so the
+    paintings page can group them by dashboard. Kept for WANTED_S. A dashboard
+    is its name and subject; an edit to the dashboard makes a new subject, and
+    the old one goes once it has not rendered for an hour, two sheets on one
+    dashboard rendering together both staying."""
+    path = data_dir / "dashboards.json"
+    now = time.time()
+    got = N.read_json(path, {})
+    got = got if isinstance(got, dict) else {}
+    got = {
+        k: v
+        for k, v in got.items()
+        if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S
+    }
+    name = " ".join(str(ctx.get("page_name") or "").split())[:80]
+    got = {
+        k: v
+        for k, v in got.items()
+        if not (v.get("name") == name and k != f"{name}|{subject}" and now - float(v.get("at") or 0) > 3600)
+    }
+    got[f"{name}|{subject}"] = {
+        "name": name,
+        "icon": str(ctx.get("page_icon") or "")[:40],
+        "style": gen["style"],
+        "style_label": P.style_of(gen["style"])[0],
+        "keys": list(dict.fromkeys(gen.get("keys") or [])),
+        "species": [r["name"] for r in shown if r.get("sci")][:60],
+        "at": now,
+    }
+    N.write(path, json.dumps(got, ensure_ascii=False).encode())
+
+
+def dashboards(data_dir: Path) -> list[dict[str, Any]]:
+    """The dashboards with a sheet on a panel in the last WANTED_S, latest first."""
+    got = N.read_json(data_dir / "dashboards.json", {})
+    if not isinstance(got, dict):
+        return []
+    now = time.time()
+    out = [
+        v
+        for v in got.values()
+        if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S and isinstance(v.get("keys"), list)
+    ]
+    return sorted(out, key=lambda v: -float(v.get("at") or 0))
+
+
 def wanted_configs(data_dir: Path) -> list[dict[str, Any]]:
     got = N.read_json(data_dir / "wanted_paints.json", {})
     if not isinstance(got, dict):
@@ -1533,6 +1582,8 @@ def fetch(
     # a preview in a new look drops what the previews of this cell held or queued for the old one
     if gen and ctx.get("preview") and not demo:
         cull(data_dir, subject, set(gen.get("keys") or []))
+    if gen and not demo and not ctx.get("preview"):
+        _note_dashboard(data_dir, ctx, subject, gen, shown)
     return out(
         title=title,
         area=area,
@@ -1851,8 +1902,28 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
         entries.values(),
         key=lambda e: (e["active"] is None, e["name"].lower(), e["style"]),
     )
+    # the paintings grouped by the dashboard showing them, in the sheet's order, then the rest
+    groups: list[dict[str, Any]] = []
+    placed: set[str] = set()
+    for d in dashboards(data_dir):
+        have = [entries[k] for k in d["keys"] if k in entries]
+        if not have:
+            continue
+        placed.update(e["slug"] for e in have)
+        groups.append(
+            {
+                "name": d.get("name") or "",
+                "icon": d.get("icon") or "",
+                "style_label": d.get("style_label") or "",
+                "paintings": have,
+                "missing": len([k for k in d["keys"] if k not in entries or not entries[k]["active"]]),
+            }
+        )
+    rest = [e for e in ordered if e["slug"] not in placed]
     return {
         "paintings": ordered,
+        "groups": groups,
+        "rest": rest,
         "used": P.budget_used(folder),
         "cap": cap,
         "masks_used": M.budget_used(data_dir),
@@ -2227,7 +2298,7 @@ def blueprint() -> Any:
 
     @bp.post("/bulk-delete")
     def bulk_delete() -> Any:
-        retired(retire(request.form.getlist("keys")))
+        retired(retire(list(dict.fromkeys(request.form.getlist("keys")))))
         return back()
 
     @bp.post("/render-now")

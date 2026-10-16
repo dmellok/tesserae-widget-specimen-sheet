@@ -1058,6 +1058,7 @@ def test_admin_template_renders(tmp_path, offline_paint):
         and "Silver Gull" in html
     )
     assert "Cut out again" in html and "No paintings yet" not in html
+    assert "Not on a dashboard" in html or "bb-group" in html
     assert any(e["cut"] == "ready" for e in g["paintings"])
 
 
@@ -1745,3 +1746,35 @@ def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
     )
     assert r["state"] == "ok" and r["sky"]["moon_name"]
     assert server._moon(datetime(2026, 10, 11, 8, 14))[1]
+
+
+def test_paintings_group_by_dashboard(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "page_name": "Kitchen", "page_icon": "ph-coffee"}
+    server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    server.fetch({**options, "style": "woodblock", "count": "2"}, settings, ctx={**ctx, "page_name": "Study", "page_icon": ""})
+    _settle_paint()
+    # a preview is not a dashboard
+    server.fetch({**options, "style": "linocut"}, settings, ctx={**ctx, "preview": True, "page_name": "Draft"})
+    got = server.dashboards(tmp_path)
+    assert [d["name"] for d in got] == ["Study", "Kitchen"]
+    g = server._gallery(tmp_path, 24)
+    assert [(x["name"], x["style_label"], len(x["paintings"])) for x in g["groups"]] == [
+        ("Study", "Japanese woodblock print", 2),
+        ("Kitchen", "Hand-coloured lithograph (Gould)", 3),
+    ]
+    assert g["rest"] == []
+    # the dashboard edited to show fewer: once its old self has not rendered for an hour it goes,
+    # and the painting nothing shows any more falls under the rest
+    data = json.loads((tmp_path / "dashboards.json").read_text())
+    for v in data.values():
+        if v["name"] == "Kitchen":
+            v["at"] -= 7200
+    (tmp_path / "dashboards.json").write_text(json.dumps(data))
+    server.fetch({**options, "count": "2"}, settings, ctx=ctx)
+    g = server._gallery(tmp_path, 24)
+    assert [(x["name"], len(x["paintings"])) for x in g["groups"]] == [("Kitchen", 2), ("Study", 2)]
+    assert len(g["rest"]) == 1
+
