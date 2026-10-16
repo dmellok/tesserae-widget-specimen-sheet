@@ -15,6 +15,7 @@ import fnmatch
 import hashlib
 import importlib.util
 import json
+import logging
 import random
 import math
 import re
@@ -107,6 +108,7 @@ ERR_NOWHERE_INAT = (
 # Where the row's text comes from in the demo garden and the rarity log.
 _NAMING: set[str] = set()
 _LOCK = threading.Lock()
+logger = logging.getLogger("app.plugins.specimen_sheet")
 
 
 # ----------------------------------------------------------------------
@@ -1336,6 +1338,20 @@ def fetch(
     mask_states = _attach_pictures(
         shown, base, token, data_dir, levels, fal_key, gen, True
     )
+    if gen:
+        # one line in the server log per fetch, so a panel without paintings can be read:
+        # how many were painted, started, held for Paint now, waiting on the limit or a key
+        logger.info(
+            "specimen_sheet: %s render, %d species, painted %d, started %d, held %d, capped %d, no key %d, failed %d",
+            "preview" if ctx.get("preview") else "panel",
+            len(shown),
+            mask_states.get("painted", 0),
+            mask_states.get("paint_running", 0),
+            mask_states.get("paint_held", 0),
+            mask_states.get("paint_capped", 0),
+            mask_states.get("paint_no_key", 0),
+            mask_states.get("paint_failed", 0),
+        )
     unpainted = 0
     if gen and only_painted:
         unpainted = len([r for r in shown if not r.get("pic")])
