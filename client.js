@@ -11,9 +11,16 @@ const SOURCE_NAME = { birdnet_go: 'BirdNET-Go', inaturalist: 'iNaturalist', gbif
 
 /* the printed header: the place and the period in small capitals, the date to the right, over a double rule */
 /* the title line goes above the page, below it (the rule on its other side), or nowhere */
+const SUN = { dawn: '<svg class="ph-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18M5 14a7 7 0 0 1 14 0M12 3v3M4.9 6.9l2.1 2.1M19.1 6.9 17 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+              dusk: '<svg class="ph-sun" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18M5 14a7 7 0 0 1 14 0M12 2v4M8 5l4-3 4 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' };
+
 function head(d, where = 'top') {
   if (d.header === 'hidden' || (d.header === 'bottom') !== (where === 'bottom')) return '';
-  const bits = [d.title, d.area, d.period].filter(Boolean).map(esc).join(' · ');
+  const dp = d.day_page;
+  const yr = d.year;
+  const bits = dp ? [`${SUN[dp.kind] || ''}${esc(dp.label)}`, esc(dp.sun), esc(dp.song)].filter(Boolean).join(' · ')
+    : yr ? [esc(d.title), `${yr.n} this year${yr.since ? ` since ${esc(yr.since)}` : ''}`, yr.today ? `${yr.today} to-day` : ''].filter(Boolean).join(' · ')
+    : [d.title, d.area, d.period].filter(Boolean).map(esc).join(' · ');
   const line = `<div class="ph"><span class="ph-k">${bits}</span><b class="ph-d">${esc(d.date)}</b></div>`;
   return where === 'bottom' ? `<div class="ph-rule"></div>${line}` : `${line}<div class="ph-rule"></div>`;
 }
@@ -163,8 +170,33 @@ async function build(d, args, key, onCut) {
   } catch (e) { beacon(d, 'failed', { error: String(e && e.message || e).slice(0, 120) }); return null; }
 }
 
-function captionOf(s, lines) {
-  return lines.map((t, i) => `<span class="sh-ln${i === 0 ? ' sh-name' : ''}${i > 0 && t === s.sci ? ' sh-sci' : ''}${i > 0 && t !== s.sci ? ' sh-sm' : ''}">${esc(t).replace(/\n/g, '<br>')}</span>`).join('');
+/* Tally strokes for a count: groups of five, the fifth struck through; past 30 the rest in figures. */
+function tally(n) {
+  n = Math.max(0, Math.floor(Number(n) || 0));
+  if (!n) return '';
+  const shown = Math.min(n, 30), groups = Math.floor(shown / 5), rest = shown % 5;
+  const gw = 13, sw = 2.6, h = 12;
+  let x = 1, paths = '';
+  const strokes = (k) => { for (let i = 0; i < k; i++) { paths += `M${(x + i * sw).toFixed(1)} 1.5v${h - 3}`; } };
+  for (let g = 0; g < groups; g++) { strokes(4); paths += `M${(x - 1).toFixed(1)} ${h - 2.5}L${(x + 3 * sw + 1).toFixed(1)} 2.5`; x += gw; }
+  strokes(rest); x += rest ? rest * sw + 2 : 0;
+  const w = Math.max(1, x - (rest ? 2 : (gw - 3 * sw - 2)));
+  const svg = `<svg class="sh-tally" viewBox="0 0 ${w.toFixed(0)} ${h}" style="width:${(w / h * 0.95).toFixed(2)}em" aria-label="${n}"><path d="${paths}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>`;
+  return n > 30 ? `${svg} +${n - 30}` : svg;
+}
+
+function captionOf(s, lines, d) {
+  return lines.map((t, i) => {
+    let text = esc(t).replace(/\n/g, '<br>');
+    if (d && d.tally === 'strokes' && s.tally_line && t.startsWith(s.tally_line)) text = tally(s.tally) + esc(t.slice(s.tally_line.length));
+    return `<span class="sh-ln${i === 0 ? ' sh-name' : ''}${i > 0 && t === s.sci ? ' sh-sci' : ''}${i > 0 && t !== s.sci ? ' sh-sm' : ''}">${text}</span>`;
+  }).join('');
+}
+
+const MARK = { new: '\u2726 new', rare: '\u25C6 rare' };
+function markOf(s, at) {
+  const m = s && s.mark && MARK[s.mark];
+  return m ? `<span class="sh-mark${at ? '' : ' inline'}"${at ? ` style="left:${at[0]}%;top:${at[1]}%"` : ''}>${m}</span>` : '';
 }
 
 function sheet(d, made) {
@@ -173,12 +205,17 @@ function sheet(d, made) {
     const lines = m.lines || [];
     if (!lines.length) return '';
     const s = bySci[m.sci || m.name] || { name: m.name, sci: m.sci };
-    return `<span class="sh-l" style="left:${(m.at[0] * 100).toFixed(2)}%;top:${(m.at[1] * 100).toFixed(2)}%">${captionOf(s, lines)}</span>`;
+    return `<span class="sh-l" style="left:${(m.at[0] * 100).toFixed(2)}%;top:${(m.at[1] * 100).toFixed(2)}%">${captionOf(s, lines, d)}</span>`;
+  }).join('');
+  // a mark sits at the top right of its specimen's box
+  const marks = made.items.map((m) => {
+    const s = bySci[m.sci || m.name];
+    return s && s.mark && m.box ? markOf(s, [((m.box[0] + m.box[2]) * 100).toFixed(2), (m.box[1] * 100).toFixed(2)]) : '';
   }).join('');
   const mounts = made.items.filter((m) => m.mount).length;
   const extra = made.quick ? ['cutting the pictures out'] : mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
   const frame = d.layout === 'hero' && d.hero_frame === 'ornate' ? ORNAMENT : '';
-  const page = `<div class="sh-page${frame ? ' framed' : ''}" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="sync">`}${tags}${frame}</div>`;
+  const page = `<div class="sh-page${frame ? ' framed' : ''}" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="sync">`}${tags}${marks}${frame}</div>`;
   return `${head(d)}<div class="sh">${page}</div>${heroFoot(d, false)}${head(d, 'bottom')}${foot(d, extra)}`;
 }
 
@@ -220,6 +257,21 @@ function scenePage(d) {
 }
 
 /* With no canvas (a test in node, or a browser that refused): the pictures as a plain grid. */
+/* The year list: every species this year in a dense grid, to-day's in ink, the rest faded,
+   the earliest arrivals first. */
+function yearPage(d) {
+  const n = d.species.length;
+  const w = d.cell_w || 800, h = d.cell_h || 480;
+  const cols = Math.max(3, Math.min(14, Math.round(Math.sqrt(n * (w / h) * 1.25))));
+  const tiles = d.species.map((s) => {
+    const pic = s.pic && (s.pic.cut || s.pic.src);
+    const img = pic ? `<img src="${pic}" alt="" decoding="sync">` : '<span class="yr-none"></span>';
+    const days = d.tally === 'strokes' ? tally(s.year_days || s.count) : `${s.year_days || s.count || 0}d`;
+    return `<figure class="yr-t${s.today ? ' today' : ''}${s.mark ? ' marked' : ''}">${img}<figcaption><span class="yr-n">${esc(s.name)}</span><span class="yr-d">${days}</span></figcaption>${markOf(s)}</figure>`;
+  }).join('');
+  return `${head(d)}<div class="yr" style="--cols:${cols}">${tiles}</div>${head(d, 'bottom')}${foot(d)}`;
+}
+
 function montage(d) {
   const tiles = d.species.map((s) => `<figure>${s.pic ? `<img src="${s.pic.src}" alt="">` : '<div class="nopic"></div>'}<figcaption>${esc(s.name)}</figcaption></figure>`).join('');
   return `${head(d)}<div class="mont n${Math.min(d.species.length, 8)}">${tiles}</div>${foot(d)}`;
@@ -237,6 +289,7 @@ export default async function render(shadow, ctx) {
   else if (d.state === 'empty') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', `Nothing ${d.source === 'birdnet_go' ? 'heard' : 'recorded'} ${[d.area, d.period.replace(/^heard /, '')].filter(Boolean).join(' ')}.`, d.hint);
   else if (d.state === 'painting') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', 'Nothing painted yet.', d.hint);
   else if (d.state === 'asleep') body = asleep(d);
+  else if (d.layout === 'year' && d.year) body = yearPage(d);
   else if (d.scene && d.scene.pic) { await predecode(d.scene.pic.src); body = scenePage(d); }
   else if (d.layout === 'hero' && d.species[0] && d.species[0].pic && d.species[0].pic.whole) { await predecode(d.species[0].pic.src); body = heroPage(d); }
   else {
@@ -310,6 +363,21 @@ function paint(shadow, d, size, body) {
       .sh-sci { font-family: var(--serif); font-style: italic; letter-spacing: 0; }
       .sh-sm { font-family: var(--serif); font-style: italic; letter-spacing: 0; font-size: .88em; opacity: .85; }
       .lv-mono .sh-l { -webkit-text-stroke: .3px currentColor; }
+      .sh-tally { height: .95em; vertical-align: -.12em; }
+      .sh-mark { position: absolute; transform: translate(-55%, -60%); font-family: var(--sc); font-size: calc(var(--lf, .017) * 78cqh); letter-spacing: .1em; line-height: 1; padding: .3em .55em .25em; border-radius: 1em; background: var(--ink); color: var(--paper); white-space: nowrap; }
+      .sh-mark.inline { position: absolute; right: 4%; top: 2%; transform: none; font-size: 1.6cqmin; }
+      .ph-sun { width: 1.15em; height: 1.15em; vertical-align: -.2em; margin-right: .25em; }
+      /* the year list */
+      .yr { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--cols), 1fr); grid-auto-rows: 1fr; gap: .6cqmin 1cqmin; padding: 1cqmin 2.4cqmin; align-content: start; overflow: hidden; }
+      .yr-t { position: relative; margin: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: .3cqmin; }
+      .yr-t img { flex: 1; min-height: 0; width: 100%; object-fit: contain; mix-blend-mode: multiply; }
+      .yr-t:not(.today) img { opacity: .38; filter: grayscale(1) contrast(1.1); }
+      .yr-t:not(.today) figcaption { opacity: .55; }
+      .yr-none { flex: 1; width: 55%; border: 1px dashed var(--ink); border-radius: 50%; opacity: .4; }
+      .yr-t figcaption { display: flex; flex-direction: column; align-items: center; max-width: 100%; font-family: var(--sc); letter-spacing: .03em; line-height: 1.1; }
+      .yr-n { font-size: 1.7cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .yr-d { font-size: 1.35cqmin; opacity: .8; font-family: var(--serif); font-style: italic; }
+      .yr-t.today .yr-n { font-weight: 700; }
       .sc { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 0 2.4cqmin; }
       .sc-pic { flex: 1; min-height: 0; width: 100%; display: flex; align-items: center; justify-content: center; }
       .sc-pic img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; }

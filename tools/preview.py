@@ -29,6 +29,7 @@ def main() -> None:
     ap.add_argument("--w", type=int, default=1200)
     ap.add_argument("--h", type=int, default=1600)
     ap.add_argument("--tag", default="demo")
+    ap.add_argument("--at", default="", help="HH:MM: the clock the widget sees, to-day in the cell's zone")
     ap.add_argument("pairs", nargs="*")
     a = ap.parse_args()
     options = dict(MELBOURNE)
@@ -39,6 +40,18 @@ def main() -> None:
     server = importlib.util.module_from_spec(spec)
     sys.modules["ss_server"] = server
     spec.loader.exec_module(server)  # type: ignore[union-attr]
+    if a.at:
+        import datetime as _dt
+
+        hh, mm = (int(x) for x in a.at.split(":"))
+
+        class _Clock(_dt.datetime):
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[override]
+                real = _dt.datetime.now(tz)
+                return cls(real.year, real.month, real.day, hh, mm, tzinfo=real.tzinfo)
+
+        server.datetime = _Clock
     data_dir = OUT / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     data = server.fetch(options, {}, ctx={"data_dir": str(data_dir), "cell_w": a.w, "cell_h": a.h})

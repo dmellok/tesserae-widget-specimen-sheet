@@ -1778,3 +1778,101 @@ def test_paintings_group_by_dashboard(tmp_path, offline_paint):
     assert [(x["name"], len(x["paintings"])) for x in g["groups"]] == [("Kitchen", 2), ("Study", 2)]
     assert len(g["rest"]) == 1
 
+
+
+def _log(tmp_path, days, seen):
+    (tmp_path / "rarity.json").write_text(json.dumps({"days": days, "seen": seen}))
+
+
+def test_marks_new_and_rare(tmp_path, offline):
+    from datetime import date, timedelta
+
+    today = date.today()
+    days = [(today - timedelta(days=i)).isoformat() for i in range(40, 0, -1)]
+    # the magpie every day, the rock dove (flagged new by BirdNET-Go) never before, the gull once
+    # (one day in forty, plus to-day: within one in twenty)
+    _log(tmp_path, days, {"Gymnorhina tibicen": days, "Chroicocephalus novaehollandiae": days[3:4]})
+    r = _fetch(tmp_path, offline, url="birdnet.local", marks="both", count="8")
+    marks = {s["name"]: s.get("mark", "") for s in r["species"]}
+    assert marks["Rock Dove"] == "new" and marks["Australian Magpie"] == ""
+    assert marks["Spotted Dove"] == "new", "first on the log to-day: new here"
+    assert marks["Silver Gull"] == "rare", "on the log once in forty days"
+    r = _fetch(tmp_path, offline, url="birdnet.local", marks="rare", count="8")
+    marks = {s["name"]: s.get("mark", "") for s in r["species"]}
+    assert marks["Rock Dove"] == "" and marks["Silver Gull"] == "rare" and marks["Australian Magpie"] == ""
+    # too short a log marks nothing rare, but a flagged bird is still new
+    _log(tmp_path, days[-3:], {"Chroicocephalus novaehollandiae": days[-1:]})
+    r = _fetch(tmp_path, offline, url="birdnet.local", marks="rare", count="8")
+    assert not any(s.get("mark") for s in r["species"])
+    r = _fetch(tmp_path, offline, url="birdnet.local", marks="new", count="8")
+    assert {s["name"]: s.get("mark", "") for s in r["species"]}["Rock Dove"] == "new"
+    assert r["marks"] == "new"
+
+
+def test_tally_strokes_mark_the_count_line(tmp_path, offline):
+    r = _fetch(tmp_path, offline, url="birdnet.local", tally="strokes")
+    s = r["species"][0]
+    assert r["tally"] == "strokes" and s["tally"] == s["count"] and s["tally_line"].endswith("calls")
+    assert any(ln.startswith(s["tally_line"]) for ln in s["lines"])
+    r = _fetch(tmp_path, offline, url="birdnet.local")
+    assert "tally_line" not in r["species"][0]
+
+
+def test_year_list_from_the_log(tmp_path, offline):
+    from datetime import date, timedelta
+
+    today = date.today()
+    y = today.year
+    d = lambda m, dd: f"{y}-{m:02d}-{dd:02d}"  # noqa: E731
+    first = date(y, 1, 3)
+    if first > today:
+        first = today
+    days = [first.isoformat(), today.isoformat()]
+    (tmp_path / "species_seen.json").write_text(json.dumps({"Corvus mellori": ["Little Raven", "Aves"]}))
+    _log(tmp_path, days, {
+        "Gymnorhina tibicen": [first.isoformat(), today.isoformat()],
+        "Corvus mellori": [first.isoformat()],
+        "Turdus merula": [f"{y - 1}-06-01"],
+    })
+    r = _fetch(tmp_path, offline, url="birdnet.local", layout="year", count="2")
+    # the log's two this year, and the four birds heard to-day, the magpie among both
+    assert r["year"]["n"] == 5 and r["year"]["today"] == 4
+    names = [s["name"] for s in r["species"]]
+    assert names[0] in ("Australian Magpie", "Little Raven") and "Turdus merula" not in names
+    raven = next(s for s in r["species"] if s["name"] == "Little Raven")
+    assert raven["year_days"] == 1 and raven["today"] is False and raven["lines"][1] == "1 day"
+    magpie = next(s for s in r["species"] if s["name"] == "Australian Magpie")
+    assert magpie["year_days"] == 2 and magpie["today"] is True and magpie["lines"][1] == "2 days"
+    assert len(r["species"]) > 2, "the year list is not cut to the sheet's count"
+
+
+def test_dawn_and_dusk_pages(tmp_path, offline, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("Australia/Melbourne"))
+    mins = now.hour * 60 + now.minute
+
+    def sky_with(rise, set_):
+        return lambda place, when: {
+            "dark": False, "sunrise": f"{rise // 60:02d}:{rise % 60:02d}",
+            "sunset": f"{set_ // 60:02d}:{set_ % 60:02d}", "sunset_min": set_, "moon": 0.5, "moon_name": "Full",
+        }
+
+    # half an hour before sunrise: the dawn page, the birds in the order they started
+    monkeypatch.setattr(server, "_sky", sky_with((mins + 30) % 1440, (mins + 600) % 1440))
+    r = _fetch(tmp_path, offline, url="birdnet.local", day_pages="on", count="8")
+    assert r["day_page"]["kind"] == "dawn" and r["day_page"]["sun"].startswith("sunrise")
+    firsts = [s["first"] for s in r["species"]]
+    assert firsts == sorted(firsts) and r["day_page"]["song"].startswith(f"first song {firsts[0]}")
+    # just after sunset: the evening page, the last songs latest first (a fixed clock, so the
+    # window never wraps midnight whatever the hour this runs)
+    rows = [dict(s) for s in r["species"]]
+    sky = sky_with(6 * 60, 18 * 60 + 10)(None, None)
+    page = server._day_page(rows, sky, datetime(2026, 10, 17, 18, 30))
+    assert page["kind"] == "dusk" and page["sun"] == "sunset 18:10" and page["song"] == "last song 17:40 Australian Magpie"
+    lasts = [s["last"] for s in rows]
+    assert lasts == sorted(lasts, reverse=True)
+    # midday: no page; and none without the option
+    assert server._day_page(rows, sky, datetime(2026, 10, 17, 12, 0)) is None
+    assert _fetch(tmp_path, offline, url="birdnet.local", count="8")["day_page"] is None

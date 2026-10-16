@@ -65,7 +65,14 @@ LABELS = ("caption", "none")
 LABEL_LINES = ("name", "sci", "count", "last", "flag", "who", "size")
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 PAPERS = ("cream", "white", "aged")
-LAYOUTS = ("cluster", "grid", "hero")
+LAYOUTS = ("cluster", "grid", "hero", "year")
+MARKS = ("off", "new", "rare", "both")
+TALLY = ("digits", "strokes")
+# The year list: this many species at most, the earliest arrivals first
+YEAR_MAX = 120
+# Rare: heard or recorded on this share of the logged days at most, once the log holds LOG_MIN days
+RARE_SHARE = 0.05
+LOG_MIN_DAYS = 14
 LEVELS = ("colour", "gray16", "gray4", "mono")
 NIGHTS = ("off", "asleep", "owls")
 FOOTERS = ("show", "credits", "hide")
@@ -279,6 +286,127 @@ def _order_rows(
         random.Random(f"{today}|{source}").shuffle(rows)
     else:
         rows.sort(key=lambda r: (-r["count"], name(r)))
+
+
+def _log_seen(data_dir: Path) -> tuple[list[str], dict[str, list[str]]]:
+    """The widget's log: the days it ran here, and the days each species was
+    on the sheet, by the scientific name (else the common name)."""
+    log = N.read_json(data_dir / "rarity.json", {})
+    if not isinstance(log, dict):
+        return [], {}
+    days = log.get("days") if isinstance(log.get("days"), list) else []
+    seen = log.get("seen") if isinstance(log.get("seen"), dict) else {}
+    return [str(d) for d in days], {k: [str(d) for d in v] for k, v in seen.items() if isinstance(v, list)}
+
+
+def _mark_rows(rows: list[dict[str, Any]], data_dir: Path, marks: str, today: str) -> None:
+    """Give each row its mark for the page: ``new`` for a species new here or
+    back after an absence (the flag), ``rare`` for one on the sheet on few of
+    the logged days (one in twenty at most), once the log holds LOG_MIN_DAYS days. Nothing marks a
+    page the widget has only just started keeping."""
+    if marks == "off":
+        return
+    days, seen = _log_seen(data_dir)
+    enough = len(days) >= LOG_MIN_DAYS
+    rare_max = max(1, round(len(days) * RARE_SHARE))
+    for r in rows:
+        key = str(r.get("sci") or r.get("name") or "")
+        hits = seen.get(key, [])
+        fresh = r.get("flag") in ("new", "back") or (enough and hits and all(d >= today for d in hits))
+        # rare: on the sheet on few days, and not merely new (seen before to-day)
+        rare = enough and any(d < today for d in hits) and len(hits) <= rare_max
+        mark = ""
+        if marks in ("new", "both") and fresh:
+            mark = "new"
+        elif marks in ("rare", "both") and rare:
+            mark = "rare"
+        if mark:
+            r["mark"] = mark
+
+
+def _year_rows(
+    data_dir: Path, rows: list[dict[str, Any]], today: str, source: str
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Every species on the sheet this year, from the widget's own log: the
+    earliest arrivals first, each with the days it was on the sheet and
+    whether it is on to-day's. Rows the sheet has now are kept whole (their
+    pictures and counts); the rest are made from the log and what the widget
+    remembers of them. (the rows, the year's summary)."""
+    year = today[:4]
+    days, seen = _log_seen(data_dir)
+    by_key = {str(r.get("sci") or r.get("name") or ""): r for r in rows}
+    known = {sci: (name, kind) for name, sci, kind in known_species(data_dir)}
+    out: list[dict[str, Any]] = []
+    # the sheet's own rows count as to-day's even before the log has them (the first day, the demo)
+    for key, r in by_key.items():
+        if key and today not in seen.get(key, []):
+            seen[key] = sorted(set(seen.get(key, [])) | {today})
+    for key, hits in seen.items():
+        this_year = sorted(d for d in hits if d.startswith(year))
+        if not this_year:
+            continue
+        r = by_key.get(key)
+        if r is None:
+            name, kind = known.get(key, (key, "Aves"))
+            r = {"sci": key if key in known else "", "name": name, "kind": kind, "count": 0, "factor": 1.0, "flag": ""}
+        r = dict(r)
+        r["year_days"] = len(this_year)
+        r["first_day"] = this_year[0]
+        r["today"] = today in this_year
+        out.append(r)
+    out.sort(key=lambda r: (r["first_day"], str(r.get("name") or "").lower()))
+    out = out[:YEAR_MAX]
+    since = ""
+    if out:
+        with contextlib.suppress(ValueError):
+            since = datetime.strptime(out[0]["first_day"], "%Y-%m-%d").strftime("%-d %b" if sys.platform != "win32" else "%d %b")
+    summary = {
+        "n": len(out),
+        "today": len([r for r in out if r["today"]]),
+        "since": since,
+        "days": len([d for d in days if d.startswith(year)]),
+        "year": year,
+    }
+    return out, summary
+
+
+def _day_page(
+    rows: list[dict[str, Any]], sky: dict[str, Any], now: datetime
+) -> dict[str, Any] | None:
+    """The dawn chorus page from an hour before sunrise to two and a half
+    after: the morning's birds in the order they started, with the first
+    song; the evening page from an hour before sunset to an hour after: the
+    last songs, latest first. The rows are reordered in place."""
+    rise = _minutes(str(sky.get("sunrise") or ""))
+    set_ = sky.get("sunset_min")
+    if rise is None or not isinstance(set_, int):
+        return None
+    mins = now.hour * 60 + now.minute
+    if rise - 60 <= mins <= rise + 150:
+        sung = [r for r in rows if _minutes(r.get("first") or "") is not None]
+        if not sung:
+            return None
+        sung.sort(key=lambda r: (_minutes(r["first"]) or 0, -int(r.get("count") or 0)))
+        rows[:] = sung + [r for r in rows if r not in sung]
+        return {
+            "kind": "dawn",
+            "label": "Dawn chorus",
+            "sun": f"sunrise {sky['sunrise']}",
+            "song": f"first song {sung[0]['first']} {sung[0]['name']}",
+        }
+    if set_ - 60 <= mins <= set_ + 60:
+        sung = [r for r in rows if _minutes(r.get("last") or "") is not None]
+        if not sung:
+            return None
+        sung.sort(key=lambda r: (-(_minutes(r["last"]) or 0), -int(r.get("count") or 0)))
+        rows[:] = sung + [r for r in rows if r not in sung]
+        return {
+            "kind": "dusk",
+            "label": "Evening",
+            "sun": f"sunset {sky['sunset']}",
+            "song": f"last song {sung[0]['last']} {sung[0]['name']}",
+        }
+    return None
 
 
 def _rarity(data_dir: Path, rows: list[dict[str, Any]], today: str) -> None:
@@ -1102,6 +1230,9 @@ def _size(rows: list[dict[str, Any]], sizing: str) -> None:
 
 
 def _count_text(r: dict[str, Any], source: str, window: str) -> str:
+    if r.get("year_days"):
+        n = int(r["year_days"])
+        return f"{n} day{'' if n == 1 else 's'}"
     n = int(r.get("count") or 0)
     if source == "birdnet_go":
         word = "call" if n == 1 else "calls"
@@ -1122,7 +1253,7 @@ def _label_lines(
             out.append(r["sci"])
         elif line == "count":
             bit = _count_text(r, source, window)
-            if source == "birdnet_go" and window == "today" and r.get("last"):
+            if source == "birdnet_go" and window == "today" and r.get("last") and not r.get("year_days"):
                 bit += f" · last {r['last']}"
             out.append(bit)
         elif line == "last" and source != "birdnet_go" and r.get("last"):
@@ -1193,6 +1324,9 @@ def fetch(
     text_scale = int(_choice(options.get("text_size"), TEXT_SCALES)) / 100
     paper = _choice(options.get("paper"), PAPERS)
     layout = _choice(options.get("layout"), LAYOUTS)
+    marks = _choice(options.get("marks"), MARKS)
+    tally = _choice(options.get("tally"), TALLY)
+    day_pages = _choice(options.get("day_pages"), ("off", "on"))
     levels = _choice(options.get("panel"), LEVELS)
     night = _choice(options.get("night"), NIGHTS) if source == "birdnet_go" else "off"
     footer = _choice(options.get("footer"), FOOTERS)
@@ -1273,6 +1407,10 @@ def fetch(
             "night": night,
             "sky": {"dark": False},
             "asleep": None,
+            "day_page": None,
+            "year": None,
+            "marks": marks,
+            "tally": tally,
             "live_refresh_s": 0,
             "state": "ok",
             "error": "",
@@ -1396,11 +1534,18 @@ def fetch(
     kept = [r for r in rows if not is_excluded(r, rules)]
     excluded = len(rows) - len(kept)
     rows = kept
-    _order_rows(rows, order, source, data_dir, now.strftime("%Y-%m-%d"))
+    today_str = now.strftime("%Y-%m-%d")
+    if not demo and source != "birdnet_go":
+        _rarity(data_dir, rows, today_str)
+    _order_rows(rows, order, source, data_dir, today_str)
+    _mark_rows(rows, data_dir, marks, today_str)
 
     # --- night (BirdNET-Go) ----------------------------------------------
     sky = _sky(place, now) if source == "birdnet_go" else {"dark": False}
     asleep = None
+    day_page = None
+    if day_pages == "on" and source == "birdnet_go" and rows:
+        day_page = _day_page(rows, sky, now)
     if night != "off" and sky.get("dark") and rows:
         latest = max(rows, key=lambda r: _minutes(r.get("last") or "") or 0)
         last_min = _minutes(latest.get("last") or "")
@@ -1427,6 +1572,10 @@ def fetch(
                 "last": latest["name"],
             }
 
+    year = None
+    if layout == "year":
+        rows, year = _year_rows(data_dir, rows, today_str, source)
+        count = YEAR_MAX
     shown = [dict(r) for r in rows[:count]]
     if not ctx.get("preview"):
         _note_shown(data_dir, shown)
@@ -1522,6 +1671,9 @@ def fetch(
     for r in shown:
         r["count_text"] = _count_text(r, source, window)
         r["lines"] = _label_lines(r, lines, source, window)
+        if tally == "strokes":
+            r["tally_line"] = r["count_text"]
+            r["tally"] = int(r.get("year_days") or r.get("count") or 0)
         r.pop("hourly", None)
     credits: list[str] = []
     artists: list[str] = []
@@ -1594,6 +1746,8 @@ def fetch(
         excluded=excluded,
         sky=sky,
         asleep=asleep,
+        day_page=day_page,
+        year=year,
         state="asleep" if asleep else "ok",
         live_refresh_s=_live_refresh(mask_states),
         credits=([scene_out["pic"]["credit"]] if scene_out else credits),
