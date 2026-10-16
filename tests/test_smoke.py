@@ -888,7 +888,7 @@ def test_paintings_climb_the_ladder(tmp_path, offline_paint):
         r["species"][0]["pic"]["kind"] == "plate" and "painting 1 of 4" in r["status"]
     )
     _settle_paint()
-    assert len(offline_paint) == 3, "three new paintings per refresh"
+    assert len(offline_paint) == 4, "a panel paints everything its sheet needs at once"
     prompt = next(
         pr["prompt"] for pr in offline_paint if "(Gymnorhina tibicen)" in pr["prompt"]
     )
@@ -902,9 +902,6 @@ def test_paintings_climb_the_ladder(tmp_path, offline_paint):
         pr["image_urls"] == ["https://inat.example/photos/1/large.jpg"]
         for pr in offline_paint
     )
-    r = server.fetch(options, settings, ctx=ctx)
-    _settle_paint()
-    assert len(offline_paint) == 4, "the fourth on the next refresh"
     r = server.fetch(options, settings, ctx=ctx)
     kinds = [s["pic"]["kind"] for s in r["species"]]
     assert kinds == ["painting"] * 4 and len(offline_paint) == 4
@@ -920,9 +917,9 @@ def test_paintings_climb_the_ladder(tmp_path, offline_paint):
     # switching the style paints again; switching back costs nothing
     r = server.fetch({**options, "style": "gould"}, settings, ctx=ctx)
     _settle_paint()
-    assert len(offline_paint) == 7
+    assert len(offline_paint) == 8
     r = server.fetch(options, settings, ctx=ctx)
-    assert len(offline_paint) == 7 and all(
+    assert len(offline_paint) == 8 and all(
         s["pic"]["kind"] == "painting" for s in r["species"]
     )
 
@@ -942,14 +939,11 @@ def test_only_painted_leaves_the_rest_off_until_they_land(tmp_path, offline_pain
     assert "Painting 4 specimens" in r["hint"]
     _settle_paint()
     r = server.fetch(options, settings, ctx=ctx)
-    assert len(r["species"]) == 3 and all(
+    assert len(r["species"]) == 4 and all(
         s["pic"]["kind"] == "painting" for s in r["species"]
     )
     shown = server.N.read_json(tmp_path / "species_shown.json", {})
-    assert len(shown) == 4, "the unpainted one is still noted for Render now"
-    _settle_paint()
-    r = server.fetch(options, settings, ctx=ctx)
-    assert len(r["species"]) == 4
+    assert len(shown) == 4
     r = server.fetch({**options, "unpainted": "show"}, settings, ctx=ctx)
     assert len(r["species"]) == 4
 
@@ -1065,9 +1059,7 @@ def test_scene_is_painted_once_everything_is_cut_out(tmp_path, offline_paint):
         and "composing the scene once every specimen is painted" in r["status"]
     )
     _settle_paint()
-    server.fetch(options, settings, ctx=ctx)  # the fourth painting, masks for the first three
-    _settle_paint()
-    r = server.fetch(options, settings, ctx=ctx)  # the fourth's mask
+    server.fetch(options, settings, ctx=ctx)  # the masks for the four paintings
     _settle_paint()
     r = server.fetch(options, settings, ctx=ctx)
     assert r["scene"] is None and "composing the scene (fal.ai)" in r["status"]
@@ -1201,18 +1193,28 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     assert not offline_paint, "a preview starts nothing"
     assert len(server.held(tmp_path)) == 3
     assert any("3 paintings waiting for Paint now" in x for x in r["status"])
-    # the same preview again holds nothing new; a panel's own render paints as before
+    # the same preview again within the settling time holds nothing new
     server.fetch(options, settings, ctx=ctx)
-    assert len(server.held(tmp_path)) == 3
+    assert len(server.held(tmp_path)) == 3 and not offline_paint
+    # a preview of the same settings twenty seconds on is a kept dashboard: it paints
+    seen = json.loads((tmp_path / "preview_seen.json").read_text())
+    (tmp_path / "preview_seen.json").write_text(json.dumps({k: v - 30 for k, v in seen.items()}))
+    r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    assert len(offline_paint) == 3 and not server.held(tmp_path)
+    assert not any("waiting" in x for x in r["status"])
+    # a changed setting is a new cell: held again, and Paint now starts it
+    r = server.fetch({**options, "style": "woodblock"}, settings, ctx=ctx)
+    assert len(server.held(tmp_path)) == 3 and any("3 paintings waiting" in x for x in r["status"])
     started = server.start_held(tmp_path, "k", 24)
     _settle_paint()
-    assert started == 3 and len(offline_paint) == 3 and not server.held(tmp_path)
+    assert started == 3 and len(offline_paint) == 6 and not server.held(tmp_path)
     r = server.fetch(options, settings, ctx={**ctx, "preview": False})
     assert all(s["pic"]["kind"] == "painting" for s in r["species"])
-    # a panel render with new species starts them straight away
+    # a panel render with new species starts them all straight away
     more = server.fetch({**options, "count": "4"}, settings, ctx={**ctx, "preview": False})
     _settle_paint()
-    assert len(offline_paint) == 4 and not server.held(tmp_path) and more["species"][3]
+    assert len(offline_paint) == 7 and not server.held(tmp_path) and more["species"][3]
 
 
 def test_every_style_is_offered():
@@ -1257,7 +1259,7 @@ def test_models_have_their_own_keys_and_request_shapes(tmp_path, offline_paint):
     _settle_paint()
     assert any(u == "https://fal.run/fal-ai/flux-pro/kontext" for u in urls)
     keys = [f.stem for f in (tmp_path / "gen").glob("*--m_flux_kontext.jpg")]
-    assert len(keys) == 3
+    assert len(keys) == 4
     meta = json.loads((tmp_path / "gen" / f"{keys[0]}.json").read_text())
     assert (
         meta["model"] == "flux_kontext"

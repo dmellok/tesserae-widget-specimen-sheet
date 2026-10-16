@@ -586,6 +586,24 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
 
 HELD_MAX = 400
 _HELD_LOCK = threading.Lock()
+SETTLE_S = 20
+SEEN_S = 86400
+
+
+def preview_settled(data_dir: Path, cell_id: str, now: float) -> bool:
+    """Whether a cell's settings have stood for SETTLE_S seconds of previews:
+    the first preview of a setting notes the time, and one coming back with
+    the same setting SETTLE_S later is taken as kept, so its paintings start
+    without a button. A setting changed is a new cell, so the clock restarts."""
+    path = data_dir / "preview_seen.json"
+    with _HELD_LOCK:
+        got = N.read_json(path, {})
+        got = {k: float(v) for k, v in got.items() if isinstance(got, dict) and now - float(v) < SEEN_S} if isinstance(got, dict) else {}
+        first = got.get(cell_id)
+        if first is None:
+            got[cell_id] = now
+        N.write(path, json.dumps(got).encode())
+    return first is not None and now - first >= SETTLE_S
 
 
 def held(data_dir: Path) -> dict[str, dict[str, Any]]:
@@ -775,11 +793,12 @@ def _attach_pictures(
         if go and gen.get("hold"):
             _hold(data_dir, _paint_job(key, row, gen))
             why = "held"
-        elif go and started_paint < P.per_fetch():
+        elif go and started_paint < int(gen.get("per_fetch") or P.per_fetch()):
             job = _paint_job(key, row, gen)
             if P.start(job, data_dir, fal_key, gen["cap"]):
                 started_paint += 1
                 why = "running"
+                _unhold(data_dir, [key])
         elif go:
             why = "waiting"
         states["paint_" + (why or "waiting")] = (
@@ -1299,8 +1318,11 @@ def fetch(
             "pose": pose,
             "plants": P.plants_for(*place[:2]) if place else [],
             # a preview looks: a painting it would start is held for Paint now in the job tray,
-            # so an option tried in the editor costs nothing until it is kept
-            "hold": bool(ctx.get("preview")),
+            # so an option tried in the editor costs nothing; one that stands SETTLE_S is kept
+            "hold": bool(ctx.get("preview")) and not preview_settled(data_dir, cell_id, time.time()),
+            # a panel paints everything its sheet needs at once, within the daily limit; a
+            # preview a few at a time
+            "per_fetch": P.per_fetch() if ctx.get("preview") else SHEET_MAX,
             "hero_sci": (shown[0].get("sci") or "") if layout == "hero" and hero_frame == "painted" else "",
             "hero_aspect": "4:3" if int(ctx.get("cell_w") or 800) >= int(ctx.get("cell_h") or 480) else "3:4",
             "dapper_sci": P.dapper_pick(
