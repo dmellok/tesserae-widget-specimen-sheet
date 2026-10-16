@@ -1732,3 +1732,16 @@ def test_a_new_look_drops_the_old_looks_queued_paintings(tmp_path, offline_paint
             P._PAINTING.clear()
             P._WORKERS = 0
 
+
+
+def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
+    """A cell with coordinates but no timezone (backyard-birds #1): the clock
+    falls back to the server's zone instead of a naive time the moon
+    arithmetic rejects."""
+    r = server.fetch(
+        {"latitude": -37.81, "longitude": 144.96},
+        {},
+        ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480},
+    )
+    assert r["state"] == "ok" and r["sky"]["moon_name"]
+    assert server._moon(datetime(2026, 10, 11, 8, 14))[1]
