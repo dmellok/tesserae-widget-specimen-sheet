@@ -82,6 +82,17 @@ function send(d, key, sheet) {
   } catch { /* no fetch here */ }
 }
 
+/* Whether a picture decodes in this browser, within a moment. */
+function decodes(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(false), 4000);
+    img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth > 0); };
+    img.onerror = () => { clearTimeout(timer); resolve(false); };
+    img.src = src;
+  });
+}
+
 function buildArgs(d) {
   const w = d.cell_w || 800, h = d.cell_h || 480;
   let specimens = d.species.map((s) => ({
@@ -188,7 +199,13 @@ export default async function render(shadow, ctx) {
     // the sheet the server kept for this cell, when it is the sheet these inputs make; else the
     // page at once with every specimen as an empty mount, each drawn in as its cut-out is ready,
     // then the finished sheet in place
-    let made = SHEETS.get(key) || (d.sheet && d.sheet.key === key ? d.sheet.sheet : null);
+    let made = SHEETS.get(key) || null;
+    // the sheet the server kept, when it is the sheet these inputs make and its picture decodes;
+    // one that does not (a browser that could not encode it) is packed again rather than shown blank
+    if (!made && d.sheet && d.sheet.key === key && d.sheet.sheet && typeof document !== 'undefined') {
+      const kept = d.sheet.sheet;
+      if (typeof kept.src === 'string' && kept.src.startsWith('data:image/') && await decodes(kept.src)) made = kept;
+    }
     if (!made && typeof document !== 'undefined') {
       let quick = null;
       try { quick = quickSheet(args); } catch { quick = null; }

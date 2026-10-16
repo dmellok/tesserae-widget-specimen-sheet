@@ -707,7 +707,7 @@ LIVE_S = 6
 def _live_refresh(states: dict[str, int]) -> int:
     """Seconds after which the editor should ask for the sheet again, while a
     painting or a cut-out is on the way; 0 once there is nothing to wait for."""
-    busy = ("running", "paint_running", "paint_waiting")
+    busy = ("running", "paint_running", "paint_waiting", "deferred")
     return LIVE_S if any(states.get(k) for k in busy) else 0
 
 
@@ -732,6 +732,7 @@ def _attach_pictures(
     fal_key: str = "",
     gen: dict[str, Any] | None = None,
     classic: bool = False,
+    budget_s: float = 7.0,
 ) -> dict[str, int]:
     """Each row's best picture to-day, up the ladder: its AI painting when
     one is kept (``gen`` carries the style, the custom words, the day's
@@ -742,6 +743,7 @@ def _attach_pictures(
     Then its cut-out: a kept mask rides along as ``cut``; a picture without
     one starts a mask job in the background. Returns the states counted."""
     pack = _pack(data_dir)
+    deadline = time.time() + budget_s
     states: dict[str, int] = {}
     folder = P.gen_dir(data_dir) if gen else None
     started_paint = 0
@@ -786,6 +788,12 @@ def _attach_pictures(
         return None
 
     def best(row: dict[str, Any]) -> dict[str, Any] | None:
+        # past the deadline, a picture not yet fetched waits for the next refresh: the
+        # page's composer gives a widget twelve seconds, and a cold place with a dozen
+        # plates and photos to fetch took longer, which left the panel with no page at all
+        if time.time() > deadline:
+            states["deferred"] = states.get("deferred", 0) + 1
+            return None
         return (
             (classic and C.plate(row["sci"], data_dir, levels))
             or _plate(row["sci"], pack, data_dir, levels)
@@ -1350,7 +1358,10 @@ def fetch(
             f"{ {'birdnet_go': 'BirdNET-Go', 'inaturalist': 'iNaturalist', 'gbif': 'GBIF'}[source] } not answering; showing the last answer"
         )
     waiting = [r["name"] for r in shown if not r.get("pic")]
-    if waiting:
+    if mask_states.get("deferred"):
+        n = mask_states["deferred"]
+        status.append(f"{n} picture{'' if n == 1 else 's'} on the way")
+    elif waiting:
         status.append(f"{len(waiting)} without a picture yet")
     if mask_states.get("running"):
         n = mask_states["running"]
@@ -1521,6 +1532,25 @@ def _sheets_dir(data_dir: Path) -> Path:
     with contextlib.suppress(OSError):
         path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _decodes(src: str) -> bool:
+    """Whether a sheet's picture is an image this server can open: a data URL
+    of a JPEG or PNG at least 100 px each way."""
+    m = re.match(r"data:image/(?:jpeg|png);base64,([A-Za-z0-9+/=\s]+)$", src)
+    if not m:
+        return False
+    try:
+        import base64
+        import io
+
+        from PIL import Image
+
+        im = Image.open(io.BytesIO(base64.b64decode(m.group(1))))
+        im.verify()
+        return im.size[0] >= 100 and im.size[1] >= 100
+    except Exception:  # noqa: BLE001 - anything that is not a picture
+        return False
 
 
 def stored_sheet(data_dir: Path, cell_id: str) -> dict[str, Any] | None:
@@ -1828,6 +1858,8 @@ def blueprint() -> Any:
             abort(400)
         if len(sheet["src"]) > 4_000_000:
             abort(413)
+        if not _decodes(sheet["src"]):
+            abort(400)
         store_sheet(data_dir(), cell, key[:200], sheet)
         return jsonify({"ok": True})
 

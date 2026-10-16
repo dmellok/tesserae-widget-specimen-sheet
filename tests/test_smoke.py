@@ -1586,3 +1586,27 @@ def test_every_option_type_is_one_the_server_installs():
     manifest = json.loads((Path(__file__).resolve().parent.parent / "plugin.json").read_text(encoding="utf-8"))
     bad = [(o["name"], o["type"]) for o in manifest["cell_options"] if o["type"] not in allowed]
     assert not bad
+
+
+def test_pictures_past_the_deadline_wait_for_the_next_refresh(tmp_path, offline):
+    rows = [{"name": n, "sci": c, "count": 1, "kind": "Aves"} for n, c in (("Australian Magpie", "Gymnorhina tibicen"), ("Rock Dove", "Columba livia"))]
+    states = server._attach_pictures(rows, "", "", tmp_path, "colour", budget_s=-1)
+    assert states.get("deferred") == 2 and all(r["pic"] is None for r in rows)
+    assert server._live_refresh(states) > 0
+    rows = [{"name": "Australian Magpie", "sci": "Gymnorhina tibicen", "count": 1, "kind": "Aves"}]
+    states = server._attach_pictures(rows, "", "", tmp_path, "colour")
+    assert not states.get("deferred") and rows[0]["pic"]
+
+
+def test_a_stored_sheet_has_to_be_a_picture(tmp_path):
+    import base64, io
+    from PIL import Image
+    buf = io.BytesIO(); Image.new("RGB", (120, 160), (243, 234, 214)).save(buf, "JPEG")
+    good = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    assert server._decodes(good)
+    assert not server._decodes("data:image/jpeg;base64,AAAA")
+    assert not server._decodes("https://example.com/x.jpg")
+    assert not server._decodes("data:text/plain;base64," + base64.b64encode(b"hello").decode())
+    tiny = io.BytesIO(); Image.new("RGB", (8, 8)).save(tiny, "PNG")
+    assert not server._decodes("data:image/png;base64," + base64.b64encode(tiny.getvalue()).decode())
+
