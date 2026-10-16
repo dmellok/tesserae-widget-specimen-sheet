@@ -1157,6 +1157,41 @@ def test_pose_and_native_plants(tmp_path, offline_paint):
     assert all("--flight" in f.name for f in (tmp_path / "gen").glob("*.jpg") if "--on_" not in f.name)
 
 
+def test_hero_note_and_painted_backdrop(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "layout": "hero", "count": "4"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["hero_note"] and r["hero_frame"] == "plain"
+    assert "magpie" in r["species"][0]["about"].lower()
+    assert "about" not in r["species"][1]
+    r = server.fetch({**options, "hero_note": False, "hero_frame": "ornate"}, settings, ctx=ctx)
+    assert "about" not in r["species"][0] and r["hero_frame"] == "ornate"
+    # painted needs AI paintings; with them the hero gets a plate of its own, shown whole
+    r = server.fetch({**options, "hero_frame": "painted"}, settings, ctx=ctx)
+    assert r["hero_frame"] == "plain"
+    painted = {**options, "hero_frame": "painted", "pictures": "gen"}
+    r = server.fetch(painted, settings, ctx=ctx)
+    _settle_paint()
+    hero = [pr for pr in offline_paint if "ornate framed plate" in pr["prompt"]]
+    assert len(hero) == 1 and "(Gymnorhina tibicen)" in hero[0]["prompt"] and hero[0]["aspect_ratio"] == "4:3"
+    assert len(list((tmp_path / "gen").glob("*--hero.jpg"))) == 1
+    r = server.fetch(painted, settings, ctx=ctx)
+    assert r["species"][0]["pic"]["whole"] and r["species"][0]["pic"]["kind"] == "painting"
+    assert not r["species"][1]["pic"].get("whole")
+    for frame in ("ornate", "painted"):
+        data = r if frame == "painted" else server.fetch({**options, "hero_frame": "ornate"}, settings, ctx=ctx)
+        script = (
+            f"import('file://{ROOT}/client.js').then(async (m) => {{ const s = {{innerHTML: ''}};"
+            f" await m.default(s, {{data: {json.dumps(data)}, cell: {{size: 'md', w: 800, h: 480}}}});"
+            " const h = s.innerHTML; if (!h.includes('hero-note') || !h.includes('hero-also')) throw new Error(h.slice(0, 300));"
+            + (" if (!h.includes('hero-whole') || !h.includes('hero-title')) throw new Error('no hero page');" if frame == "painted" else " if (!h.includes('orn-c')) throw new Error('no frame');")
+            + " console.log('ok'); })"
+        )
+        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=30)
+        assert out.returncode == 0, out.stderr
+
+
 def test_every_style_is_offered():
     m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     art = next(o for o in m["cell_options"] if o["name"] == "style")

@@ -87,6 +87,7 @@ NAME_LOCALES = (
     "ru",
 )
 PICTURE_PX = 700
+HERO_PX = 1400
 PICTURES = ("free", "gen")
 SHEET_MAX = 32
 # Which species make the sheet when more were heard or recorded than fit,
@@ -533,7 +534,7 @@ def _photo(
     }
 
 
-def _painting(key: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
+def _painting(key: str, data_dir: Path, levels: str, px: int = PICTURE_PX) -> dict[str, Any] | None:
     """A kept painting, resized for the sheet, or None."""
     folder = P.gen_dir(data_dir)
     img = folder / f"{key}.jpg"
@@ -545,7 +546,7 @@ def _painting(key: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
         raw = img.read_bytes()
     except OSError:
         return None
-    src = N.render(raw, PICTURE_PX, None, folder / f"{key}_{PICTURE_PX}.jpg", levels)
+    src = N.render(raw, px, None, folder / f"{key}_{px}.jpg", levels)
     if not src:
         return None
     return {
@@ -574,6 +575,9 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
     if gen.get("plants"):
         job["perch"] = P.perch_for(row["sci"], gen["plants"])
         job["plants"] = ", ".join(gen["plants"])
+    if gen.get("hero_sci") and row["sci"] == gen["hero_sci"]:
+        job["hero"] = True
+        job["aspect"] = gen.get("hero_aspect", "3:4")
     if row.get("ref"):
         job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
     return job
@@ -702,6 +706,7 @@ def _attach_pictures(
         if not gen or not row.get("sci"):
             return None
         dapper = row["sci"] == gen.get("dapper_sci")
+        hero = bool(gen.get("hero_sci")) and row["sci"] == gen["hero_sci"]
         key = P.key_for(
             row["sci"],
             gen["style"],
@@ -710,12 +715,13 @@ def _attach_pictures(
             gen.get("model", P.DEFAULT_MODEL),
             gen.get("pose", "mixed"),
             P.perch_for(row["sci"], gen.get("plants") or []),
+            hero,
         )
-        pic = _painting(key, data_dir, levels)
+        pic = _painting(key, data_dir, levels, HERO_PX if hero else PICTURE_PX)
         if pic:
             states["painted"] = states.get("painted", 0) + 1
-            # a tile, a card, a framed portrait: the picture is the object, kept whole
-            pic["whole"] = gen["style"] in P.WHOLE
+            # a hero on its painted backdrop is the whole plate, kept entire
+            pic["whole"] = hero
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
         if go and started_paint < P.per_fetch():
@@ -992,6 +998,10 @@ def fetch(
     only_painted = options.get("unpainted") == "hide"
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
     pose = _choice(options.get("pose"), ("mixed", "perched", "flight"))
+    hero_note = options.get("hero_note", True) not in (False, "false", "False", 0, "0", "off")
+    hero_frame = _choice(options.get("hero_frame"), ("plain", "ornate", "painted"))
+    if hero_frame == "painted" and pictures != "gen":
+        hero_frame = "plain"
     model = P.model_of(options.get("model"))
     arrangement = (
         _choice(options.get("arrangement"), ARRANGEMENTS) if pictures == "gen" else "sheet"
@@ -1056,6 +1066,8 @@ def fetch(
             "sheet": None,
             "arrangement": arrangement,
             "scene": None,
+            "hero_frame": hero_frame if layout == "hero" else "plain",
+            "hero_note": hero_note,
         }
         base_out.update(kw)
         return base_out
@@ -1227,6 +1239,8 @@ def fetch(
             "ref_mode": "photo",
             "pose": pose,
             "plants": P.plants_for(*place[:2]) if place else [],
+            "hero_sci": (shown[0].get("sci") or "") if layout == "hero" and hero_frame == "painted" else "",
+            "hero_aspect": "4:3" if int(ctx.get("cell_w") or 800) >= int(ctx.get("cell_h") or 480) else "3:4",
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
             )
@@ -1256,6 +1270,8 @@ def fetch(
                 live_refresh_s=_live_refresh(mask_states),
             )
     _size(shown, sizing)
+    if layout == "hero" and hero_note and shown and shown[0].get("sci"):
+        shown[0]["about"] = P.about(shown[0]["sci"], data_dir)
     for r in shown:
         r["count_text"] = _count_text(r, source, window)
         r["lines"] = _label_lines(r, lines, source, window)

@@ -117,10 +117,32 @@ function sheet(d, made) {
   }).join('');
   const mounts = made.items.filter((m) => m.mount).length;
   const extra = made.quick ? ['cutting the pictures out'] : mounts ? [`${mounts} picture${mounts === 1 ? '' : 's'} still to come`] : [];
-  const page = `<div class="sh-page" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="async">`}${tags}</div>`;
-  const also = d.layout === 'hero' && d.species.length > 1 && d.labels !== 'none'
-    ? `<div class="hero-also"><i>also</i> ${d.species.slice(1).map((s) => `<span>${esc(s.name)}${s.count ? ` <b>${esc(String(s.count))}</b>` : ''}</span>`).join('<em>·</em>')}</div>` : '';
-  return `${head(d)}<div class="sh">${page}</div>${also}${foot(d, extra)}`;
+  const frame = d.layout === 'hero' && d.hero_frame === 'ornate' ? ORNAMENT : '';
+  const page = `<div class="sh-page${frame ? ' framed' : ''}" style="--r:${made.ratio};--lf:${made.label}"${made.quick ? ' data-quick' : ''}>${made.quick ? '' : `<img src="${made.src}" alt="" decoding="async">`}${tags}${frame}</div>`;
+  return `${head(d)}<div class="sh">${page}</div>${heroFoot(d, false)}${foot(d, extra)}`;
+}
+
+/* An ornate rule frame drawn on the page: a double rule stopping short of each corner, and a
+   small flourish in each gap. The rules stretch with the page; the corners keep their shape. */
+const CORNER = '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M4 96 C4 40 40 4 96 4" fill="none" stroke="var(--ink)" stroke-width="2.4"/><path d="M14 96 C14 50 50 14 96 14" fill="none" stroke="var(--ink)" stroke-width="1.2"/><path d="M28 72 C40 40 60 30 76 24 M28 72 C44 62 58 50 66 36" fill="none" stroke="var(--ink)" stroke-width="1.6" stroke-linecap="round"/><circle cx="26" cy="74" r="3.2" fill="var(--ink)"/><circle cx="78" cy="22" r="2" fill="var(--ink)"/></svg>';
+const ORNAMENT = `<div class="orn" aria-hidden="true"><svg class="orn-rules" viewBox="0 0 1000 1000" preserveAspectRatio="none"><path d="M60 18 H940 M60 32 H940 M60 982 H940 M60 968 H940 M18 60 V940 M32 60 V940 M982 60 V940 M968 60 V940" fill="none" stroke="var(--ink)" vector-effect="non-scaling-stroke" stroke-width="1.5"/></svg><i class="orn-c tl">${CORNER}</i><i class="orn-c tr">${CORNER}</i><i class="orn-c bl">${CORNER}</i><i class="orn-c br">${CORNER}</i></div>`;
+
+/* Under a hero: a note on the species when there is one, and the other species named. */
+function heroFoot(d, named) {
+  if (d.layout !== 'hero' || !d.species.length) return '';
+  const s = d.species[0];
+  const title = named ? `<div class="hero-title">${esc(s.name)}${s.sci && s.sci !== s.name ? ` <i>${esc(s.sci)}</i>` : ''}${s.count_text ? ` <b>${esc(s.count_text)}</b>` : ''}</div>` : '';
+  const note = d.hero_note && s.about ? `<div class="hero-note">${esc(s.about)}</div>` : '';
+  const also = d.species.length > 1 && d.labels !== 'none'
+    ? `<div class="hero-also"><i>also</i> ${d.species.slice(1).map((x) => `<span>${esc(x.name)}${x.count ? ` <b>${esc(String(x.count))}</b>` : ''}</span>`).join('<em>·</em>')}</div>` : '';
+  return `${title}${note}${also}`;
+}
+
+/* A hero painted whole, backdrop and all: the picture fills the page, the caption goes beneath. */
+function heroPage(d) {
+  const s = d.species[0];
+  const ratio = d.cell_w && d.cell_h ? d.cell_w / d.cell_h : 1.6;
+  return `${head(d)}<div class="sh"><div class="sh-page hero-whole" style="--r:${ratio}"><img src="${s.pic.src}" alt="" decoding="async"></div></div>${heroFoot(d, true)}${foot(d)}`;
 }
 
 /* The scene: the sheet repainted by the model as one picture, shown whole. The model moves the
@@ -156,6 +178,7 @@ export default async function render(shadow, ctx) {
   else if (d.state === 'painting') body = message(d, d.title || SOURCE_NAME[d.source] || 'Nature', 'Nothing painted yet.', d.hint);
   else if (d.state === 'asleep') body = asleep(d);
   else if (d.scene && d.scene.pic) body = scenePage(d);
+  else if (d.layout === 'hero' && d.species[0] && d.species[0].pic && d.species[0].pic.whole) body = heroPage(d);
   else {
     const args = buildArgs(d);
     const key = keyOf(args);
@@ -195,6 +218,18 @@ function paint(shadow, d, size, body) {
       .sh { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 .6cqmin; }
       .sh-page { position: relative; aspect-ratio: var(--r); max-width: 100%; max-height: 100%; width: min(100%, calc((100cqh - 9cqmin) * var(--r))); container-type: size; }
       .sh-page > img, .sh-page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; }
+      .orn { position: absolute; inset: 0; pointer-events: none; }
+      .orn-rules { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .orn-c { position: absolute; width: 9cqmin; height: 9cqmin; }
+      .orn-c svg { width: 100%; height: 100%; display: block; }
+      .orn-c.tl { left: 0; top: 0; transform: rotate(0deg); } .orn-c.tr { right: 0; top: 0; transform: rotate(90deg); }
+      .orn-c.br { right: 0; bottom: 0; transform: rotate(180deg); } .orn-c.bl { left: 0; bottom: 0; transform: rotate(270deg); }
+      .sh-page.hero-whole { width: min(100%, calc((100cqh - 9cqmin) * var(--r))); }
+      .sh-page.hero-whole img { object-fit: contain; }
+      .hero-title { flex: 0 0 auto; text-align: center; font-family: var(--sc); font-size: 3.4cqmin; letter-spacing: .08em; padding: .6cqmin 2.4cqmin 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .hero-title i { font-family: var(--serif); font-style: italic; letter-spacing: 0; opacity: .8; }
+      .hero-title b { font-weight: 400; font-family: var(--serif); letter-spacing: 0; opacity: .75; margin-left: .6em; }
+      .hero-note { flex: 0 0 auto; text-align: center; font-size: calc(2.5cqmin * var(--ts)); line-height: 1.35; font-style: italic; padding: .5cqmin 5cqmin .3cqmin; max-height: 12cqmin; overflow: hidden; }
       .hero-also { flex: 0 0 auto; padding: .4cqmin 2.4cqmin .6cqmin; font-family: var(--sc); font-size: 2.6cqmin; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
       .hero-also i { font-family: var(--serif); font-style: italic; opacity: .7; margin-right: .4em; }
       .hero-also em { font-style: normal; opacity: .5; margin: 0 .5em; }

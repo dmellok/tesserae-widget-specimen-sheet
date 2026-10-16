@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1534,6 +1534,40 @@
           "label": "Hero: one specimen, the first by Order"
         }
       ]
+    },
+    {
+      "name": "hero_note",
+      "type": "boolean",
+      "label": "A note about the specimen beneath",
+      "default": true,
+      "show_if": {
+        "layout": "hero"
+      },
+      "help": "A sentence or two on the species from Wikipedia, under the picture."
+    },
+    {
+      "name": "hero_frame",
+      "type": "select",
+      "label": "Around the specimen",
+      "default": "plain",
+      "show_if": {
+        "layout": "hero"
+      },
+      "choices": [
+        {
+          "value": "plain",
+          "label": "Plain paper"
+        },
+        {
+          "value": "ornate",
+          "label": "An ornate rule frame, drawn on the page"
+        },
+        {
+          "value": "painted",
+          "label": "An ornate backdrop painted in the style (AI paintings)"
+        }
+      ],
+      "help": "The painted backdrop asks fal.ai for a plate of its own: the specimen large on a patterned or foliate ground within an ornamental border, in the style chosen, shown whole. One painting per species and style; needs AI paintings on."
     },
     {
       "name": "labels",

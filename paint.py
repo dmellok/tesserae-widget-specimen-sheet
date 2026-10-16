@@ -792,6 +792,15 @@ GEN = (
     "nothing else on the page."
     "{about}{dapper}"
 )
+# The hero plate: one specimen large on an ornate backdrop in its style, the whole picture kept.
+GEN_HERO = (
+    "Paint the {kind} in the reference photo, the {name} ({sci}), as {style}, as the single "
+    "subject of an ornate framed plate: the {kind} large in the middle, {pose}, on a decorative "
+    "backdrop in the same style, a patterned or foliate ground within a drawn ornamental border "
+    "that fills the whole picture to its edges, the page's own art in that style and nothing "
+    "modern. Keep its colours, markings, shape and proportions exactly as in the photo. "
+    "No text, no lettering, no numbers, no signature.{about}{dapper}"
+)
 DAPPER = (
     " The {kind} is dapper: it wears a small, well-made hat that suits it, and perhaps a "
     "monocle, painted with the same care as the rest."
@@ -1009,6 +1018,7 @@ def key_for(
     model: str = DEFAULT_MODEL,
     pose: str = "mixed",
     perch: str = "",
+    hero: bool = False,
 ) -> str:
     """The painting's file key: species slug, style, flight for a flying
     bird, the plant a perched bird sits on when the place has native ones,
@@ -1023,6 +1033,8 @@ def key_for(
         key += f"--on_{N.slug(perch)}"
     if dapper:
         key += "--dapper"
+    if hero:
+        key += "--hero"
     if model_of(model) != DEFAULT_MODEL:
         key += f"--m_{model_of(model)}"
     return key
@@ -1253,7 +1265,7 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         "{camera}", camera_for(job.get("sci") or "")
     )
     words = about(job.get("sci") or "", data_dir)
-    gen = GEN_WHOLE if str(job.get("style") or "") in WHOLE else GEN
+    gen = GEN_HERO if job.get("hero") else GEN_WHOLE if str(job.get("style") or "") in WHOLE else GEN
     if str(job.get("style") or "") in MONO:
         gen = gen.replace(
             "Keep its colours, markings, shape and proportions exactly as in the photo",
@@ -1400,7 +1412,7 @@ def paint(
         return fail(
             "the custom prompt behind this painting is not known; paint it again from the widget"
         )
-    aspect = "3:4"
+    aspect = str(job.get("aspect") or "3:4") if job.get("hero") else "3:4"
     ref_credit = ""
     if job.get("collage"):
         # the scene: the sheet's own cut-outs, repainted as one picture
