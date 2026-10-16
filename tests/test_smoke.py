@@ -1603,9 +1603,14 @@ def test_pictures_past_the_deadline_wait_for_the_next_refresh(tmp_path, offline)
 def test_a_stored_sheet_has_to_be_a_picture(tmp_path):
     import base64, io
     from PIL import Image
-    buf = io.BytesIO(); Image.new("RGB", (120, 160), (243, 234, 214)).save(buf, "JPEG")
+    from PIL import ImageDraw
+    page = Image.new("RGB", (120, 160), (243, 234, 214))
+    ImageDraw.Draw(page).ellipse((30, 40, 90, 120), fill=(40, 30, 20))
+    buf = io.BytesIO(); page.save(buf, "JPEG")
     good = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
     assert server._decodes(good)
+    blank = io.BytesIO(); Image.new("RGB", (120, 160), (243, 234, 214)).save(blank, "JPEG")
+    assert not server._decodes("data:image/jpeg;base64," + base64.b64encode(blank.getvalue()).decode()), "plain paper is not a sheet"
     assert not server._decodes("data:image/jpeg;base64,AAAA")
     assert not server._decodes("https://example.com/x.jpg")
     assert not server._decodes("data:text/plain;base64," + base64.b64encode(b"hello").decode())

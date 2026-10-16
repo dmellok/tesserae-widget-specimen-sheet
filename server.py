@@ -1573,8 +1573,9 @@ def _sheets_dir(data_dir: Path) -> Path:
 
 
 def _decodes(src: str) -> bool:
-    """Whether a sheet's picture is an image this server can open: a data URL
-    of a JPEG or PNG at least 100 px each way."""
+    """Whether a sheet's picture is an image this server can open, at least 100
+    px each way, with something on it: a browser that could not draw into its
+    canvas still encodes a page of plain paper, and that is not a sheet."""
     m = re.match(r"data:image/(?:jpeg|png);base64,([A-Za-z0-9+/=\s]+)$", src)
     if not m:
         return False
@@ -1584,9 +1585,16 @@ def _decodes(src: str) -> bool:
 
         from PIL import Image
 
-        im = Image.open(io.BytesIO(base64.b64decode(m.group(1))))
-        im.verify()
-        return im.size[0] >= 100 and im.size[1] >= 100
+        raw = base64.b64decode(m.group(1))
+        Image.open(io.BytesIO(raw)).verify()
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        if im.size[0] < 100 or im.size[1] < 100:
+            return False
+        small = im.resize((80, max(1, round(80 * im.size[1] / im.size[0]))))
+        px = list(small.getdata())
+        r0, g0, b0 = px[0]
+        ink = sum(1 for r, g, b in px if abs(r - r0) + abs(g - g0) + abs(b - b0) > 60)
+        return ink > len(px) * 0.003
     except Exception:  # noqa: BLE001 - anything that is not a picture
         return False
 

@@ -108,10 +108,32 @@ function buildArgs(d) {
   return { specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, layout, facing: 'inward', zoom: Math.max(0.4, Math.min(1, (Number(d.scale) || 100) / 100)) };
 }
 
+/* Whether a finished sheet has anything on it: a sample of its pixels against the paper. A
+   browser that cannot draw into its worker's canvas still encodes a page of plain paper, and
+   that page must not be shown, kept or sent. */
+async function inked(sheet) {
+  try {
+    if (!sheet || !sheet.src || !sheet.items.some((m) => !m.mount)) return true;
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = sheet.src; });
+    const w = 160, h = Math.max(1, Math.round((160 * img.naturalHeight) / img.naturalWidth));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0, w, h);
+    const p = x.getImageData(0, 0, w, h).data;
+    const r0 = p[0], g0 = p[1], b0 = p[2];
+    let ink = 0;
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - r0) + Math.abs(p[i + 1] - g0) + Math.abs(p[i + 2] - b0) > 60) ink++;
+    return ink > w * h * 0.003;
+  } catch { return true; }
+}
+
 async function build(d, args, key, onCut) {
   if (typeof document === 'undefined') return null;
   try {
-    const sheet = await packOffThread(args, onCut);
+    let sheet = await packOffThread(args, onCut);
+    if (sheet && !(await inked(sheet))) sheet = await buildSheet({ ...args, onCut: null });
+    if (sheet && !(await inked(sheet))) return null;
     if (sheet) { SHEETS.set(key, sheet); send(d, key, sheet); }
     return sheet;
   } catch { return null; }
