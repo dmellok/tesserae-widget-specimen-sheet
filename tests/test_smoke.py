@@ -1192,6 +1192,29 @@ def test_hero_note_and_painted_backdrop(tmp_path, offline_paint):
         assert out.returncode == 0, out.stderr
 
 
+def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "preview": True}
+    r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    assert not offline_paint, "a preview starts nothing"
+    assert len(server.held(tmp_path)) == 3
+    assert any("3 paintings waiting for Paint now" in x for x in r["status"])
+    # the same preview again holds nothing new; a panel's own render paints as before
+    server.fetch(options, settings, ctx=ctx)
+    assert len(server.held(tmp_path)) == 3
+    started = server.start_held(tmp_path, "k", 24)
+    _settle_paint()
+    assert started == 3 and len(offline_paint) == 3 and not server.held(tmp_path)
+    r = server.fetch(options, settings, ctx={**ctx, "preview": False})
+    assert all(s["pic"]["kind"] == "painting" for s in r["species"])
+    # a panel render with new species starts them straight away
+    more = server.fetch({**options, "count": "4"}, settings, ctx={**ctx, "preview": False})
+    _settle_paint()
+    assert len(offline_paint) == 4 and not server.held(tmp_path) and more["species"][3]
+
+
 def test_every_style_is_offered():
     m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
     art = next(o for o in m["cell_options"] if o["name"] == "style")

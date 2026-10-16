@@ -50,6 +50,7 @@ S = _sibling("sources")
 M = _sibling("masks")
 C = _sibling("classic")
 P = _sibling("paint")
+T = _sibling("tray")
 
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 
@@ -583,6 +584,48 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
     return job
 
 
+HELD_MAX = 400
+_HELD_LOCK = threading.Lock()
+
+
+def held(data_dir: Path) -> dict[str, dict[str, Any]]:
+    """Paintings a preview would have started, waiting for Paint now."""
+    got = N.read_json(data_dir / "held_paints.json", {})
+    return got if isinstance(got, dict) else {}
+
+
+def _hold(data_dir: Path, job: dict[str, Any]) -> None:
+    with _HELD_LOCK:
+        got = held(data_dir)
+        if job["key"] in got:
+            return
+        got[job["key"]] = job
+        for old in list(got)[: max(0, len(got) - HELD_MAX)]:
+            del got[old]
+        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
+
+
+def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
+    with _HELD_LOCK:
+        got = held(data_dir)
+        for k in keys if keys is not None else list(got):
+            got.pop(k, None)
+        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
+
+
+def start_held(data_dir: Path, fal_key: str, cap: int) -> int:
+    """Paint what previews held back, within the daily limit. The number started."""
+    folder = P.gen_dir(data_dir)
+    jobs = list(held(data_dir).values())
+    _unhold(data_dir)
+    ready = [j for j in jobs if not (folder / f"{j['key']}.jpg").exists() and P.state(j["key"], folder) == "none"]
+    room = max(0, cap - P.budget_used(folder))
+    begin = ready[:room]
+    P.start_batch(begin, data_dir, fal_key, cap)
+    T.waiting_over(len(begin))
+    return len(begin)
+
+
 WANTED_S = 30 * 86400
 
 
@@ -630,7 +673,8 @@ def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
     """Paint what is missing now: the species on a frame in the last three days
     in each setting a sheet last used. (started, found)."""
     folder = P.gen_dir(data_dir)
-    jobs: dict[str, dict[str, Any]] = {}
+    jobs: dict[str, dict[str, Any]] = {j["key"]: j for j in held(data_dir).values()}
+    _unhold(data_dir)
     for cfg in wanted_configs(data_dir):
         for name, sci, kind in on_frame_species(data_dir):
             key = P.key_for(
@@ -672,6 +716,8 @@ def _unpainted_hint(n: int, states: dict[str, int], has_key: bool) -> str:
     many = f"{n} specimen{'' if n == 1 else 's'}"
     if not has_key:
         return "Painting needs a fal.ai key in the plugin settings."
+    if states.get("paint_held"):
+        return f"{many} waiting for Paint now in the job tray."
     if states.get("paint_capped"):
         return f"{many} to paint; today's painting limit is used up."
     return f"Painting {many}. The sheet fills in as each one finishes."
@@ -724,7 +770,10 @@ def _attach_pictures(
             pic["whole"] = hero
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
-        if go and started_paint < P.per_fetch():
+        if go and gen.get("hold"):
+            _hold(data_dir, _paint_job(key, row, gen))
+            why = "held"
+        elif go and started_paint < P.per_fetch():
             job = _paint_job(key, row, gen)
             if P.start(job, data_dir, fal_key, gen["cap"]):
                 started_paint += 1
@@ -1241,6 +1290,9 @@ def fetch(
             "ref_mode": "photo",
             "pose": pose,
             "plants": P.plants_for(*place[:2]) if place else [],
+            # a preview looks: a painting it would start is held for Paint now in the job tray,
+            # so an option tried in the editor costs nothing until it is kept
+            "hold": bool(ctx.get("preview")),
             "hero_sci": (shown[0].get("sci") or "") if layout == "hero" and hero_frame == "painted" else "",
             "hero_aspect": "4:3" if int(ctx.get("cell_w") or 800) >= int(ctx.get("cell_h") or 480) else "3:4",
             "dapper_sci": P.dapper_pick(
@@ -1312,6 +1364,10 @@ def fetch(
             status.append(
                 f"painting {have + 1} of {want}" if have < want else "painting"
             )
+        if mask_states.get("paint_held"):
+            n = len(held(data_dir))
+            status.append(f"{n} painting{'' if n == 1 else 's'} waiting for Paint now in the job tray")
+            T.waiting(n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings)))
         if mask_states.get("paint_no_key"):
             notices.append(P.NOTE_NO_KEY)
         if mask_states.get("paint_capped"):
@@ -1421,8 +1477,12 @@ def _scene(
                 "fidelity": fidelity,
                 "aspect": "4:3" if ratio >= 1 else "3:4",
             }
-            P.start(job, data_dir, fal_key, gen["cap"])
-            status.append("composing the scene (fal.ai)")
+            if gen.get("hold"):
+                _hold(data_dir, job)
+                status.append("the scene waits for Paint now")
+            else:
+                P.start(job, data_dir, fal_key, gen["cap"])
+                status.append("composing the scene (fal.ai)")
         elif why == "running":
             status.append("composing the scene (fal.ai)")
         elif why == "capped":

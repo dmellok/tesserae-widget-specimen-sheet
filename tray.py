@@ -85,3 +85,36 @@ class Batch:
                 jobs.finish(SOURCE, self.key, f"{made} finished")
         except Exception:  # noqa: BLE001
             pass
+
+
+def waiting(n: int, start: Callable[[], object]) -> None:
+    """A card for paintings held back while the dashboard is being edited: "N
+    paintings waiting", with a Paint now button that starts them (Tesserae
+    0.457 and later; an older tray shows the card without the button)."""
+    if jobs is None or n <= 0:
+        return
+    title = f"{n} painting{'' if n == 1 else 's'} waiting"
+    detail = "Held while the dashboard is edited; Paint now starts them, within the daily limit"
+    try:
+        jobs.report(SOURCE, "waiting", title, detail=detail, label=LABEL, href=HREF, action=("Paint now", start))
+    except TypeError:
+        try:
+            jobs.report(SOURCE, "waiting", title, detail=detail, label=LABEL, href=HREF)
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def waiting_over(started: int) -> None:
+    """The held paintings were started (or there are none left to wait for)."""
+    if jobs is None:
+        return
+    try:
+        if started:
+            jobs.finish(SOURCE, "waiting", f"{started} painting{'' if started == 1 else 's'} started")
+        else:
+            jobs.clear(SOURCE, "waiting")
+    except Exception:  # noqa: BLE001
+        pass
+
