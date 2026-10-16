@@ -633,6 +633,37 @@ def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
         N.write(data_dir / "held_paints.json", json.dumps(got).encode())
 
 
+def purge_all(data_dir: Path) -> dict[str, int]:
+    """Every painting, every earlier version, every painting's cut-out and
+    every held painting, gone; the day's count stays. What was removed."""
+    P.stop_all(data_dir)
+    M.stop_all()
+    folder = P.gen_dir(data_dir)
+    out = {"paintings": 0, "versions": 0, "cut_outs": 0}
+    with contextlib.suppress(OSError):
+        for f in folder.iterdir():
+            if f.is_file() and f.name != "budget.json":
+                if f.suffix == ".jpg":
+                    out["paintings"] += 1
+                f.unlink()
+        arch = folder / "archive"
+        if arch.is_dir():
+            for f in arch.iterdir():
+                if f.suffix == ".jpg":
+                    out["versions"] += 1
+                f.unlink()
+        masks = data_dir / "masks"
+        if masks.is_dir():
+            for f in masks.iterdir():
+                if f.name.startswith("g_"):
+                    if f.name.endswith(".cut.png"):
+                        out["cut_outs"] += 1
+                    f.unlink()
+    _unhold(data_dir)
+    T.waiting_over(0)
+    return out
+
+
 def start_held(data_dir: Path, fal_key: str, cap: int, cell_id: str = "") -> int:
     """Paint what previews held back, for one cell when ``cell_id`` is given (the
     dashboard whose card was pressed, not every dashboard ever previewed),
@@ -728,7 +759,9 @@ LIVE_S = 6
 def _live_refresh(states: dict[str, int]) -> int:
     """Seconds after which the editor should ask for the sheet again, while a
     painting or a cut-out is on the way; 0 once there is nothing to wait for."""
-    busy = ("running", "paint_running", "paint_waiting", "deferred")
+    # a held painting keeps the editor coming back too: the preview that comes back with the
+    # same settings SETTLE_S later is what starts them
+    busy = ("running", "paint_running", "paint_waiting", "deferred", "paint_held")
     return LIVE_S if any(states.get(k) for k in busy) else 0
 
 
@@ -1905,7 +1938,27 @@ def blueprint() -> Any:
             known=known_species(dd),
             has_key=bool(fal_key()),
             wanted=len(wanted_configs(dd)),
+            held=len(held(dd)),
         )
+
+    @bp.post("/paint-held")
+    def paint_held() -> Any:
+        key = fal_key()
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+            return back()
+        n = start_held(data_dir(), key, cap())
+        flash(f"Painting {n} held painting{'' if n == 1 else 's'}." if n else "Nothing is waiting, or to-day's limit is used up.", "success" if n else "info")
+        return back()
+
+    @bp.post("/purge")
+    def purge() -> Any:
+        got = purge_all(data_dir())
+        flash(
+            f"Gone: {got['paintings']} painting{'' if got['paintings'] == 1 else 's'}, {got['versions']} earlier version{'' if got['versions'] == 1 else 's'}, {got['cut_outs']} cut-out{'' if got['cut_outs'] == 1 else 's'}.",
+            "success",
+        )
+        return back()
 
     @bp.get("/beacon")
     def beacon() -> Any:

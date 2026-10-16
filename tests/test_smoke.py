@@ -1037,6 +1037,7 @@ def test_admin_template_renders(tmp_path, offline_paint):
             known=server.known_species(tmp_path),
             has_key=True,
             wanted=1,
+            held=2,
         )
         idle = render_template(
             "specimen_sheet/admin.html",
@@ -1044,8 +1045,10 @@ def test_admin_template_renders(tmp_path, offline_paint):
             known=[],
             has_key=True,
             wanted=1,
+            held=0,
         )
-    assert "Render now" in idle and "waiting." not in idle
+    assert "Render now" in idle and "paint-held" not in idle
+    assert "Paint the 2 waiting" in html and "Purge everything" in html
     assert "Styles" in html
     assert "bb-style-tile" in html and "Preview" in html
     assert g["used"] == 4 and len([e for e in g["paintings"] if e["active"]]) == 4
@@ -1210,6 +1213,7 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     assert not offline_paint, "a preview starts nothing"
     assert len(server.held(tmp_path)) == 3
     assert any("3 paintings waiting for Paint now" in x for x in r["status"])
+    assert r["live_refresh_s"] > 0, "the editor keeps coming back, so the settling starts them"
     # the same preview again within the settling time holds nothing new
     server.fetch(options, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3 and not offline_paint
@@ -1649,4 +1653,28 @@ def test_a_blank_stored_sheet_is_dropped_when_read(tmp_path):
     assert (tmp_path / "sheets" / ("a" * 16 + ".json")).exists()
     assert server.stored_sheet(tmp_path, "a" * 16) is None
     assert not (tmp_path / "sheets" / ("a" * 16 + ".json")).exists()
+
+
+def test_purge_takes_everything_but_the_count(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    gen = tmp_path / "gen"
+    made = len(list(gen.glob("*.jpg")))
+    assert made >= 1 and (gen / "budget.json").exists()
+    server.fetch({**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True})
+    assert server.held(tmp_path)
+    (gen / "archive").mkdir(exist_ok=True)
+    (gen / "archive" / "x__20260101-000000.jpg").write_bytes(b"x")
+    (tmp_path / "masks").mkdir(exist_ok=True)
+    (tmp_path / "masks" / "g_x.cut.png").write_bytes(b"x")
+    (tmp_path / "masks" / "f_keep.cut.png").write_bytes(b"x")
+    got = server.purge_all(tmp_path)
+    assert got["paintings"] == made and got["versions"] == 1 and got["cut_outs"] == 1
+    assert [f.name for f in gen.iterdir() if f.is_file()] == ["budget.json"]
+    assert not list((gen / "archive").iterdir()) and not server.held(tmp_path)
+    assert (tmp_path / "masks" / "f_keep.cut.png").exists()
+    assert server.P.budget_used(gen) >= made, "the day's count stays"
 
