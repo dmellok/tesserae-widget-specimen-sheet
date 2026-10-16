@@ -1640,6 +1640,28 @@ def stop(key: str, data_dir: Path) -> bool:
     return True
 
 
+def cull_queued(subject: str, keep: set[str]) -> list[str]:
+    """Drop the waiting paintings a cell's previews queued for a look it has
+    moved on from: those of ``subject`` from a preview whose key is not in
+    ``keep``. One under way is left alone. Nothing is written for the
+    dropped ones, so the look can be picked again later. The keys dropped."""
+    gone: list[str] = []
+    with _LOCK:
+        for i in range(len(_QUEUE) - 1, -1, -1):
+            job = _QUEUE[i][0]
+            if (
+                job.get("origin") == "preview"
+                and job.get("subject") == subject
+                and job["key"] not in keep
+            ):
+                _QUEUE.pop(i)
+                _PAINTING.discard(job["key"])
+                gone.append(job["key"])
+    for key in gone:
+        _TRAY.done(key, stopped=True)
+    return gone
+
+
 def stop_all(data_dir: Path) -> int:
     with _LOCK:
         keys = [j["key"] for j, *_r in _QUEUE] + list(_STOPS)

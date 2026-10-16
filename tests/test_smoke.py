@@ -1224,12 +1224,14 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     _settle_paint()
     assert len(offline_paint) == 3 and not server.held(tmp_path)
     assert not any("waiting" in x for x in r["status"])
-    # a changed setting is a new cell: held again, and Paint now starts that cell's and no other's
+    # a changed look is the same cell in a new look: held again, the old look's held dropped,
+    # and Paint now starts that cell's and no other's
     r = server.fetch({**options, "style": "woodblock"}, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3 and any("3 paintings waiting" in x for x in r["status"])
-    server.fetch({**options, "style": "linocut"}, settings, ctx=ctx)
-    assert len(server.held(tmp_path)) == 6
-    woodblock = [j["cell"] for j in server.held(tmp_path).values() if j["style"] == "woodblock"][0]
+    other = {**options, "style": "linocut", "count": "2"}  # another cell: fewer species shown
+    server.fetch(other, settings, ctx=ctx)
+    assert len(server.held(tmp_path)) == 5
+    woodblock = [j["subject"] for j in server.held(tmp_path).values() if j["style"] == "woodblock"][0]
     started = server.start_held(tmp_path, "k", 24, woodblock)
     _settle_paint()
     assert started == 3 and len(offline_paint) == 6
@@ -1677,4 +1679,56 @@ def test_purge_takes_everything_but_the_count(tmp_path, offline_paint):
     assert not list((gen / "archive").iterdir()) and not server.held(tmp_path)
     assert (tmp_path / "masks" / "f_keep.cut.png").exists()
     assert server.P.budget_used(gen) >= made, "the day's count stays"
+
+
+def test_a_new_look_drops_the_old_looks_held_paintings(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "preview": True}
+    server.fetch(options, settings, ctx=ctx)
+    held = server.held(tmp_path)
+    assert held and all("--gould" in k for k in held)
+    # the same cell, a new style: what was held for the old one goes
+    server.fetch({**options, "style": "woodblock"}, settings, ctx=ctx)
+    held = server.held(tmp_path)
+    assert held and all("--woodblock" in k for k in held), list(held)
+    # a different cell (another place) with its own held paintings is left alone
+    other = {**options, "latitude": -33.87, "longitude": 151.21, "location": {"label": "Sydney", "timezone": "Australia/Sydney"}}
+    server.fetch(other, settings, ctx=ctx)
+    assert any("--gould" in k for k in server.held(tmp_path))
+    server.fetch({**options, "style": "linocut"}, settings, ctx=ctx)
+    kept = server.held(tmp_path)
+    assert any("--gould" in k for k in kept) and any("--linocut" in k for k in kept) and not any("--woodblock" in k for k in kept)
+
+
+def test_a_new_look_drops_the_old_looks_queued_paintings(tmp_path, offline_paint, monkeypatch):
+    """Queued, not yet painting: the workers are kept from starting, so the
+    queue holds what a settled preview started; the panel's own jobs stay."""
+    monkeypatch.setattr(P, "_work", lambda: None)
+    monkeypatch.setattr(server, "SETTLE_S", 0)
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    try:
+        # the panel queues its own paintings in the pencil style
+        server.fetch({**options, "style": "pencil"}, settings, ctx=ctx)
+        assert any("--pencil" in j["key"] for j, *_r in P._QUEUE)
+        # the editor: a settled preview queues gould, then moves on to woodblock
+        server.fetch(options, settings, ctx={**ctx, "preview": True})
+        server.fetch(options, settings, ctx={**ctx, "preview": True})
+        assert any("--gould" in j["key"] for j, *_r in P._QUEUE)
+        server.fetch({**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True})
+        queued = [j["key"] for j, *_r in P._QUEUE]
+        assert not any("--gould" in k for k in queued), queued
+        assert any("--pencil" in k for k in queued), "the panel's own paintings stay"
+        assert not list((tmp_path / "gen").glob("*--gould*.err")), "nothing written: gould can be picked again"
+        # picked again, it is queued again
+        server.fetch(options, settings, ctx={**ctx, "preview": True})
+        server.fetch(options, settings, ctx={**ctx, "preview": True})
+        assert any("--gould" in j["key"] for j, *_r in P._QUEUE)
+    finally:
+        with P._LOCK:
+            P._QUEUE.clear()
+            P._PAINTING.clear()
+            P._WORKERS = 0
 

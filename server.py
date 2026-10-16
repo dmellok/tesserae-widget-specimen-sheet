@@ -574,6 +574,8 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
         "how": gen.get("how") or "",
         "model": gen.get("model", P.DEFAULT_MODEL),
         "ref_mode": gen.get("ref_mode", "photo"),
+        "subject": gen.get("subject", ""),
+        "origin": gen.get("origin", "panel"),
     }
     if gen.get("plants"):
         job["perch"] = P.perch_for(row["sci"], gen["plants"])
@@ -590,6 +592,51 @@ HELD_MAX = 400
 _HELD_LOCK = threading.Lock()
 SETTLE_S = 20
 SEEN_S = 86400
+# The options that decide how a cell looks, not which species it shows: a cell
+# changing one of these is the same cell in a new look, and the paintings its
+# previews held or queued for the old look are no longer wanted.
+LOOK_OPTIONS = frozenset(
+    (
+        "token", "pictures", "style", "build_medium", "build_period", "build_palette",
+        "build_line", "build_texture", "build_mood", "build_extra", "pose", "model",
+        "unpainted", "dapper", "arrangement", "scene", "scene_fidelity", "scene_every",
+        "sizing", "scale", "hero_note", "hero_frame", "labels", "label_lines", "text_size",
+        "paper", "panel", "header", "footer", "title", "refresh_min", "names", "names_place",
+    )
+)
+
+
+def subject_id(options: dict[str, Any]) -> str:
+    """What a cell shows, whatever it looks like: a digest of the options that
+    choose its species."""
+    return hashlib.sha1(
+        json.dumps(
+            {k: v for k, v in sorted(options.items()) if k not in LOOK_OPTIONS},
+            sort_keys=True,
+            default=str,
+        ).encode()
+    ).hexdigest()[:16]
+
+
+def cull(data_dir: Path, subject: str, keep: set[str]) -> tuple[int, int]:
+    """A preview of a cell in a new look drops what its previews held or
+    queued for the old one: the held and the queued paintings of the same
+    subject whose keys this look does not want. A painting under way is left
+    to finish, being paid for. (queued dropped, held dropped)."""
+    stale = [
+        k for k, j in held(data_dir).items()
+        if j.get("subject") == subject and k not in keep
+    ]
+    if stale:
+        _unhold(data_dir, stale)
+    gone = P.cull_queued(subject, keep)
+    if stale or gone:
+        logger.info(
+            "specimen_sheet: dropped %d queued, %d held painting(s) for a look no longer wanted",
+            len(gone),
+            len(stale),
+        )
+    return len(gone), len(stale)
 
 
 def preview_settled(data_dir: Path, cell_id: str, now: float) -> bool:
@@ -664,12 +711,12 @@ def purge_all(data_dir: Path) -> dict[str, int]:
     return out
 
 
-def start_held(data_dir: Path, fal_key: str, cap: int, cell_id: str = "") -> int:
-    """Paint what previews held back, for one cell when ``cell_id`` is given (the
+def start_held(data_dir: Path, fal_key: str, cap: int, subject: str = "") -> int:
+    """Paint what previews held back, for one cell when ``subject`` is given (the
     dashboard whose card was pressed, not every dashboard ever previewed),
     within the daily limit. The number started."""
     folder = P.gen_dir(data_dir)
-    jobs = [j for j in held(data_dir).values() if not cell_id or j.get("cell") == cell_id]
+    jobs = [j for j in held(data_dir).values() if not subject or j.get("subject") == subject]
     _unhold(data_dir, [j["key"] for j in jobs])
     ready = [j for j in jobs if not (folder / f"{j['key']}.jpg").exists() and P.state(j["key"], folder) == "none"]
     room = max(0, cap - P.budget_used(folder))
@@ -819,6 +866,7 @@ def _attach_pictures(
             P.perch_for(row["sci"], gen.get("plants") or []),
             hero,
         )
+        gen.setdefault("keys", []).append(key)
         pic = _painting(key, data_dir, levels, HERO_PX if hero else PICTURE_PX)
         if pic:
             states["painted"] = states.get("painted", 0) + 1
@@ -1130,6 +1178,7 @@ def fetch(
     cell_id = hashlib.sha1(
         json.dumps({k: v for k, v in sorted(options.items()) if k != "token"}, sort_keys=True, default=str).encode()
     ).hexdigest()[:16]
+    subject = subject_id(options)
     rules = exclude_rules(
         str(options.get("exclude") or ""), str((settings or {}).get("exclude") or "")
     )
@@ -1362,6 +1411,9 @@ def fetch(
             # so an option tried in the editor costs nothing; one that stands SETTLE_S is kept
             "hold": bool(ctx.get("preview")) and not preview_settled(data_dir, cell_id, time.time()),
             "cell": cell_id,
+            "subject": subject,
+            "origin": "preview" if ctx.get("preview") else "panel",
+            "keys": [],
             # a panel paints everything its sheet needs at once, within the daily limit; a
             # preview a few at a time
             "per_fetch": P.per_fetch() if ctx.get("preview") else SHEET_MAX,
@@ -1454,9 +1506,9 @@ def fetch(
                 f"painting {have + 1} of {want}" if have < want else "painting"
             )
         if mask_states.get("paint_held"):
-            n = len([j for j in held(data_dir).values() if j.get("cell") == cell_id])
+            n = len([j for j in held(data_dir).values() if j.get("subject") == subject])
             status.append(f"{n} painting{'' if n == 1 else 's'} waiting for Paint now in the job tray")
-            T.waiting(n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings), cell_id))
+            T.waiting(n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings), subject))
         if mask_states.get("paint_no_key"):
             notices.append(P.NOTE_NO_KEY)
         if mask_states.get("paint_capped"):
@@ -1472,6 +1524,9 @@ def fetch(
             shown, gen, scene_text, fidelity, scene_every, fal_key, data_dir, levels, ctx
         )
         status += [m_ for m_ in more if m_ not in status]
+    # a preview in a new look drops what the previews of this cell held or queued for the old one
+    if gen and ctx.get("preview") and not demo:
+        cull(data_dir, subject, set(gen.get("keys") or []))
     return out(
         title=title,
         area=area,
@@ -1533,6 +1588,7 @@ def _scene(
         return None, ["composing the scene"]
     scene_id = hashlib.sha1(text.encode()).hexdigest()[:12]
     skey = P.scene_key(gen["style"], scene_id, fidelity, gen.get("model", P.DEFAULT_MODEL))
+    gen.setdefault("keys", []).append(skey)
     meta = N.read_json(folder / f"{skey}.json", {})
     meta = meta if isinstance(meta, dict) else {}
     have = (folder / f"{skey}.jpg").exists()
@@ -1565,6 +1621,8 @@ def _scene(
                 "plants": ", ".join(gen.get("plants") or []),
                 "fidelity": fidelity,
                 "aspect": "4:3" if ratio >= 1 else "3:4",
+                "subject": gen.get("subject", ""),
+                "origin": gen.get("origin", "panel"),
             }
             if gen.get("hold"):
                 _hold(data_dir, job, str(gen.get("cell") or ""))
