@@ -1,9 +1,9 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "kind": "widget",
-  "description": "The birds and wildlife around the panel, cut out and laid out together on one printed page. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in eleven styles or your own prompt; a balanced page with labels and counts; a demo garden until BirdNET-Go is set up.",
+  "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
   "supports": {
     "sizes": [
@@ -667,15 +667,11 @@
       "type": "select",
       "label": "Order",
       "default": "most",
-      "help": "Which species make the sheet when there are more than fit, and the order of a numbered key. Rarest puts the birds heard on the fewest days here first (new arrivals first elsewhere); Latest the most recently heard or seen; Newest new arrivals and returns first; Mix a different pick each day.",
+      "help": "Which species make the sheet when more were heard or recorded than fit, and their order: the most heard, the rarest (new arrivals first), the latest, or a daily mix.",
       "choices": [
         {
           "value": "most",
           "label": "Most heard or recorded"
-        },
-        {
-          "value": "least",
-          "label": "Least heard or recorded"
         },
         {
           "value": "rarest",
@@ -684,14 +680,6 @@
         {
           "value": "latest",
           "label": "Most recently heard or seen"
-        },
-        {
-          "value": "newest",
-          "label": "New arrivals first"
-        },
-        {
-          "value": "alpha",
-          "label": "A to Z"
         },
         {
           "value": "mix",
@@ -707,1244 +695,38 @@
       "help": "Species to leave off the sheet, one per line: a common or scientific name, a genus (Columba drops every pigeon in it), a kind (Insecta, insects, Birds) or a pattern such as *gull. An excluded species frees its place for the next. Case and accents don't matter."
     },
     {
-      "name": "pictures",
+      "name": "min_confidence",
       "type": "select",
-      "label": "Pictures",
-      "default": "free",
-      "help": "Plates and photos cost nothing. AI paintings paint each species once, from a photo of it, in the style below, on white paper so the cut-out is clean, at about US$0.04 a species; the sheet shows plates and photos until each painting lands. Needs a fal.ai key in this widget's settings.",
+      "label": "Minimum confidence",
+      "default": "70",
+      "help": "Detections BirdNET is less sure of than this are left out.",
       "choices": [
         {
-          "value": "free",
-          "label": "Plates and photos"
+          "value": "50",
+          "label": "50%"
         },
-        {
-          "value": "gen",
-          "label": "AI paintings"
-        }
-      ]
-    },
-    {
-      "name": "plate_source",
-      "type": "select",
-      "label": "Classic plates",
-      "default": "classic",
-      "help": "Where the plates come from. Fugleramme's collection by Arne Giacomo is 1,200 hand-coloured plates (Gould, von Wright, Audubon and others) of about 700 species, already cut out so they pack tightly; they are licensed CC BY-SA 4.0 and credited at the foot of the page. Public domain only uses just the small bundled pack of Audubon, Gould and Lear plates, then photos.",
-      "choices": [
-        {
-          "value": "classic",
-          "label": "Fugleramme's cut-out plates (CC BY-SA 4.0)"
-        },
-        {
-          "value": "public",
-          "label": "Public-domain plates only"
-        }
-      ]
-    },
-    {
-      "name": "paint_start",
-      "type": "select",
-      "label": "Start paintings",
-      "default": "auto",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "Automatically starts new paintings as the sheet refreshes, within your limits. With a button, a refresh (or editing this form) only notes which paintings are missing and spends nothing; start them from Widgets, Specimen Sheet, Start painting.",
-      "choices": [
-        {
-          "value": "auto",
-          "label": "Automatically"
-        },
-        {
-          "value": "button",
-          "label": "Only when I press Start painting"
-        }
-      ]
-    },
-    {
-      "name": "unpainted",
-      "type": "select",
-      "label": "Until a species is painted",
-      "default": "show",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "Show the classic plate or the record's photo while a painting is on its way, or leave the species off the sheet until it is painted, so every picture on the page is in the style.",
-      "choices": [
-        {
-          "value": "show",
-          "label": "Show its plate or photo"
-        },
-        {
-          "value": "hide",
-          "label": "Leave it off the sheet"
-        }
-      ]
-    },
-    {
-      "name": "paint_ref",
-      "type": "select",
-      "label": "Reference picture",
-      "default": "photo",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "What the painter works from. A photo gives true colours. A classic plate gives a clean, well-drawn shape and the markings in the plate's own palette. Both gives it the photo and checks the shape against the plate (not for FLUX.1 Kontext Pro, which takes one picture). Birds painted in flight and species with no plate use the photo. Paintings made from a plate are credited to it, and carry its CC BY-SA 4.0 licence.",
-      "choices": [
-        {
-          "value": "photo",
-          "label": "The photo"
-        },
-        {
-          "value": "plate",
-          "label": "A classic plate"
-        },
-        {
-          "value": "both",
-          "label": "Photo and plate"
-        }
-      ]
-    },
-    {
-      "name": "style_mode",
-      "type": "select",
-      "label": "Style",
-      "default": "prebuilt",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "choices": [
-        {
-          "value": "prebuilt",
-          "label": "A ready-made style"
-        },
-        {
-          "value": "builder",
-          "label": "Build my own"
-        }
-      ],
-      "help": "Pick one of the 68 ready-made styles, or build one by choosing each element: medium, period, palette, line, texture and mood. Each different combination is painted and kept separately."
-    },
-    {
-      "name": "build_medium",
-      "type": "select",
-      "label": "Medium",
-      "default": "watercolour",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "choices": [
-        {
-          "value": "watercolour",
-          "label": "Watercolour"
-        },
-        {
-          "value": "gouache",
-          "label": "Gouache"
-        },
-        {
-          "value": "oil",
-          "label": "Oil paint"
-        },
-        {
-          "value": "pastel",
-          "label": "Soft pastel"
-        },
-        {
-          "value": "coloured_pencil",
-          "label": "Coloured pencil"
-        },
-        {
-          "value": "pencil",
-          "label": "Graphite pencil"
-        },
-        {
-          "value": "ink",
-          "label": "Pen and ink"
-        },
-        {
-          "value": "engraving",
-          "label": "Engraving"
-        },
-        {
-          "value": "lithograph",
-          "label": "Hand-coloured lithograph"
-        },
-        {
-          "value": "woodblock",
-          "label": "Woodblock"
-        },
-        {
-          "value": "linocut",
-          "label": "Linocut"
-        },
-        {
-          "value": "screenprint",
-          "label": "Screen print"
-        },
-        {
-          "value": "vector",
-          "label": "Flat vector"
-        },
-        {
-          "value": "papercut",
-          "label": "Paper cut"
-        },
-        {
-          "value": "stained_glass",
-          "label": "Stained glass"
-        },
-        {
-          "value": "embroidery",
-          "label": "Embroidery"
-        }
-      ]
-    },
-    {
-      "name": "build_period",
-      "type": "select",
-      "label": "Period or school",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "choices": [
-        {
-          "value": "",
-          "label": "None in particular"
-        },
-        {
-          "value": "victorian",
-          "label": "Victorian natural history"
-        },
-        {
-          "value": "nouveau",
-          "label": "Art Nouveau"
-        },
-        {
-          "value": "deco",
-          "label": "Art Deco"
-        },
-        {
-          "value": "midcentury",
-          "label": "Mid-century modern"
-        },
-        {
-          "value": "japanese",
-          "label": "Japanese"
-        },
-        {
-          "value": "arts_crafts",
-          "label": "Arts and Crafts"
-        },
-        {
-          "value": "folk",
-          "label": "Folk art"
-        },
-        {
-          "value": "modern",
-          "label": "Contemporary"
-        }
-      ]
-    },
-    {
-      "name": "build_palette",
-      "type": "select",
-      "label": "Palette",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "choices": [
-        {
-          "value": "",
-          "label": "True to the species"
-        },
-        {
-          "value": "muted",
-          "label": "Muted and earthy"
-        },
-        {
-          "value": "bright",
-          "label": "Bright and saturated"
-        },
-        {
-          "value": "pastel",
-          "label": "Soft pastels"
-        },
-        {
-          "value": "warm",
-          "label": "Warm tones"
-        },
-        {
-          "value": "cool",
-          "label": "Cool tones"
-        },
-        {
-          "value": "two_colour",
-          "label": "Two colours"
-        },
-        {
-          "value": "grey",
-          "label": "Greys"
-        },
-        {
-          "value": "bw",
-          "label": "Black and white"
-        }
-      ]
-    },
-    {
-      "name": "build_line",
-      "type": "select",
-      "label": "Line",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "choices": [
-        {
-          "value": "",
-          "label": "Medium's own"
-        },
-        {
-          "value": "fine",
-          "label": "Fine, delicate line"
-        },
-        {
-          "value": "bold",
-          "label": "Bold outline"
-        },
-        {
-          "value": "none",
-          "label": "No outline"
-        },
-        {
-          "value": "sketchy",
-          "label": "Loose and sketchy"
-        }
-      ]
-    },
-    {
-      "name": "build_texture",
-      "type": "select",
-      "label": "Texture",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "choices": [
-        {
-          "value": "",
-          "label": "Medium's own"
-        },
-        {
-          "value": "smooth",
-          "label": "Smooth and clean"
-        },
-        {
-          "value": "brush",
-          "label": "Visible brush strokes"
-        },
-        {
-          "value": "grain",
-          "label": "Grainy, printed"
-        },
-        {
-          "value": "hatching",
-          "label": "Hatching"
-        },
-        {
-          "value": "dots",
-          "label": "Dots and stipple"
-        }
-      ]
-    },
-    {
-      "name": "build_mood",
-      "type": "select",
-      "label": "Mood",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "choices": [
-        {
-          "value": "",
-          "label": "Neutral"
-        },
-        {
-          "value": "calm",
-          "label": "Calm and delicate"
-        },
-        {
-          "value": "graphic",
-          "label": "Bold and graphic"
-        },
-        {
-          "value": "whimsical",
-          "label": "Whimsical"
-        },
-        {
-          "value": "dramatic",
-          "label": "Dramatic"
-        }
-      ]
-    },
-    {
-      "name": "build_extra",
-      "type": "string",
-      "label": "Anything else",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "builder"
-      },
-      "help": "Optional words added to the style, for example: with a little gold leaf on the wing edges. The bird is always painted alone with its perch, with no background."
-    },
-    {
-      "name": "art_style",
-      "type": "select",
-      "label": "Art style",
-      "default": "gould",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "prebuilt"
-      },
-      "choices": [
-        {
-          "value": "gould",
-          "label": "Hand-coloured lithograph (Gould)",
-          "group": "Realistic · Plates and paintings"
-        },
-        {
-          "value": "audubon",
-          "label": "Watercolour after Audubon",
-          "group": "Realistic · Plates and paintings"
-        },
-        {
-          "value": "keulemans",
-          "label": "Scientific plate (Keulemans)",
-          "group": "Realistic · Plates and paintings"
-        },
-        {
-          "value": "watercolour",
-          "label": "Modern watercolour",
-          "group": "Realistic · Plates and paintings"
-        },
-        {
-          "value": "engraving",
-          "label": "Black-ink engraving",
-          "group": "Realistic · Plates and paintings"
-        },
-        {
-          "value": "sketch",
-          "label": "Field sketch",
-          "group": "Realistic · Plates and paintings"
-        },
-        {
-          "value": "pencil",
-          "label": "Pencil study",
-          "group": "Realistic · Greys and tones, for grey panels"
-        },
-        {
-          "value": "litho_toned",
-          "label": "Lithograph, toned",
-          "group": "Realistic · Greys and tones, for grey panels"
-        },
-        {
-          "value": "platinum",
-          "label": "Platinum print",
-          "group": "Realistic · Greys and tones, for grey panels"
-        },
-        {
-          "value": "charcoal",
-          "label": "Charcoal",
-          "group": "Realistic · Greys and tones, for grey panels"
-        },
-        {
-          "value": "mezzotint",
-          "label": "Mezzotint",
-          "group": "Realistic · Greys and tones, for grey panels"
-        },
-        {
-          "value": "mucha",
-          "label": "Art Nouveau (Mucha)",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "artnouveau",
-          "label": "Art Nouveau illustration",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "artsandcrafts",
-          "label": "Arts and Crafts (Morris)",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "jugendstil",
-          "label": "Jugendstil",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "glasgow",
-          "label": "Glasgow style",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "secession",
-          "label": "Vienna Secession",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "deco",
-          "label": "Art Deco",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "beardsley",
-          "label": "Beardsley ink",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "nouveauglass",
-          "label": "Nouveau stained window",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "fairytale",
-          "label": "Golden Age fairy-tale plate",
-          "group": "Decorative · Nouveau and Deco"
-        },
-        {
-          "value": "woodblock",
-          "label": "Japanese woodblock print",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "linocut",
-          "label": "Linocut",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "harper",
-          "label": "Mid-century modern (Harper)",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "gouache",
-          "label": "Gouache poster",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "risograph",
-          "label": "Risograph print",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "screenprint",
-          "label": "Screen print poster",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "stamp",
-          "label": "Vintage stamp",
-          "group": "Decorative · Prints and posters"
-        },
-        {
-          "value": "japonisme",
-          "label": "Japonisme",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "chinoiserie",
-          "label": "Chinoiserie",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "persian",
-          "label": "Persian miniature",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "bestiary",
-          "label": "Medieval bestiary",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "byzantine",
-          "label": "Byzantine icon",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "folkart",
-          "label": "Folk art",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "delft",
-          "label": "Delft tile",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "sumie",
-          "label": "Ink and wash",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "cigarette",
-          "label": "Edwardian cigarette card",
-          "group": "Decorative · Around the world"
-        },
-        {
-          "value": "stainedglass",
-          "label": "Stained glass",
-          "group": "Decorative · Glass, thread and paper"
-        },
-        {
-          "value": "mosaic",
-          "label": "Mosaic",
-          "group": "Decorative · Glass, thread and paper"
-        },
-        {
-          "value": "embroidery",
-          "label": "Embroidery",
-          "group": "Decorative · Glass, thread and paper"
-        },
-        {
-          "value": "papercut",
-          "label": "Paper cut",
-          "group": "Decorative · Glass, thread and paper"
-        },
-        {
-          "value": "pointillism",
-          "label": "Pointillism",
-          "group": "Decorative · Glass, thread and paper"
-        },
-        {
-          "value": "scraperboard",
-          "label": "Scraperboard",
-          "group": "Decorative · Black and white, for 1-bit panels"
-        },
-        {
-          "value": "woodcut",
-          "label": "Woodcut",
-          "group": "Decorative · Black and white, for 1-bit panels"
-        },
-        {
-          "value": "stipple",
-          "label": "Stipple",
-          "group": "Decorative · Black and white, for 1-bit panels"
-        },
-        {
-          "value": "silhouette",
-          "label": "Silhouette",
-          "group": "Decorative · Black and white, for 1-bit panels"
-        },
-        {
-          "value": "inkbrush",
-          "label": "Ink brush",
-          "group": "Decorative · Black and white, for 1-bit panels"
-        },
-        {
-          "value": "halftone",
-          "label": "Halftone print",
-          "group": "Decorative · Graphic greys, for grey panels"
-        },
-        {
-          "value": "blueprint",
-          "label": "Technical drawing",
-          "group": "Decorative · Graphic greys, for grey panels"
-        },
-        {
-          "value": "anime",
-          "label": "Anime",
-          "group": "Fun · Anime"
-        },
-        {
-          "value": "shonen",
-          "label": "Shonen action",
-          "group": "Fun · Anime"
-        },
-        {
-          "value": "manga",
-          "label": "Manga ink",
-          "group": "Fun · Anime"
-        },
-        {
-          "value": "anime_retro",
-          "label": "Retro 90s anime",
-          "group": "Fun · Anime"
-        },
-        {
-          "value": "pixel",
-          "label": "Pixel art",
-          "group": "Fun · Made of things"
-        },
-        {
-          "value": "origami",
-          "label": "Origami",
-          "group": "Fun · Made of things"
-        },
-        {
-          "value": "felt",
-          "label": "Needle felt",
-          "group": "Fun · Made of things"
-        },
-        {
-          "value": "clay",
-          "label": "Clay figure",
-          "group": "Fun · Made of things"
-        },
-        {
-          "value": "bricks",
-          "label": "Brick-built",
-          "group": "Fun · Made of things"
-        },
-        {
-          "value": "grumpy",
-          "label": "Grumpy (plate style)",
-          "group": "Fun · Characters"
-        },
-        {
-          "value": "superhero",
-          "label": "Superhero",
-          "group": "Fun · Characters"
-        },
-        {
-          "value": "portrait",
-          "label": "Victorian portrait",
-          "group": "Fun · Characters"
-        },
-        {
-          "value": "pirate",
-          "label": "Pirate",
-          "group": "Fun · Characters"
-        },
-        {
-          "value": "hats",
-          "label": "Hats and monocles",
-          "group": "Fun · Characters"
-        },
-        {
-          "value": "surveillance",
-          "label": "Surveillance unit (watercolour)",
-          "group": "Fun · Birds aren't real"
-        },
-        {
-          "value": "cctv",
-          "label": "Camera head (watercolour)",
-          "group": "Fun · Birds aren't real"
-        },
-        {
-          "value": "patent",
-          "label": "Patent drawing",
-          "group": "Fun · Birds aren't real"
-        },
-        {
-          "value": "automaton",
-          "label": "Clockwork automaton",
-          "group": "Fun · Birds aren't real"
-        },
-        {
-          "value": "drone",
-          "label": "Drone",
-          "group": "Fun · Birds aren't real"
-        },
-        {
-          "value": "custom",
-          "label": "Your own prompt",
-          "group": "Your own"
-        }
-      ],
-      "help": "68 styles in three kinds: realistic (plates, paintings and tonal studies), decorative (Nouveau and Deco, prints, craft, black and white) and fun (anime, made of things, characters, birds aren't real). The black-and-white group is drawn without mid-tones for 1-bit panels; the grey groups suit the grey panels; the rest are for colour. Widgets, Specimen Sheet shows a preview of each style."
-    },
-    {
-      "name": "art_prompt",
-      "type": "textarea",
-      "label": "Your own prompt",
-      "default": "",
-      "show_if": {
-        "pictures": "gen",
-        "style_mode": "prebuilt",
-        "art_style": "custom"
-      },
-      "help": "Describe the medium and the look; the widget adds the species, its photo and the white paper. For example: an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, ochre and dusty rose, on plain pure white paper."
-    },
-    {
-      "name": "model",
-      "type": "select",
-      "label": "Model",
-      "default": "nano_banana",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away.",
-      "choices": [
-        {
-          "value": "nano_banana",
-          "label": "Nano Banana (about US$0.04)"
-        },
-        {
-          "value": "nano_banana_pro",
-          "label": "Nano Banana Pro (about US$0.15)"
-        },
-        {
-          "value": "flux_kontext",
-          "label": "FLUX.1 Kontext Pro (about US$0.04)"
-        },
-        {
-          "value": "gpt_image",
-          "label": "GPT Image 2 (about US$0.05)"
-        },
-        {
-          "value": "seedream",
-          "label": "Seedream 4 (about US$0.03)"
-        }
-      ]
-    },
-    {
-      "name": "dapper",
-      "type": "boolean",
-      "label": "One dapper specimen a day",
-      "default": false,
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "One specimen on the sheet is painted in a small hat, and perhaps a monocle, in whatever style the sheet is in: the same one all day, another to-morrow. One extra painting a day at most."
-    },
-    {
-      "name": "arrangement",
-      "type": "select",
-      "label": "Arrangement",
-      "default": "sheet",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "The sheet lays the cut-outs out itself and costs nothing beyond the paintings. The painted scene asks fal.ai to repaint the whole sheet as one picture with one background (about US$0.04 each time), once every specimen is painted and cut out; the sheet shows until it lands. The model takes liberties with a scene, so the names go in a legend under it rather than on the specimens.",
-      "choices": [
-        {
-          "value": "sheet",
-          "label": "Specimen sheet"
-        },
-        {
-          "value": "scene",
-          "label": "Painted scene (AI)"
-        }
-      ]
-    },
-    {
-      "name": "scene",
-      "type": "select",
-      "label": "Scene",
-      "default": "auto",
-      "show_if": {
-        "pictures": "gen",
-        "arrangement": "scene"
-      },
-      "choices": [
-        {
-          "value": "auto",
-          "label": "To suit the kinds on the page"
-        },
-        {
-          "value": "branch",
-          "label": "One shared branch"
-        },
-        {
-          "value": "tree",
-          "label": "One tree"
-        },
-        {
-          "value": "birdbath",
-          "label": "A bird bath"
-        },
-        {
-          "value": "wire",
-          "label": "A telephone wire"
-        },
-        {
-          "value": "feeder",
-          "label": "A bird feeder"
-        },
-        {
-          "value": "meadow",
-          "label": "A wildflower meadow"
-        },
-        {
-          "value": "sky",
-          "label": "All in flight"
-        },
-        {
-          "value": "wetland",
-          "label": "A wetland's edge"
-        },
-        {
-          "value": "garden",
-          "label": "A cottage garden"
-        },
-        {
-          "value": "floor",
-          "label": "A forest floor (fungi)"
-        },
-        {
-          "value": "log",
-          "label": "A fallen mossy log (fungi)"
-        },
-        {
-          "value": "bank",
-          "label": "A woodland bank"
-        },
-        {
-          "value": "bed",
-          "label": "A garden bed (plants)"
-        }
-      ],
-      "help": "To suit the kinds on the page gives birds a vignette of branches, fungi a forest floor, plants a garden bed, insects a meadow, frogs a wetland."
-    },
-    {
-      "name": "scene_fidelity",
-      "type": "select",
-      "label": "How free fal.ai is",
-      "default": "exact",
-      "show_if": {
-        "pictures": "gen",
-        "arrangement": "scene"
-      },
-      "help": "Exact asks the model to keep each specimen where the sheet put it; free lets it move and resize them for the scene. Either way the model may take liberties, so the names go in a legend under the picture.",
-      "choices": [
-        {
-          "value": "exact",
-          "label": "Keep every specimen in place"
-        },
-        {
-          "value": "free",
-          "label": "Free to rearrange"
-        }
-      ]
-    },
-    {
-      "name": "scene_every",
-      "type": "select",
-      "label": "Re-compose at most",
-      "default": "3",
-      "show_if": {
-        "pictures": "gen",
-        "arrangement": "scene"
-      },
-      "help": "A new scene is painted when the line-up changes, no more often than this.",
-      "choices": [
-        {
-          "value": "1",
-          "label": "hourly"
-        },
-        {
-          "value": "3",
-          "label": "every 3 hours"
-        },
-        {
-          "value": "6",
-          "label": "every 6 hours"
-        },
-        {
-          "value": "24",
-          "label": "daily"
-        }
-      ]
-    },
-    {
-      "name": "sizing",
-      "type": "select",
-      "label": "Sizes",
-      "default": "compact",
-      "choices": [
-        {
-          "value": "true",
-          "label": "True to life: a crow large, a wren small"
-        },
-        {
-          "value": "compact",
-          "label": "Close to life, narrower: the page packs tighter"
-        },
-        {
-          "value": "busy",
-          "label": "The most heard or recorded biggest"
-        },
-        {
-          "value": "same",
-          "label": "All alike"
-        }
-      ]
-    },
-    {
-      "name": "spacing",
-      "type": "select",
-      "label": "Spacing",
-      "default": "airy",
-      "help": "How much air the specimens keep between them. Close packs them like cut-outs pasted touching; open spreads them across the page, a little smaller.",
-      "choices": [
-        {
-          "value": "close",
-          "label": "Close"
-        },
-        {
-          "value": "airy",
-          "label": "Airy"
-        },
-        {
-          "value": "open",
-          "label": "Open"
-        }
-      ]
-    },
-    {
-      "name": "scale",
-      "type": "slider",
-      "label": "Scale",
-      "default": 100,
-      "min": 40,
-      "max": 250,
-      "step": 5,
-      "unit": "%",
-      "help": "How big the birds are. 100% runs the arrangement out to the margins. Less packs it into the middle of the page with more paper round it. More makes each bird bigger by showing fewer of them, the first by Order: 200% shows about a quarter as many."
-    },
-    {
-      "name": "layout",
-      "type": "select",
-      "label": "Layout",
-      "default": "cluster",
-      "help": "Cluster gathers the specimens round the largest in the middle, in mirrored pairs. Packed fits them together anywhere on the page with the gaps closed up, the densest sheet for a busy day. Scatter spreads them over the whole page. Band runs them along the middle; Column stacks them down a tall panel. Grid gives each its own cell, like a drawer of specimens, in the Order chosen. Hero shows one specimen alone, the first by Order (the latest, the rarest, the most heard), with the others named beneath: for a small frame.",
-      "choices": [
-        {
-          "value": "cluster",
-          "label": "Cluster"
-        },
-        {
-          "value": "packed",
-          "label": "Packed, as tight as it will go"
-        },
-        {
-          "value": "scatter",
-          "label": "Scatter"
-        },
-        {
-          "value": "band",
-          "label": "Band across the middle"
-        },
-        {
-          "value": "column",
-          "label": "Column"
-        },
-        {
-          "value": "grid",
-          "label": "Grid"
-        },
-        {
-          "value": "hero",
-          "label": "Hero: one specimen, the first by Order"
-        }
-      ]
-    },
-    {
-      "name": "facing",
-      "type": "select",
-      "label": "Facing",
-      "default": "inward",
-      "help": "Inward turns each specimen to face the middle of the page (a cut-out is mirrored when its head is on the outer side); As painted leaves every picture the way round it came.",
-      "choices": [
-        {
-          "value": "inward",
-          "label": "Inward, toward the middle"
-        },
-        {
-          "value": "painted",
-          "label": "As painted"
-        }
-      ]
-    },
-    {
-      "name": "labels",
-      "type": "select",
-      "label": "Labels",
-      "default": "caption",
-      "choices": [
-        {
-          "value": "caption",
-          "label": "Captions under each specimen"
-        },
-        {
-          "value": "tag",
-          "label": "Specimen tags"
-        },
-        {
-          "value": "key",
-          "label": "Numbers, with a key beside the page"
-        },
-        {
-          "value": "none",
-          "label": "None: the page alone"
-        }
-      ]
-    },
-    {
-      "name": "label_lines",
-      "type": "multiselect",
-      "label": "Label lines",
-      "default": [
-        "name",
-        "count"
-      ],
-      "help": "In this order. The count says calls, observations or records to suit the source.",
-      "choices": [
-        {
-          "value": "name",
-          "label": "Name"
-        },
-        {
-          "value": "sci",
-          "label": "Scientific name"
-        },
-        {
-          "value": "count",
-          "label": "How many"
-        },
-        {
-          "value": "last",
-          "label": "Last seen (iNaturalist, GBIF)"
-        },
-        {
-          "value": "flag",
-          "label": "New or returning (BirdNET-Go)"
-        },
-        {
-          "value": "who",
-          "label": "Observer (iNaturalist, GBIF)"
-        },
-        {
-          "value": "size",
-          "label": "Length, L 38 cm (birds)"
-        }
-      ],
-      "show_if": {
-        "labels": [
-          "caption",
-          "tag"
-        ]
-      }
-    },
-    {
-      "name": "text_size",
-      "type": "select",
-      "label": "Text size",
-      "default": "100",
-      "choices": [
         {
           "value": "60",
           "label": "60%"
+        },
+        {
+          "value": "70",
+          "label": "70%"
         },
         {
           "value": "80",
           "label": "80%"
         },
         {
-          "value": "100",
-          "label": "100%"
-        },
-        {
-          "value": "125",
-          "label": "125%"
-        },
-        {
-          "value": "150",
-          "label": "150%"
+          "value": "90",
+          "label": "90%"
         }
       ],
       "show_if": {
-        "labels": {
-          "not": "none"
+        "source": "birdnet_go",
+        "url": {
+          "not": ""
         }
-      }
-    },
-    {
-      "name": "paper",
-      "type": "select",
-      "label": "Paper",
-      "default": "cream",
-      "choices": [
-        {
-          "value": "cream",
-          "label": "Cream"
-        },
-        {
-          "value": "white",
-          "label": "White"
-        },
-        {
-          "value": "aged",
-          "label": "Aged"
-        }
-      ]
-    },
-    {
-      "name": "neutral",
-      "type": "boolean",
-      "label": "Remove the beige tint",
-      "default": false,
-      "help": "Plates and paintings carry the cream of their own paper, which the sheet keeps. This scales each picture's paper to white, so the specimens print without the tint; set Paper to White as well for a wholly neutral page."
-    },
-    {
-      "name": "panel",
-      "type": "select",
-      "label": "Panel",
-      "default": "colour",
-      "help": "What the panel can show. Pictures are converted and contrast-stretched to match; on black and white the type is thickened.",
-      "choices": [
-        {
-          "value": "colour",
-          "label": "Colour"
-        },
-        {
-          "value": "gray16",
-          "label": "16 greys"
-        },
-        {
-          "value": "gray4",
-          "label": "4 greys"
-        },
-        {
-          "value": "mono",
-          "label": "Black and white"
-        }
-      ]
-    },
-    {
-      "name": "night",
-      "type": "select",
-      "label": "After dark",
-      "default": "off",
-      "help": "Uses sunrise and sunset for the cell's (or the app's) location. Asleep shows the moon and the last bird heard once nothing has called for 90 minutes after dark. Night birds keeps only the birds heard since sunset on the sheet after dark.",
-      "choices": [
-        {
-          "value": "off",
-          "label": "Nothing special"
-        },
-        {
-          "value": "asleep",
-          "label": "The garden asleep when it goes quiet"
-        },
-        {
-          "value": "owls",
-          "label": "Only the night's birds after dark"
-        }
-      ],
-      "show_if": {
-        "source": "birdnet_go"
       }
     },
     {
@@ -2109,39 +891,622 @@
       }
     },
     {
-      "name": "min_confidence",
+      "name": "night",
       "type": "select",
-      "label": "Minimum confidence",
-      "default": "70",
-      "help": "Detections BirdNET is less sure of than this are left out.",
+      "label": "After dark",
+      "default": "off",
+      "help": "Uses sunrise and sunset for the cell's (or the app's) location. Asleep shows the moon and the last bird heard once nothing has called for 90 minutes after dark. Night birds keeps only the birds heard since sunset on the sheet after dark.",
       "choices": [
         {
-          "value": "50",
-          "label": "50%"
+          "value": "off",
+          "label": "Nothing special"
         },
+        {
+          "value": "asleep",
+          "label": "The garden asleep when it goes quiet"
+        },
+        {
+          "value": "owls",
+          "label": "Only the night's birds after dark"
+        }
+      ],
+      "show_if": {
+        "source": "birdnet_go"
+      }
+    },
+    {
+      "name": "pictures",
+      "type": "select",
+      "label": "Pictures",
+      "default": "free",
+      "help": "Plates and photos cost nothing. AI paintings paint each species once, from a photo of it, in the style below, on white paper so the cut-out is clean, at about US$0.04 a species; the sheet shows plates and photos until each painting lands. Needs a fal.ai key in this widget's settings.",
+      "choices": [
+        {
+          "value": "free",
+          "label": "Plates and photos"
+        },
+        {
+          "value": "gen",
+          "label": "AI paintings"
+        }
+      ]
+    },
+    {
+      "name": "style",
+      "type": "select",
+      "label": "Style",
+      "default": "gould",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "choices": [
+        {
+          "value": "gould",
+          "label": "Hand-coloured lithograph (Gould)"
+        },
+        {
+          "value": "audubon",
+          "label": "Watercolour after Audubon"
+        },
+        {
+          "value": "watercolour",
+          "label": "Modern watercolour"
+        },
+        {
+          "value": "engraving",
+          "label": "Black-ink engraving"
+        },
+        {
+          "value": "sketch",
+          "label": "Field sketch"
+        },
+        {
+          "value": "pencil",
+          "label": "Pencil study"
+        },
+        {
+          "value": "woodblock",
+          "label": "Japanese woodblock print"
+        },
+        {
+          "value": "linocut",
+          "label": "Linocut"
+        },
+        {
+          "value": "mucha",
+          "label": "Art Nouveau (Mucha)"
+        },
+        {
+          "value": "folkart",
+          "label": "Folk art"
+        },
+        {
+          "value": "sumie",
+          "label": "Ink and wash"
+        },
+        {
+          "value": "stainedglass",
+          "label": "Stained glass"
+        },
+        {
+          "value": "builder",
+          "label": "Build my own"
+        }
+      ],
+      "help": "The style every painting is made in. Build my own composes one from the picks below and your own words; each combination is a style of its own, painted once per species and kept."
+    },
+    {
+      "name": "build_medium",
+      "type": "select",
+      "label": "Medium",
+      "default": "watercolour",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "choices": [
+        {
+          "value": "watercolour",
+          "label": "Watercolour"
+        },
+        {
+          "value": "gouache",
+          "label": "Gouache"
+        },
+        {
+          "value": "oil",
+          "label": "Oil paint"
+        },
+        {
+          "value": "pastel",
+          "label": "Soft pastel"
+        },
+        {
+          "value": "coloured_pencil",
+          "label": "Coloured pencil"
+        },
+        {
+          "value": "pencil",
+          "label": "Graphite pencil"
+        },
+        {
+          "value": "ink",
+          "label": "Pen and ink"
+        },
+        {
+          "value": "engraving",
+          "label": "Engraving"
+        },
+        {
+          "value": "lithograph",
+          "label": "Hand-coloured lithograph"
+        },
+        {
+          "value": "woodblock",
+          "label": "Woodblock"
+        },
+        {
+          "value": "linocut",
+          "label": "Linocut"
+        },
+        {
+          "value": "screenprint",
+          "label": "Screen print"
+        },
+        {
+          "value": "vector",
+          "label": "Flat vector"
+        },
+        {
+          "value": "papercut",
+          "label": "Paper cut"
+        },
+        {
+          "value": "stained_glass",
+          "label": "Stained glass"
+        },
+        {
+          "value": "embroidery",
+          "label": "Embroidery"
+        }
+      ]
+    },
+    {
+      "name": "build_period",
+      "type": "select",
+      "label": "Period or school",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "None in particular"
+        },
+        {
+          "value": "victorian",
+          "label": "Victorian natural history"
+        },
+        {
+          "value": "nouveau",
+          "label": "Art Nouveau"
+        },
+        {
+          "value": "deco",
+          "label": "Art Deco"
+        },
+        {
+          "value": "midcentury",
+          "label": "Mid-century modern"
+        },
+        {
+          "value": "japanese",
+          "label": "Japanese"
+        },
+        {
+          "value": "arts_crafts",
+          "label": "Arts and Crafts"
+        },
+        {
+          "value": "folk",
+          "label": "Folk art"
+        },
+        {
+          "value": "modern",
+          "label": "Contemporary"
+        }
+      ]
+    },
+    {
+      "name": "build_palette",
+      "type": "select",
+      "label": "Palette",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "True to the species"
+        },
+        {
+          "value": "muted",
+          "label": "Muted and earthy"
+        },
+        {
+          "value": "bright",
+          "label": "Bright and saturated"
+        },
+        {
+          "value": "pastel",
+          "label": "Soft pastels"
+        },
+        {
+          "value": "warm",
+          "label": "Warm tones"
+        },
+        {
+          "value": "cool",
+          "label": "Cool tones"
+        },
+        {
+          "value": "two_colour",
+          "label": "Two colours"
+        },
+        {
+          "value": "grey",
+          "label": "Greys"
+        },
+        {
+          "value": "bw",
+          "label": "Black and white"
+        }
+      ]
+    },
+    {
+      "name": "build_line",
+      "type": "select",
+      "label": "Line",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "Medium's own"
+        },
+        {
+          "value": "fine",
+          "label": "Fine, delicate line"
+        },
+        {
+          "value": "bold",
+          "label": "Bold outline"
+        },
+        {
+          "value": "none",
+          "label": "No outline"
+        },
+        {
+          "value": "sketchy",
+          "label": "Loose and sketchy"
+        }
+      ]
+    },
+    {
+      "name": "build_texture",
+      "type": "select",
+      "label": "Texture",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "Medium's own"
+        },
+        {
+          "value": "smooth",
+          "label": "Smooth and clean"
+        },
+        {
+          "value": "brush",
+          "label": "Visible brush strokes"
+        },
+        {
+          "value": "grain",
+          "label": "Grainy, printed"
+        },
+        {
+          "value": "hatching",
+          "label": "Hatching"
+        },
+        {
+          "value": "dots",
+          "label": "Dots and stipple"
+        }
+      ]
+    },
+    {
+      "name": "build_mood",
+      "type": "select",
+      "label": "Mood",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "choices": [
+        {
+          "value": "",
+          "label": "Neutral"
+        },
+        {
+          "value": "calm",
+          "label": "Calm and delicate"
+        },
+        {
+          "value": "graphic",
+          "label": "Bold and graphic"
+        },
+        {
+          "value": "whimsical",
+          "label": "Whimsical"
+        },
+        {
+          "value": "dramatic",
+          "label": "Dramatic"
+        }
+      ]
+    },
+    {
+      "name": "build_extra",
+      "type": "string",
+      "label": "Your own words",
+      "default": "",
+      "show_if": {
+        "pictures": "gen",
+        "style": "builder"
+      },
+      "help": "Optional words added to the style, for example: with a little gold leaf on the wing edges. The bird is always painted alone with its perch, with no background."
+    },
+    {
+      "name": "model",
+      "type": "select",
+      "label": "Model",
+      "default": "nano_banana",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away.",
+      "choices": [
+        {
+          "value": "nano_banana",
+          "label": "Nano Banana (about US$0.04)"
+        },
+        {
+          "value": "nano_banana_pro",
+          "label": "Nano Banana Pro (about US$0.15)"
+        }
+      ]
+    },
+    {
+      "name": "unpainted",
+      "type": "select",
+      "label": "Until a species is painted",
+      "default": "show",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "Show the classic plate or the record's photo while a painting is on its way, or leave the species off the sheet until it is painted, so every picture on the page is in the style.",
+      "choices": [
+        {
+          "value": "show",
+          "label": "Show its plate or photo"
+        },
+        {
+          "value": "hide",
+          "label": "Leave it off the sheet"
+        }
+      ]
+    },
+    {
+      "name": "sizing",
+      "type": "select",
+      "label": "Sizes",
+      "default": "compact",
+      "choices": [
+        {
+          "value": "true",
+          "label": "True to life: a crow large, a wren small"
+        },
+        {
+          "value": "compact",
+          "label": "Close to life, narrower: the page packs tighter"
+        },
+        {
+          "value": "same",
+          "label": "All alike"
+        }
+      ]
+    },
+    {
+      "name": "scale",
+      "type": "slider",
+      "label": "Scale",
+      "default": 100,
+      "min": 40,
+      "max": 250,
+      "step": 5,
+      "unit": "%",
+      "help": "How big the birds are. 100% runs the arrangement out to the margins. Less packs it into the middle of the page with more paper round it. More makes each bird bigger by showing fewer of them, the first by Order: 200% shows about a quarter as many."
+    },
+    {
+      "name": "layout",
+      "type": "select",
+      "label": "Layout",
+      "default": "cluster",
+      "help": "A cluster packed from the middle out, each specimen as large as the page allows; a grid with a cell each; or a hero: one specimen alone, the first by Order, with the others named beneath.",
+      "choices": [
+        {
+          "value": "cluster",
+          "label": "Cluster"
+        },
+        {
+          "value": "grid",
+          "label": "Grid"
+        },
+        {
+          "value": "hero",
+          "label": "Hero: one specimen, the first by Order"
+        }
+      ]
+    },
+    {
+      "name": "labels",
+      "type": "select",
+      "label": "Labels",
+      "default": "caption",
+      "choices": [
+        {
+          "value": "caption",
+          "label": "Captions under each specimen"
+        },
+        {
+          "value": "none",
+          "label": "None: the page alone"
+        }
+      ],
+      "help": "Captions under each specimen, or the page alone. A small cell carries the name only, or none, so the specimens keep their size."
+    },
+    {
+      "name": "label_lines",
+      "type": "multiselect",
+      "label": "Label lines",
+      "default": [
+        "name",
+        "count"
+      ],
+      "help": "In this order. The count says calls, observations or records to suit the source.",
+      "choices": [
+        {
+          "value": "name",
+          "label": "Name"
+        },
+        {
+          "value": "sci",
+          "label": "Scientific name"
+        },
+        {
+          "value": "count",
+          "label": "How many"
+        },
+        {
+          "value": "last",
+          "label": "Last seen (iNaturalist, GBIF)"
+        },
+        {
+          "value": "flag",
+          "label": "New or returning (BirdNET-Go)"
+        },
+        {
+          "value": "who",
+          "label": "Observer (iNaturalist, GBIF)"
+        },
+        {
+          "value": "size",
+          "label": "Length, L 38 cm (birds)"
+        }
+      ],
+      "show_if": {
+        "labels": "caption"
+      }
+    },
+    {
+      "name": "text_size",
+      "type": "select",
+      "label": "Text size",
+      "default": "100",
+      "choices": [
         {
           "value": "60",
           "label": "60%"
-        },
-        {
-          "value": "70",
-          "label": "70%"
         },
         {
           "value": "80",
           "label": "80%"
         },
         {
-          "value": "90",
-          "label": "90%"
+          "value": "100",
+          "label": "100%"
+        },
+        {
+          "value": "125",
+          "label": "125%"
+        },
+        {
+          "value": "150",
+          "label": "150%"
         }
       ],
       "show_if": {
-        "source": "birdnet_go",
-        "url": {
-          "not": ""
+        "labels": {
+          "not": "none"
         }
       }
+    },
+    {
+      "name": "paper",
+      "type": "select",
+      "label": "Paper",
+      "default": "cream",
+      "choices": [
+        {
+          "value": "cream",
+          "label": "Cream"
+        },
+        {
+          "value": "white",
+          "label": "White"
+        },
+        {
+          "value": "aged",
+          "label": "Aged"
+        }
+      ]
+    },
+    {
+      "name": "panel",
+      "type": "select",
+      "label": "Panel",
+      "default": "colour",
+      "help": "What the panel can show. Pictures are converted and contrast-stretched to match; on black and white the type is thickened.",
+      "choices": [
+        {
+          "value": "colour",
+          "label": "Colour"
+        },
+        {
+          "value": "gray16",
+          "label": "16 greys"
+        },
+        {
+          "value": "gray4",
+          "label": "4 greys"
+        },
+        {
+          "value": "mono",
+          "label": "Black and white"
+        }
+      ]
     },
     {
       "name": "footer",

@@ -525,9 +525,12 @@ STYLE_TREE: tuple[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], ...] = (
 )
 # What the admin's select and the manifest offer: one group per subgroup, named
 # "Realistic · Plates and paintings" so a flat dropdown still reads as a tree.
-STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = tuple(
-    (f"{top} · {sub}", ids) for top, subs in STYLE_TREE for sub, ids in subs
+KEPT_STYLES = (
+    "gould", "audubon", "watercolour", "engraving", "sketch", "pencil",
+    "woodblock", "linocut", "mucha", "folkart", "sumie", "stainedglass",
 )
+STYLES = {k: STYLES[k] for k in KEPT_STYLES}
+STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (("Styles", KEPT_STYLES),)
 # The species a style's preview is painted from: a familiar bird that is not
 # in flight and needs no unusual pose.
 PREVIEW_SPECIES = ("Great Tit", "Parus major", "Aves")

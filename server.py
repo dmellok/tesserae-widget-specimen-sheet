@@ -58,14 +58,12 @@ WINDOWS = ("today", "week")
 DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90, "365d": 365}
 RADII = ("10", "2", "5", "25", "50")
 QUALITIES = ("research", "")
-SIZINGS = ("compact", "true", "busy", "same")
-LABELS = ("caption", "tag", "key", "none")
+SIZINGS = ("compact", "true", "same")
+LABELS = ("caption", "none")
 LABEL_LINES = ("name", "sci", "count", "last", "flag", "who", "size")
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 PAPERS = ("cream", "white", "aged")
-SPACINGS = ("airy", "close", "open")
-LAYOUTS = ("cluster", "packed", "scatter", "band", "column", "grid", "hero")
-FACINGS = ("inward", "painted")
+LAYOUTS = ("cluster", "grid", "hero")
 LEVELS = ("colour", "gray16", "gray4", "mono")
 NIGHTS = ("off", "asleep", "owls")
 FOOTERS = ("show", "credits", "hide")
@@ -90,13 +88,10 @@ NAME_LOCALES = (
 )
 PICTURE_PX = 700
 PICTURES = ("free", "gen")
-PLATE_SOURCES = ("classic", "public")
-REF_MODES = ("photo", "plate", "both")
-ARRANGEMENTS = ("sheet", "scene")
 SHEET_MAX = 32
 # Which species make the sheet when more were heard or recorded than fit,
 # and the order of a numbered key.
-ORDERS = ("most", "least", "rarest", "latest", "newest", "alpha", "mix")
+ORDERS = ("most", "rarest", "latest", "mix")
 RETURN_AFTER_DAYS = 45
 QUIET_MIN = 90
 ERR_NOWHERE = "Set a place in this cell (or the app's location)."
@@ -999,10 +994,7 @@ def fetch(
     )
     text_scale = int(_choice(options.get("text_size"), TEXT_SCALES)) / 100
     paper = _choice(options.get("paper"), PAPERS)
-    spacing = _choice(options.get("spacing"), SPACINGS)
     layout = _choice(options.get("layout"), LAYOUTS)
-    facing = _choice(options.get("facing"), FACINGS)
-    neutral = options.get("neutral") in (True, "true", "True", 1, "1", "on")
     levels = _choice(options.get("panel"), LEVELS)
     night = _choice(options.get("night"), NIGHTS) if source == "birdnet_go" else "off"
     footer = _choice(options.get("footer"), FOOTERS)
@@ -1015,30 +1007,17 @@ def fetch(
     token = str(options.get("token") or "").strip()
     fal_key = str((settings or {}).get("fal_api_key") or "").strip()
     pictures = _choice(options.get("pictures"), PICTURES)
-    art_style = _choice(options.get("art_style"), P.STYLE_IDS)
-    how = ""
-    if options.get("style_mode") == "builder":
+    style = str(options.get("style") or "gould")
+    if style == "builder":
         art_style = P.register_custom(P.build_how(options))
-    elif art_style == "custom":
-        how = (
-            " ".join(str(options.get("art_prompt") or "").split())[:800]
-            or P.CUSTOM_EXAMPLE
-        )
-        art_style = P.register_custom(how)
-    dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
-    hold = options.get("paint_start") == "button"
+    else:
+        art_style = _choice(style, P.STYLE_IDS)
     only_painted = options.get("unpainted") == "hide"
-    plates = _choice(options.get("plate_source"), PLATE_SOURCES)
-    ref_mode = _choice(options.get("paint_ref"), REF_MODES)
     model = P.model_of(options.get("model"))
-    arrangement = (
-        _choice(options.get("arrangement"), ARRANGEMENTS)
-        if pictures == "gen"
-        else "sheet"
-    )
-    scene = _choice(options.get("scene"), tuple(P.SCENES))
-    fidelity = _choice(options.get("scene_fidelity"), tuple(P.FIDELITY))
-    scene_every = int(_choice(options.get("scene_every"), P.SCENE_EVERY))
+    # the sheet this cell last sent back, inlined when it is still the one these inputs make
+    cell_id = hashlib.sha1(
+        json.dumps({k: v for k, v in sorted(options.items()) if k != "token"}, sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
     rules = exclude_rules(
         str(options.get("exclude") or ""), str((settings or {}).get("exclude") or "")
     )
@@ -1070,11 +1049,8 @@ def fetch(
             "label_lines": list(lines),
             "text_scale": text_scale,
             "paper": paper,
-            "neutral": neutral,
-            "spacing": spacing,
             "scale": scale,
             "layout": layout,
-            "facing": facing,
             "panel": levels,
             "footer": footer,
             "night": night,
@@ -1091,8 +1067,8 @@ def fetch(
             "demo": False,
             "pictures": pictures,
             "art_style": art_style,
-            "arrangement": arrangement,
-            "scene": None,
+            "cell_id": cell_id,
+            "sheet": None,
         }
         base_out.update(kw)
         return base_out
@@ -1257,22 +1233,18 @@ def fetch(
     if pictures == "gen":
         gen = {
             "style": art_style,
-            "how": how,
+            "how": "",
             "model": model,
             "cap": P.daily_cap(settings),
-            "hold": hold,
+            "hold": False,
             "only_painted": only_painted,
-            "ref_mode": ref_mode,
-            "dapper_sci": P.dapper_pick(
-                [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
-            )
-            if dapper
-            else "",
+            "ref_mode": "photo",
+            "dapper_sci": "",
         }
     if gen and not demo:
         _note_wanted(data_dir, gen)
     mask_states = _attach_pictures(
-        shown, base, token, data_dir, levels, fal_key, gen, plates == "classic"
+        shown, base, token, data_dir, levels, fal_key, gen, True
     )
     unpainted = 0
     if gen and only_painted:
@@ -1286,7 +1258,7 @@ def fetch(
                 period=period,
                 species_total=species_total,
                 excluded=excluded,
-                hint=_unpainted_hint(unpainted, mask_states, bool(fal_key), hold),
+                hint=_unpainted_hint(unpainted, mask_states, bool(fal_key), False),
                 sky=sky,
                 demo=demo,
                 live_refresh_s=_live_refresh(mask_states),
@@ -1344,12 +1316,6 @@ def fetch(
             notices.append(
                 f"{n} painting{'' if n == 1 else 's'} failed; tried again later"
             )
-    scene_out = None
-    if gen and arrangement == "scene":
-        scene_out, more = _scene(
-            shown, gen, scene, fidelity, scene_every, fal_key, data_dir, levels, ctx
-        )
-        status += [m_ for m_ in more if m_ not in status]
     return out(
         title=title,
         area=area,
@@ -1362,129 +1328,48 @@ def fetch(
         asleep=asleep,
         state="asleep" if asleep else "ok",
         live_refresh_s=_live_refresh(mask_states),
-        credits=([scene_out["pic"]["credit"]] if scene_out else credits),
+        credits=credits,
         notices=notices,
         status=status,
         demo=demo,
-        scene=scene_out,
+        sheet=stored_sheet(data_dir, cell_id),
     )
 
 
-def _scene(
-    shown: list[dict[str, Any]],
-    gen: dict[str, Any],
-    scene: str,
-    fidelity: str,
-    every_h: int,
-    fal_key: str,
-    data_dir: Path,
-    levels: str,
-    ctx: dict[str, Any],
-) -> tuple[dict[str, Any] | None, list[str]]:
-    """The sheet repainted as one scene: once every specimen is painted and
-    cut out, their cut-outs go on a collage and fal.ai repaints it, at most
-    once per ``every_h`` hours for a given line-up. Until then the sheet
-    shows. (the scene payload or None, status lines)."""
-    folder = P.gen_dir(data_dir)
-    keys = [
-        str(r["pic"]["key"])[2:]
-        for r in shown
-        if (r.get("pic") or {}).get("kind") == "painting"
-    ]
-    if len(keys) < 2 or len(keys) < len(shown):
-        return None, ["composing the scene once every specimen is painted"]
-    # every specimen cut out: by the model, or, for a painting the model's
-    # mask failed on, by its own paper
-    if not all(
-        (r.get("pic") or {}).get("cut_state") in ("ready", "bad") for r in shown
-    ):
-        return None, ["composing the scene once every specimen is cut out"]
-    w, h = int(ctx.get("cell_w") or 800), int(ctx.get("cell_h") or 480)
-    ratio = w / h if h else 1.6
-    scene = P.scene_for(scene, [str(r.get("kind") or "") for r in shown])
-    if scene in P.GROUNDED:
-        fidelity = "free"
-    made = P.collage(
-        keys, data_dir, ratio, layout="ground" if scene in P.GROUNDED else "ring"
-    )
-    if not made:
-        return None, ["composing the scene"]
-    skey = P.scene_key(gen["style"], scene, fidelity, gen.get("model", P.DEFAULT_MODEL))
-    meta = N.read_json(folder / f"{skey}.json", {})
-    meta = meta if isinstance(meta, dict) else {}
-    have = (folder / f"{skey}.jpg").exists()
-    age_h = (time.time() - float(meta.get("made") or 0)) / 3600 if have else 1e9
-    status: list[str] = []
-    if not have or (meta.get("tag") != made["tag"] and age_h >= every_h):
-        go, why = P.may_start(skey, folder, fal_key, gen["cap"])
-        if go:
-            by_key = {str(r["pic"]["key"])[2:]: r for r in shown}
-            boxes = [b for b in made["boxes"] if b["key"] in by_key]
-            job = {
-                "key": skey,
-                "style": gen["style"],
-                "how": gen.get("how") or "",
-                "model": gen.get("model", P.DEFAULT_MODEL),
-                "name": "the scene",
-                "sci": "",
-                "kind": "",
-                "collage": made["path"],
-                "tag": made["tag"],
-                "boxes": [
-                    {
-                        **b,
-                        "name": by_key[b["key"]]["name"],
-                        "sci": by_key[b["key"]]["sci"],
-                    }
-                    for b in boxes
-                ],
-                "names": [
-                    f"the {by_key[b['key']]['name']} ({by_key[b['key']]['sci']})"
-                    for b in boxes
-                ],
-                "scene": scene,
-                "fidelity": fidelity,
-                "aspect": "4:3" if ratio >= 1 else "3:4",
-            }
-            if gen.get("hold"):
-                _hold(data_dir, job)
-                status.append("the scene waits for Start painting")
-            else:
-                P.start(job, data_dir, fal_key, gen["cap"])
-                status.append("composing the scene (fal.ai)")
-        elif why == "running":
-            status.append("composing the scene (fal.ai)")
-        elif why == "capped":
-            status.append(P.NOTE_GEN_CAP.format(cap=gen["cap"]))
-    if not have:
-        return None, status
+SHEETS_KEPT = 40
+
+
+def _sheets_dir(data_dir: Path) -> Path:
+    path = data_dir / "sheets"
+    with contextlib.suppress(OSError):
+        path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def stored_sheet(data_dir: Path, cell_id: str) -> dict[str, Any] | None:
+    """The sheet the page last sent back for this cell: ``{key, sheet}``, the key
+    being the page's own digest of what went into it, so the page can tell
+    whether it is still the sheet these inputs make."""
+    path = _sheets_dir(data_dir) / f"{cell_id}.json"
     try:
-        raw = (folder / f"{skey}.jpg").read_bytes()
-    except OSError:
-        return None, status
-    src = N.render(raw, 1600, None, folder / f"{skey}_1600.jpg", levels)
-    if not src:
-        return None, status
-    return {
-        "pic": {
-            "src": src,
-            "kind": "scene",
-            "credit": str(meta.get("credit") or "AI scene (fal.ai nano-banana)"),
-            "paper": N.paper_of(src, folder / f"{skey}.paper", levels),
-        },
-        "items": [
-            {"name": b.get("name", ""), "sci": b.get("sci", ""), "box": b["box"]}
-            for b in meta.get("boxes") or []
-            if isinstance(b, dict) and b.get("box")
-        ],
-        "fidelity": str(meta.get("fidelity") or fidelity),
-        "stale": meta.get("tag") != made["tag"],
-    }, status
+        got = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return got if isinstance(got, dict) and got.get("key") and got.get("sheet") else None
 
 
-# ----------------------------------------------------------------------
-# The paintings page
-# ----------------------------------------------------------------------
+def store_sheet(data_dir: Path, cell_id: str, key: str, sheet: dict[str, Any]) -> None:
+    """Keep a finished sheet for its cell, the oldest cells' sheets dropped past
+    ``SHEETS_KEPT``."""
+    folder = _sheets_dir(data_dir)
+    (folder / f"{cell_id}.json").write_text(
+        json.dumps({"key": key, "sheet": sheet}), encoding="utf-8"
+    )
+    kept = sorted(folder.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)
+    for old in kept[SHEETS_KEPT:]:
+        with contextlib.suppress(OSError):
+            old.unlink()
+
 
 _SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,4}")
 _ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,4})__(\d{8}-\d{6})")
@@ -1620,7 +1505,7 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
 
 
 def _style_tree(paintings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The styles by kind and subgroup, each with a painting to preview it: the
+    """The styles, each with a painting to preview it: the
     preview species' if there is one, else the newest painting in that style."""
     shown: dict[str, tuple[bool, str]] = {}
     for e in paintings:
@@ -1631,10 +1516,10 @@ def _style_tree(paintings: list[dict[str, Any]]) -> list[dict[str, Any]]:
             shown[e["style"]] = (mine, e["active"]["file"])
     return [
         {
-            "name": top,
+            "name": "Styles",
             "subs": [
                 {
-                    "name": sub,
+                    "name": group,
                     "styles": [
                         {
                             "id": i,
@@ -1644,10 +1529,9 @@ def _style_tree(paintings: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         for i in ids
                     ],
                 }
-                for sub, ids in subs
+                for group, ids in P.STYLE_GROUPS
             ],
         }
-        for top, subs in P.STYLE_TREE
     ]
 
 
@@ -1756,6 +1640,20 @@ def blueprint() -> Any:
             held=len(held(dd)),
             wanted=len(wanted_configs(dd)),
         )
+
+    @bp.post("/sheet")
+    def sheet_back() -> Any:
+        """The page sends the sheet it packed; the next fetch for that cell inlines it."""
+        body = request.get_json(silent=True) or {}
+        cell = str(body.get("cell") or "")
+        key = str(body.get("key") or "")
+        sheet = body.get("sheet")
+        if not re.fullmatch(r"[0-9a-f]{16}", cell) or not key or not isinstance(sheet, dict) or not isinstance(sheet.get("src"), str):
+            abort(400)
+        if len(sheet["src"]) > 4_000_000:
+            abort(413)
+        store_sheet(data_dir(), cell, key[:200], sheet)
+        return jsonify({"ok": True})
 
     @bp.get("/progress")
     def progress() -> Any:
