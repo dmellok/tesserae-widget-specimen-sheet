@@ -139,16 +139,14 @@
     <h3 class="bb-group-head">
       {% if grp.icon %}<i class="ph {{ grp.icon if grp.icon.startswith('ph-') else 'ph-' ~ grp.icon }}" aria-hidden="true"></i>{% else %}<i class="ph ph-squares-four" aria-hidden="true"></i>{% endif %}
       {{ grp.name or 'A dashboard without a name' }}
-      {% if grp.tabs|length > 1 %}
-      <span class="bb-tabs" role="tablist">
-        {% for tab in grp.tabs %}<button type="button" role="tab" class="bb-tab{% if loop.first %} on{% endif %}" data-tab="{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ tab.style_label }}{% if tab.missing %} <span class="bb-tab-n">{{ tab.missing }}</span>{% endif %}</button>{% endfor %}
+      <span class="bb-tabs" role="tablist" aria-label="Styles this dashboard has rendered in">
+        {% for tab in grp.tabs %}<button type="button" role="tab" class="bb-tab{% if loop.first %} on{% endif %}" data-tab="{{ loop.index0 }}" aria-selected="{{ 'true' if loop.first else 'false' }}" title="{{ tab.paintings|length }} painting{{ '' if tab.paintings|length == 1 else 's' }}{% if tab.missing %}, {{ tab.missing }} still to paint{% endif %}">{{ tab.style_label }}{% if tab.missing %} <span class="bb-tab-n">{{ tab.missing }}</span>{% endif %}</button>{% endfor %}
       </span>
-      {% endif %}
     </h3>
     {% for tab in grp.tabs %}
     <div class="bb-pane" data-pane="{{ loop.index0 }}"{% if not loop.first %} hidden{% endif %}>
       <p class="bb-pane-line">
-        <span class="bb-meta">{{ tab.style_label }} · {{ tab.paintings|length }} painting{{ '' if tab.paintings|length == 1 else 's' }}{% if tab.missing %} · {{ tab.missing }} still to paint{% endif %}{% if not tab.on_panel %} · not on a panel to-day{% endif %}</span>
+        <span class="bb-meta">{{ tab.paintings|length }} painting{{ '' if tab.paintings|length == 1 else 's' }}{% if tab.missing %} · {{ tab.missing }} still to paint{% endif %}{% if not tab.on_panel %} · not on a panel to-day{% endif %}</span>
         {% if tab.missing %}
         <form method="post" action="{{ url_for('specimen_sheet_admin.render_now_route') }}" class="bb-inline">
           <input type="hidden" name="who" value="{{ tab.id }}">
