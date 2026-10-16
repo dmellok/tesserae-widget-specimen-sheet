@@ -1025,7 +1025,6 @@ def test_admin_template_renders(tmp_path, offline_paint):
             g=g,
             known=server.known_species(tmp_path),
             has_key=True,
-            held=2,
             wanted=1,
         )
         idle = render_template(
@@ -1033,10 +1032,8 @@ def test_admin_template_renders(tmp_path, offline_paint):
             g=g,
             known=[],
             has_key=True,
-            held=0,
             wanted=1,
         )
-    assert "2 paintings waiting" in html and "Start painting" in html
     assert "Render now" in idle and "waiting." not in idle
     assert "Styles" in html
     assert "bb-style-tile" in html and "Preview" in html

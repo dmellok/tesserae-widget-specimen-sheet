@@ -574,35 +574,6 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
     return job
 
 
-HELD_MAX = 400
-_HELD_LOCK = threading.Lock()
-
-
-def held(data_dir: Path) -> dict[str, dict[str, Any]]:
-    """Paintings a sheet would have started, waiting for the Start button."""
-    got = N.read_json(data_dir / "held_paints.json", {})
-    return got if isinstance(got, dict) else {}
-
-
-def _hold(data_dir: Path, job: dict[str, Any]) -> None:
-    with _HELD_LOCK:
-        got = held(data_dir)
-        if job["key"] in got:
-            return
-        got[job["key"]] = job
-        for old in list(got)[: max(0, len(got) - HELD_MAX)]:
-            del got[old]
-        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
-
-
-def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
-    with _HELD_LOCK:
-        got = held(data_dir)
-        for k in keys if keys is not None else list(got):
-            got.pop(k, None)
-        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
-
-
 WANTED_S = 30 * 86400
 
 
@@ -644,11 +615,10 @@ def wanted_configs(data_dir: Path) -> list[dict[str, Any]]:
 
 
 def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
-    """Paint what is missing now: what a button-mode refresh held, plus the
-    species on a frame in the last three days in each setting a sheet last used.
-    (started, found)."""
+    """Paint what is missing now: the species on a frame in the last three days
+    in each setting a sheet last used. (started, found)."""
     folder = P.gen_dir(data_dir)
-    jobs = {j["key"]: j for j in held(data_dir).values()}
+    jobs: dict[str, dict[str, Any]] = {}
     for cfg in wanted_configs(data_dir):
         for name, sci, kind in on_frame_species(data_dir):
             key = P.key_for(sci, cfg["style"], kind, False, cfg["model"])
@@ -666,7 +636,6 @@ def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
         if not (folder / f"{j['key']}.jpg").exists()
         and not (j.get("collage") and not Path(j["collage"]).exists())
     ]
-    _unhold(data_dir)
     room = max(0, cap - P.budget_used(folder))
     begin = [j for j in ready if P.state(j["key"], folder) == "none"][:room]
     P.start_batch(begin, data_dir, fal_key, cap)
@@ -683,13 +652,11 @@ def _live_refresh(states: dict[str, int]) -> int:
     return LIVE_S if any(states.get(k) for k in busy) else 0
 
 
-def _unpainted_hint(n: int, states: dict[str, int], has_key: bool, hold: bool) -> str:
+def _unpainted_hint(n: int, states: dict[str, int], has_key: bool) -> str:
     """What an only-painted sheet says while none of its species is painted."""
     many = f"{n} specimen{'' if n == 1 else 's'}"
     if not has_key:
         return "Painting needs a fal.ai key in the plugin settings."
-    if states.get("paint_held") or hold:
-        return f"{many} waiting for Start painting on the paintings page."
     if states.get("paint_capped"):
         return f"{many} to paint; today's painting limit is used up."
     return f"Painting {many}. The sheet fills in as each one finishes."
@@ -738,10 +705,7 @@ def _attach_pictures(
             pic["whole"] = gen["style"] in P.WHOLE
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
-        if go and gen.get("hold"):
-            _hold(data_dir, _paint_job(key, row, gen))
-            why = "held"
-        elif go and started_paint < P.per_fetch():
+        if go and started_paint < P.per_fetch():
             job = _paint_job(key, row, gen)
             if P.start(job, data_dir, fal_key, gen["cap"]):
                 started_paint += 1
@@ -1236,7 +1200,6 @@ def fetch(
             "how": "",
             "model": model,
             "cap": P.daily_cap(settings),
-            "hold": False,
             "only_painted": only_painted,
             "ref_mode": "photo",
             "dapper_sci": "",
@@ -1258,7 +1221,7 @@ def fetch(
                 period=period,
                 species_total=species_total,
                 excluded=excluded,
-                hint=_unpainted_hint(unpainted, mask_states, bool(fal_key), False),
+                hint=_unpainted_hint(unpainted, mask_states, bool(fal_key)),
                 sky=sky,
                 demo=demo,
                 live_refresh_s=_live_refresh(mask_states),
@@ -1301,11 +1264,6 @@ def fetch(
         if mask_states.get("paint_running") or mask_states.get("paint_waiting"):
             status.append(
                 f"painting {have + 1} of {want}" if have < want else "painting"
-            )
-        if mask_states.get("paint_held"):
-            n = mask_states["paint_held"]
-            status.append(
-                f"{n} painting{'' if n == 1 else 's'} waiting for Start painting"
             )
         if mask_states.get("paint_no_key"):
             notices.append(P.NOTE_NO_KEY)
@@ -1637,7 +1595,6 @@ def blueprint() -> Any:
             g=_gallery(dd, cap()),
             known=known_species(dd),
             has_key=bool(fal_key()),
-            held=len(held(dd)),
             wanted=len(wanted_configs(dd)),
         )
 
@@ -1858,13 +1815,6 @@ def blueprint() -> Any:
                 f"Painting {n} species, a few at a time. Watch the job tray at the bottom right.",
                 "success",
             )
-        return back()
-
-    @bp.post("/clear-held")
-    def clear_held() -> Any:
-        n = len(held(data_dir()))
-        _unhold(data_dir())
-        flash(f"Dropped {n} waiting painting{'' if n == 1 else 's'}.", "info")
         return back()
 
     @bp.post("/style-paint")
