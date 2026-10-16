@@ -1488,8 +1488,8 @@ def store_sheet(data_dir: Path, cell_id: str, key: str, sheet: dict[str, Any]) -
             old.unlink()
 
 
-_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,4}")
-_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,4})__(\d{8}-\d{6})")
+_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,7}")
+_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,7})__(\d{8}-\d{6})")
 
 
 def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:

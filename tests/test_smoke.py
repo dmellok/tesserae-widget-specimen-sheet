@@ -837,10 +837,10 @@ def offline_paint(offline_masks):
 
 def test_keys_poses_and_dapper():
     assert P.key_for("Gymnorhina tibicen", "gould") in (
-        "gymnorhina_tibicen--gould",
-        "gymnorhina_tibicen--gould--flight",
+        "gymnorhina_tibicen--gould--p2",
+        "gymnorhina_tibicen--gould--p2--flight",
     )
-    assert P.key_for("Amanita muscaria", "gould", "Fungi").endswith("--gould")
+    assert P.key_for("Amanita muscaria", "gould", "Fungi").endswith("--gould--p2")
     assert P.key_for("Gymnorhina tibicen", "hats", dapper=True).endswith("--dapper")
     scis = ["Gymnorhina tibicen", "Columba livia", "Spilopelia chinensis"]
     pick = P.dapper_pick(scis, "2026-10-15")

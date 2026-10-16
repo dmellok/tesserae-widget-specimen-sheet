@@ -137,7 +137,7 @@ BATCH_PARALLEL = 3
 _PARALLEL = BATCH_PARALLEL
 _PER_FETCH = PER_FETCH
 STOPPED = "stopped"
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 # A style reworded after it shipped gets a revision here; its paintings are
 # keyed with it, so only that style is painted again.
 STYLE_REVISIONS: dict[str, int] = {
@@ -780,16 +780,17 @@ GEN_WHOLE = (
     "no text, no lettering, no signature.{about}{dapper}"
 )
 
+# A fresh illustration of the species in the style, the photo for identity only: asked to
+# "paint the bird in the photo" the model restyles the photo, pose, crop and lighting and all.
 GEN = (
-    "Paint only the {kind} in the reference photo, the {name} ({sci}), as {style}. "
-    "Keep its colours, markings, shape and proportions exactly as in the photo: {pose}. "
-    "The subject alone on plain, pure white paper with a clear margin all round, as a "
-    "specimen cut from its surroundings: no shadow under it, no wash, no vignette, no "
-    "ground, soil, leaf litter, grass, rocks, water or sky, no other creatures, no "
-    "scenery, no text, no lettering, no border, no signature. The style says how the "
-    "{kind} and its perch are drawn and nothing else: no background, backdrop, frame, "
-    "roundel, halo, panel, pattern, sunburst or ornament round or behind them, and "
-    "nothing else on the page."
+    "Draw the {name} ({sci}) afresh as {style}: a new illustration of the species in that "
+    "style, not the photo restyled. The reference photo is for identity only, its colours, "
+    "markings, bill, feet and proportions kept exactly; the composition, pose and lighting "
+    "are the illustration's own: {pose}. The {kind} alone on plain, pure white paper with a "
+    "clear margin all round and nothing else on the page: no shadow, wash, vignette, ground, "
+    "sky, scenery, other creatures, text, border or signature. The style says how the {kind} "
+    "and its perch are drawn and nothing else: no background, backdrop, frame, roundel, "
+    "halo, panel, pattern, sunburst or ornament round or behind them."
     "{about}{dapper}"
 )
 # The hero plate: one specimen large on an ornate backdrop in its style, the whole picture kept.
@@ -1027,6 +1028,8 @@ def key_for(
     key = f"{N.slug(sci)}--{style}"
     if style in STYLE_REVISIONS:
         key += f"--r{STYLE_REVISIONS[style]}"
+    if PROMPT_VERSION > 1:
+        key += f"--p{PROMPT_VERSION}"
     if in_flight(sci, kind, pose):
         key += "--flight"
     elif perch and kind == "Aves":
@@ -1268,8 +1271,8 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     gen = GEN_HERO if job.get("hero") else GEN_WHOLE if str(job.get("style") or "") in WHOLE else GEN
     if str(job.get("style") or "") in MONO:
         gen = gen.replace(
-            "Keep its colours, markings, shape and proportions exactly as in the photo",
-            "Keep its markings, shape and proportions exactly as in the photo, rendered without any colour: black and white (and grey where the style has it) only",
+            "its colours, markings, bill, feet and proportions kept exactly",
+            "its markings, bill, feet and proportions kept exactly, rendered without any colour: black and white (and grey where the style has it) only",
         )
     text = gen.format(
         kind=noun,
