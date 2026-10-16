@@ -1355,7 +1355,8 @@ def paint(
             n=len(names),
             names="; ".join(names),
             style=how.replace("{kind}", noun),
-            scene=SCENES.get(job.get("scene") or "auto", SCENES["auto"]),
+            scene=str(job.get("scene_text") or "").strip()
+            or SCENES.get(job.get("scene") or "auto", SCENES["auto"]),
             fidelity=FIDELITY.get(job.get("fidelity") or "exact", FIDELITY["exact"]),
         )
         aspect = str(job.get("aspect") or "4:3")

@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Specimen Sheet",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1317,6 +1317,143 @@
           "label": "Leave it off the sheet"
         }
       ]
+    },
+    {
+      "name": "dapper",
+      "type": "boolean",
+      "label": "One dapper specimen a day",
+      "default": false,
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "One species a day, picked by the date, is painted in a small hat (a top hat, a bowler, a beret, a fez, a crown) in whatever style the sheet is in; its own painting, kept beside the plain one."
+    },
+    {
+      "name": "arrangement",
+      "type": "select",
+      "label": "Arrangement",
+      "default": "sheet",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "choices": [
+        {
+          "value": "sheet",
+          "label": "The sheet: each specimen cut out on paper"
+        },
+        {
+          "value": "scene",
+          "label": "A scene: the sheet repainted as one picture"
+        }
+      ],
+      "help": "A scene asks fal.ai to repaint the whole sheet as one picture with one background, once every specimen on it is painted and cut out; until then the sheet shows. One painting per scene, again when the line-up changes."
+    },
+    {
+      "name": "scene",
+      "type": "textarea",
+      "label": "The scene",
+      "default": "",
+      "placeholder": "Pick an example, then change the words as you like",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "presets": [
+        {
+          "label": "A Victorian vignette",
+          "value": "the specimens gathered in an oval cluster, like a Victorian vignette, on branches and foliage that join them"
+        },
+        {
+          "label": "One shared branch",
+          "value": "all perched along one shared branch"
+        },
+        {
+          "label": "Through a tree",
+          "value": "perched through the branches of one tree"
+        },
+        {
+          "label": "Round a bird bath",
+          "value": "gathered round a stone bird bath in a garden"
+        },
+        {
+          "label": "Along a wire",
+          "value": "sitting in a row along a telephone wire against the sky"
+        },
+        {
+          "label": "At a feeder",
+          "value": "gathered at and around a hanging bird feeder"
+        },
+        {
+          "label": "In a meadow",
+          "value": "on the ground and low stems of a wildflower meadow"
+        },
+        {
+          "label": "A cottage garden",
+          "value": "in a cottage garden, on a fence, shrubs and a path"
+        },
+        {
+          "label": "The forest floor",
+          "value": "growing together on a forest floor among leaf litter, moss and a few fallen twigs"
+        },
+        {
+          "label": "A wetland edge",
+          "value": "among reeds and still water at the edge of a wetland"
+        },
+        {
+          "label": "In flight",
+          "value": "all in flight together across an open sky"
+        }
+      ],
+      "help": "Where the specimens are gathered, in your own words. Blank is the Victorian vignette."
+    },
+    {
+      "name": "scene_fidelity",
+      "type": "select",
+      "label": "In the scene",
+      "default": "free",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "choices": [
+        {
+          "value": "free",
+          "label": "The model may move and resize the specimens as the scene needs"
+        },
+        {
+          "value": "exact",
+          "label": "Every specimen stays where the sheet put it, at its size"
+        }
+      ]
+    },
+    {
+      "name": "scene_every",
+      "type": "select",
+      "label": "Repaint the scene at most every",
+      "default": "3",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "choices": [
+        {
+          "value": "1",
+          "label": "hour"
+        },
+        {
+          "value": "3",
+          "label": "3 hours"
+        },
+        {
+          "value": "6",
+          "label": "6 hours"
+        },
+        {
+          "value": "24",
+          "label": "day"
+        }
+      ],
+      "help": "When the line-up changes, the scene is painted again, at about US$0.04 a time, no more often than this."
     },
     {
       "name": "sizing",

@@ -34,6 +34,12 @@ Up the ladder, for each species: an AI painting when one is kept, else a classic
 
 **AI paintings** need a fal.ai key. Twelve styles (a Gould lithograph, a watercolour after Audubon, a modern watercolour, an engraving, a field sketch, a pencil study, a Japanese woodblock print, a linocut, Art Nouveau after Mucha, folk art, ink and wash, stained glass) or **Build my own**: a pick for each element of a style (medium, period or school, palette, line, texture, mood) and a line of your own words, joined into a prompt; each combination is a style of its own, painted once per species and kept. Each painting is made from the species' reference photo, the bird or beetle alone on plain white paper, so it cuts out cleanly. A few new paintings start per refresh, within the daily limit; **Until a species is painted** can leave unpainted species off the sheet.
 
+**One dapper specimen a day** paints one species, picked by the date, in a small hat in whatever style the sheet is in: its own painting, kept beside the plain one.
+
+### The scene
+
+With AI paintings on, **Arrangement** can ask fal.ai to repaint the whole sheet as one picture with one background: the sheet's cut-outs go on a collage and the model paints them into the scene you describe. **The scene** is a line in your own words, with examples to start from (a Victorian vignette, one shared branch, through a tree, round a bird bath, along a wire, at a feeder, in a meadow, a cottage garden, the forest floor, a wetland edge, in flight); the model may move and resize the specimens as the scene needs, or keep every one where the sheet put it. The scene is painted once every specimen on it is painted and cut out, and again when the line-up changes, no more often than you set; until then the sheet shows.
+
 ### Cut-outs
 
 With a fal.ai key, every picture on the sheet (plate, photo or painting) gets an alpha mask from a background-removal model (BiRefNet, well under a cent a picture, once per picture). The mask is checked before it is trusted: the foreground has to cover a sensible share of the frame, touch at most two edges and hold together as one piece; a mask that fails is kept as bad, not retried, and the page cuts the picture itself. The soft shadow a painting leaves under its subject is left out, and a white bird keeps its white feathers.
