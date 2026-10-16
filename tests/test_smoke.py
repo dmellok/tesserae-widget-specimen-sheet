@@ -482,6 +482,23 @@ def test_style_builder_composes_a_custom_style(tmp_path, offline):
     assert prebuilt["art_style"] == "engraving"
 
 
+def test_built_style_words_survive_a_hold_and_a_restart(tmp_path, offline_paint):
+    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "style": "builder", "build_medium": "linocut", "build_extra": "with a crescent moon", "count": "2"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "preview": True}
+    server.fetch(options, settings, ctx=ctx)
+    held = list(server.held(tmp_path).values())
+    assert len(held) == 2 and all("with a crescent moon" in j["how"] for j in held)
+    # the process forgets its custom register, as a restart would; the held jobs still paint in their words
+    server.P._CUSTOM.clear()
+    assert server.start_held(tmp_path, "k", 24) == 2
+    _settle_paint()
+    assert len(offline_paint) == 2
+    for pr in offline_paint:
+        assert "linocut" in pr["prompt"] and "with a crescent moon" in pr["prompt"]
+        assert server.P.CUSTOM_EXAMPLE[:30] not in pr["prompt"]
+
+
 def test_cut_out_prompts_rule_out_backgrounds():
     P = server.P
     for key in ("gould", "mucha", "folkart", "stainedglass"):
@@ -1203,12 +1220,17 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     _settle_paint()
     assert len(offline_paint) == 3 and not server.held(tmp_path)
     assert not any("waiting" in x for x in r["status"])
-    # a changed setting is a new cell: held again, and Paint now starts it
+    # a changed setting is a new cell: held again, and Paint now starts that cell's and no other's
     r = server.fetch({**options, "style": "woodblock"}, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3 and any("3 paintings waiting" in x for x in r["status"])
-    started = server.start_held(tmp_path, "k", 24)
+    server.fetch({**options, "style": "linocut"}, settings, ctx=ctx)
+    assert len(server.held(tmp_path)) == 6
+    woodblock = [j["cell"] for j in server.held(tmp_path).values() if j["style"] == "woodblock"][0]
+    started = server.start_held(tmp_path, "k", 24, woodblock)
     _settle_paint()
-    assert started == 3 and len(offline_paint) == 6 and not server.held(tmp_path)
+    assert started == 3 and len(offline_paint) == 6
+    assert {j["style"] for j in server.held(tmp_path).values()} == {"linocut"}
+    server._unhold(tmp_path)
     r = server.fetch(options, settings, ctx={**ctx, "preview": False})
     assert all(s["pic"]["kind"] == "painting" for s in r["species"])
     # a panel render with new species starts them all straight away

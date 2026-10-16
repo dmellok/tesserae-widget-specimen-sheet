@@ -614,12 +614,12 @@ def held(data_dir: Path) -> dict[str, dict[str, Any]]:
     return got if isinstance(got, dict) else {}
 
 
-def _hold(data_dir: Path, job: dict[str, Any]) -> None:
+def _hold(data_dir: Path, job: dict[str, Any], cell_id: str = "") -> None:
     with _HELD_LOCK:
         got = held(data_dir)
         if job["key"] in got:
             return
-        got[job["key"]] = job
+        got[job["key"]] = {**job, "cell": cell_id}
         for old in list(got)[: max(0, len(got) - HELD_MAX)]:
             del got[old]
         N.write(data_dir / "held_paints.json", json.dumps(got).encode())
@@ -633,11 +633,13 @@ def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
         N.write(data_dir / "held_paints.json", json.dumps(got).encode())
 
 
-def start_held(data_dir: Path, fal_key: str, cap: int) -> int:
-    """Paint what previews held back, within the daily limit. The number started."""
+def start_held(data_dir: Path, fal_key: str, cap: int, cell_id: str = "") -> int:
+    """Paint what previews held back, for one cell when ``cell_id`` is given (the
+    dashboard whose card was pressed, not every dashboard ever previewed),
+    within the daily limit. The number started."""
     folder = P.gen_dir(data_dir)
-    jobs = list(held(data_dir).values())
-    _unhold(data_dir)
+    jobs = [j for j in held(data_dir).values() if not cell_id or j.get("cell") == cell_id]
+    _unhold(data_dir, [j["key"] for j in jobs])
     ready = [j for j in jobs if not (folder / f"{j['key']}.jpg").exists() and P.state(j["key"], folder) == "none"]
     room = max(0, cap - P.budget_used(folder))
     begin = ready[:room]
@@ -693,8 +695,7 @@ def render_now(data_dir: Path, fal_key: str, cap: int) -> tuple[int, int]:
     """Paint what is missing now: the species on a frame in the last three days
     in each setting a sheet last used. (started, found)."""
     folder = P.gen_dir(data_dir)
-    jobs: dict[str, dict[str, Any]] = {j["key"]: j for j in held(data_dir).values()}
-    _unhold(data_dir)
+    jobs: dict[str, dict[str, Any]] = {}
     for cfg in wanted_configs(data_dir):
         for name, sci, kind in on_frame_species(data_dir):
             key = P.key_for(
@@ -793,7 +794,7 @@ def _attach_pictures(
             return pic
         go, why = P.may_start(key, folder, fal_key, gen["cap"])
         if go and gen.get("hold"):
-            _hold(data_dir, _paint_job(key, row, gen))
+            _hold(data_dir, _paint_job(key, row, gen), str(gen.get("cell") or ""))
             why = "held"
         elif go and started_paint < int(gen.get("per_fetch") or P.per_fetch()):
             job = _paint_job(key, row, gen)
@@ -876,12 +877,12 @@ def _remember(data_dir: Path, rows: list[dict[str, Any]]) -> None:
         N.write(path, json.dumps(seen, ensure_ascii=False).encode())
 
 
-ON_FRAME_S = 3 * 86400
+ON_FRAME_S = 86400
 
 
 def _note_shown(data_dir: Path, shown: list[dict[str, Any]]) -> None:
-    """The species a sheet is showing now, kept for ON_FRAME_S, so the paintings
-    page can paint what is on a frame and not everything ever seen."""
+    """The species a panel is showing now, kept for ON_FRAME_S, so the paintings
+    page can paint what is on a frame and not everything ever previewed."""
     path = data_dir / "species_shown.json"
     now = time.time()
     held = N.read_json(path, {})
@@ -1070,8 +1071,12 @@ def fetch(
     fal_key = str((settings or {}).get("fal_api_key") or "").strip()
     pictures = _choice(options.get("pictures"), PICTURES)
     style = str(options.get("style") or "gould")
+    how = ""
     if style == "builder":
-        art_style = P.register_custom(P.build_how(options))
+        # the words ride in every job, since a job held for later or queued past a restart
+        # cannot find them in this process's register and would paint the example instead
+        how = P.build_how(options)
+        art_style = P.register_custom(how)
     else:
         art_style = _choice(style, P.STYLE_IDS)
     only_painted = options.get("unpainted") == "hide"
@@ -1286,7 +1291,8 @@ def fetch(
             }
 
     shown = [dict(r) for r in rows[:count]]
-    _note_shown(data_dir, shown)
+    if not ctx.get("preview"):
+        _note_shown(data_dir, shown)
     if not rows:
         hint = {
             "birdnet_go": "The microphone has heard nothing yet.",
@@ -1312,7 +1318,7 @@ def fetch(
     if pictures == "gen":
         gen = {
             "style": art_style,
-            "how": "",
+            "how": how,
             "model": model,
             "cap": P.daily_cap(settings),
             "only_painted": only_painted,
@@ -1322,6 +1328,7 @@ def fetch(
             # a preview looks: a painting it would start is held for Paint now in the job tray,
             # so an option tried in the editor costs nothing; one that stands SETTLE_S is kept
             "hold": bool(ctx.get("preview")) and not preview_settled(data_dir, cell_id, time.time()),
+            "cell": cell_id,
             # a panel paints everything its sheet needs at once, within the daily limit; a
             # preview a few at a time
             "per_fetch": P.per_fetch() if ctx.get("preview") else SHEET_MAX,
@@ -1333,7 +1340,7 @@ def fetch(
             if dapper
             else "",
         }
-    if gen and not demo:
+    if gen and not demo and not ctx.get("preview"):
         _note_wanted(data_dir, gen)
     mask_states = _attach_pictures(
         shown, base, token, data_dir, levels, fal_key, gen, True
@@ -1414,9 +1421,9 @@ def fetch(
                 f"painting {have + 1} of {want}" if have < want else "painting"
             )
         if mask_states.get("paint_held"):
-            n = len(held(data_dir))
+            n = len([j for j in held(data_dir).values() if j.get("cell") == cell_id])
             status.append(f"{n} painting{'' if n == 1 else 's'} waiting for Paint now in the job tray")
-            T.waiting(n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings)))
+            T.waiting(n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings), cell_id))
         if mask_states.get("paint_no_key"):
             notices.append(P.NOTE_NO_KEY)
         if mask_states.get("paint_capped"):
@@ -1527,7 +1534,7 @@ def _scene(
                 "aspect": "4:3" if ratio >= 1 else "3:4",
             }
             if gen.get("hold"):
-                _hold(data_dir, job)
+                _hold(data_dir, job, str(gen.get("cell") or ""))
                 status.append("the scene waits for Paint now")
             else:
                 P.start(job, data_dir, fal_key, gen["cap"])
