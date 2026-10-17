@@ -50,6 +50,13 @@ With a fal.ai key, every picture on the sheet (plate, photo or painting) gets an
 
 ## The paintings page
 
+Needs Tesserae 0.463 or later: the paintings and the cut-outs are kept,
+queued, budgeted and listed by the server's own Artwork support
+(`app.artwork`), and the paintings page is the one Tesserae renders under
+Plugins › Specimen Sheet, with this widget's own forms on it (paint a species
+by name, preview a style, retire a style).
+
+
 Under Widgets: every painting this widget has made, with earlier versions kept; buttons to paint a species in a style, repaint, cut out again, delete or bring a version back; Render now, which paints what the sheets on your frames are missing within the daily limit; and the species seen, for the Leave out lists.
 
 ## Panels

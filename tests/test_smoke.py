@@ -11,12 +11,22 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
+# The widget paints through Tesserae's ``app.artwork`` (0.463+): the server's
+# repo must be importable. A checkout beside this one, or TESSERAE_REPO.
+import os  # noqa: E402
+import sys  # noqa: E402
+
+_TESSERAE = Path(os.environ.get("TESSERAE_REPO") or ROOT.parent / "tesserae")
+if str(_TESSERAE) not in sys.path:
+    sys.path.insert(0, str(_TESSERAE))
+from app import artwork, fal as fal_mod  # noqa: E402
 
 
 def _load():
@@ -28,6 +38,16 @@ def _load():
 
 server = _load()
 N, S, K = server.N, server.S, server.K
+P, M = server.P, server.M
+
+
+def _busy() -> bool:
+    for c in (P.ART, M.CUTS):
+        pr = c.progress(Path("."), {})
+        if pr["running"] or pr["queued"]:
+            return True
+    return False
+
 
 MELBOURNE = {
     "latitude": -37.81,
@@ -498,7 +518,9 @@ def test_built_style_words_survive_a_hold_and_a_restart(tmp_path, offline_paint)
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "preview": True}
     server.fetch(options, settings, ctx=ctx)
     held = list(server.held(tmp_path).values())
-    assert len(held) == 2 and all("with a crescent moon" in j["how"] for j in held)
+    assert len(held) == 2 and all(
+        "with a crescent moon" in j["payload"]["how"] for j in held
+    )
     # the process forgets its custom register, as a restart would; the held jobs still paint in their words
     server.P._CUSTOM.clear()
     assert server.start_held(tmp_path, "k", 24) == 2
@@ -607,10 +629,10 @@ def test_manifest_is_well_formed():
                 assert v in values, f"{o['name']} default {v!r} is not a choice"
     assert {s["name"] for s in m["settings"]} == {
         "fal_api_key",
-        "gen_daily_cap",
+        "gen_daily_usd",
         "gen_per_refresh",
         "gen_parallel",
-        "mask_daily_cap",
+        "mask_daily_usd",
         "mask_per_refresh",
         "exclude",
     }
@@ -719,35 +741,49 @@ def _settle(timeout=10.0):
     import time
 
     end = time.time() + timeout
-    while M._RUNNING and time.time() < end:
+    while _busy() and time.time() < end:
         time.sleep(0.02)
-    assert not M._RUNNING
+    assert not _busy()
 
 
 @pytest.fixture
 def offline_masks(offline):
     """fal.ai answers with a mask: a clean oval for most pictures, a frame
     for anything whose request carries the marker."""
-    real = N.http.side_effect
-    sent: list[bytes] = []
 
-    def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
+    class _Sent(list):
+        answers: dict[str, Any] = {}
+
+    sent: Any = _Sent()
+    sent.answers = {}
+    answers = sent.answers
+
+    def fake_fal(url, body, key, timeout):
+        assert key == "k"
         if "birefnet" in url:
-            sent.append(kw.get("body") or b"")
-            assert token == "k" and kw.get("auth_scheme") == "Key"
-            return json.dumps(
-                {"image": {"url": "https://fal.example/mask.png"}}
-            ).encode(), None
+            sent.append(json.dumps(body).encode())
+            return {"image": {"url": "https://fal.example/mask.png"}}
+        handler = answers.get("paint")
+        if handler is not None:
+            return handler(url, body)
+        return {"images": [{"url": "https://fal.example/out.jpg"}]}
+
+    def fake_download(url, timeout=60.0):
         if url == "https://fal.example/mask.png":
             im = Image.new("RGBA", (300, 400), (0, 0, 0, 0))
             ImageDraw.Draw(im).ellipse((80, 100, 220, 300), fill=(255, 255, 255, 255))
             buf = io.BytesIO()
             im.save(buf, "PNG")
-            return buf.getvalue(), None
-        return real(url, token, accept, **kw)
+            return buf.getvalue()
+        return _jpeg()
 
-    N.http.side_effect = fake_http
-    return sent
+    with (
+        patch.object(fal_mod, "_http_json", side_effect=fake_fal),
+        patch.object(fal_mod, "_download", side_effect=fake_download),
+    ):
+        yield sent
+    P.ART.stop_all(Path("."))
+    M.CUTS.stop_all(Path("."))
 
 
 def test_masks_are_made_once_and_ride_along(tmp_path, offline_masks):
@@ -764,7 +800,9 @@ def test_masks_are_made_once_and_ride_along(tmp_path, offline_masks):
         len(offline_masks) == 1
         and b'"image_url": "data:image/jpeg;base64,' in offline_masks[0]
     )
-    assert list((tmp_path / "masks").glob("*.cut.png"))
+    assert list((tmp_path / "cutouts").glob("*.png")), (
+        "the cut-out is kept in the cutouts collection"
+    )
     r = server.fetch(options, settings, ctx=ctx)
     assert r["status"] == [] and all(
         s["pic"]["cut_state"] == "ready" for s in r["species"]
@@ -773,7 +811,7 @@ def test_masks_are_made_once_and_ride_along(tmp_path, offline_masks):
         s["pic"]["cut"].startswith("data:image/png;base64,") for s in r["species"]
     )
     assert len(offline_masks) == 1, "a kept mask is never asked for again"
-    assert M.budget_used(tmp_path) == 1
+    assert M.budget_used(tmp_path) == 2, "one cut-out at two cents"
     # a greyscale panel gets the cut-out converted, from the same mask
     r = server.fetch({**options, "panel": "gray4"}, settings, ctx=ctx)
     assert all(s["pic"]["cut"] for s in r["species"]) and len(offline_masks) == 1
@@ -783,31 +821,28 @@ def test_masks_need_a_key_and_a_bad_one_is_remembered(tmp_path, offline_masks):
     options = {**MELBOURNE, "url": "birdnet.local"}
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     r = server.fetch(options, {}, ctx=ctx)
-    assert (
-        M.NOTE_NO_KEY
-        if hasattr(M, "NOTE_NO_KEY")
-        else server.NOTE_NO_KEY in r["notices"]
-    )
+    assert server.NOTE_NO_KEY in r["notices"]
     assert not offline_masks and all(
         s["pic"]["cut_state"] == "no_key"
         for s in r["species"]
         if not s["pic"].get("classic")
     )
     # the model answers a mask that is the whole frame: bad, kept as bad, not retried
-    real = N.http.side_effect
+    real = fal_mod._download.side_effect
 
-    def framed(url, token="", accept="application/json", **kw):
+    def framed(url, timeout=60.0):
         if url == "https://fal.example/mask.png":
             im = Image.new("RGBA", (300, 400), (255, 255, 255, 255))
             buf = io.BytesIO()
             im.save(buf, "PNG")
-            return buf.getvalue(), None
-        return real(url, token, accept, **kw)
+            return buf.getvalue()
+        return real(url, timeout)
 
-    N.http.side_effect = framed
+    fal_mod._download.side_effect = framed
     server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
     _settle()
-    assert len(list((tmp_path / "masks").glob("*.bad"))) == 1
+    bad = [e for e in M.CUTS.errors(tmp_path) if e["why"].startswith(M.BAD)]
+    assert len(bad) == 1
     r = server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
     need = [s for s in r["species"] if not s["pic"].get("classic")]
     assert (
@@ -824,32 +859,22 @@ P = server.P
 
 
 def _settle_paint(timeout=15.0):
-    import time
-
-    end = time.time() + timeout
-    while (P._PAINTING or M._RUNNING) and time.time() < end:
-        time.sleep(0.02)
-    assert not P._PAINTING and not M._RUNNING
+    _settle(timeout)
 
 
 @pytest.fixture
 def offline_paint(offline_masks):
     """fal.ai paints too: nano-banana answers a picture, Wikipedia a sentence."""
-    real = N.http.side_effect
     prompts: list[dict] = []
+    real = N.http.side_effect
+
+    def paint_answer(url, body):
+        prompts.append({**body, "_url": url})
+        return {"images": [{"url": "https://fal.example/out.jpg"}]}
+
+    offline_masks.answers["paint"] = paint_answer  # type: ignore[attr-defined]
 
     def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
-        if (
-            "nano-banana" in url
-            or "flux-pro/kontext" in url
-            or "gpt-image" in url
-            or "seedream" in url
-        ):
-            prompts.append(json.loads(kw["body"]))
-            assert token == "k"
-            return json.dumps(
-                {"images": [{"url": "https://fal.example/out.jpg"}]}
-            ).encode(), None
         if "wikipedia.org/api/rest_v1/page/summary/Gymnorhina_tibicen" in url:
             return json.dumps(
                 {
@@ -935,14 +960,14 @@ def test_paintings_climb_the_ladder(tmp_path, offline_paint):
     kinds = [s["pic"]["kind"] for s in r["species"]]
     assert kinds == ["painting"] * 4 and len(offline_paint) == 4
     assert not [x for x in r["status"] if "painting" in x]
-    assert all(
-        s["pic"]["on_paper"] and s["pic"]["key"].startswith("g_") for s in r["species"]
-    )
+    assert all(s["pic"]["on_paper"] and "--" in s["pic"]["key"] for s in r["species"])
     # paintings get masks like any other picture
     _settle_paint()
     r = server.fetch(options, settings, ctx=ctx)
     assert all(s["pic"].get("cut") for s in r["species"])
-    assert P.budget_used(tmp_path / "gen") == 4
+    assert P.budget_used(tmp_path / "paintings") == 16, (
+        "four Nano Banana paintings at four cents"
+    )
     # switching the style paints again; switching back costs nothing
     r = server.fetch({**options, "style": "gould"}, settings, ctx=ctx)
     _settle_paint()
@@ -1010,72 +1035,13 @@ def test_paintings_need_a_key_and_respect_the_cap(tmp_path, offline_paint):
     assert P.NOTE_NO_KEY in r["notices"] and not offline_paint
     assert r["species"][0]["pic"]["kind"] == "plate"
     N.write(
-        tmp_path / "gen" / "budget.json",
-        json.dumps({__import__("time").strftime("%Y-%m-%d"): 6}).encode(),
+        tmp_path / "paintings" / "budget.json",
+        json.dumps({__import__("time").strftime("%Y-%m-%d"): 24}).encode(),
     )
     r = server.fetch(options, {"fal_api_key": "k", "gen_daily_cap": "6"}, ctx=ctx)
-    assert not offline_paint and any("limit of 6" in x for x in r["status"])
-
-
-def test_admin_template_renders(tmp_path, offline_paint):
-    import jinja2
-    from flask import Flask
-
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "4"}
-    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
-    server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
-    _settle_paint()
-    server.fetch(
-        options, {"fal_api_key": "k"}, ctx=ctx
-    )  # the paintings are ready: their masks start
-    _settle_paint()
-    app = Flask("t", template_folder=str(ROOT / "templates"))
-    stubs = {
-        "_base.html": "{% block title %}{% endblock %}{% block main %}{% endblock %}",
-        "_components.html": (
-            "{% macro card_head(t, icon_name='', level=2, blurb='') %}<h2>{{ t }}</h2>{{ blurb }}{% endmacro %}"
-            "{% macro button(t, icon='', variant='', disabled=False) %}<button>{{ t }}</button>{% endmacro %}"
-            "{% macro empty_state(i, t, b) %}<p>{{ t }} {{ b }}</p>{% endmacro %}"
-        ),
-    }
-    app.jinja_loader = jinja2.ChoiceLoader(
-        [jinja2.DictLoader(stubs), jinja2.FileSystemLoader(str(ROOT / "templates"))]
+    assert not offline_paint and any(
+        "budget of US$0.24" in x for x in r["status"] + r["notices"]
     )
-    app.register_blueprint(server.blueprint(), url_prefix="/plugins/specimen_sheet")
-    with app.test_request_context("/plugins/specimen_sheet/"):
-        from flask import render_template
-
-        g = server._gallery(tmp_path, 12)
-        html = render_template(
-            "specimen_sheet/admin.html",
-            g=g,
-            known=server.known_species(tmp_path),
-            has_key=True,
-            wanted=1,
-            held=2,
-        )
-        idle = render_template(
-            "specimen_sheet/admin.html",
-            g=g,
-            known=[],
-            has_key=True,
-            wanted=1,
-            held=0,
-        )
-    assert "Render now" in idle and "paint-held" not in idle
-    assert "Paint the 2 waiting" in html and "Purge everything" in html
-    assert "Styles" in html
-    assert "bb-style-tile" in html and "Preview" in html
-    assert g["used"] == 4 and len([e for e in g["paintings"] if e["active"]]) == 4
-    assert (
-        "Australian Magpie" in html
-        and "Gymnorhina tibicen" in html
-        and "Silver Gull" in html
-    )
-    assert "Cut out again" in html and "No paintings yet" not in html
-    assert "Not on a dashboard" in html or "bb-group" in html
-    assert "bb-tab" in html
-    assert any(e["cut"] == "ready" for e in g["paintings"])
 
 
 def test_scene_is_painted_once_everything_is_cut_out(tmp_path, offline_paint):
@@ -1163,7 +1129,7 @@ def test_dapper_is_one_species_a_day(tmp_path, offline_paint):
     _settle_paint()
     dapper = [pr for pr in offline_paint if "is dapper" in pr["prompt"]]
     assert len(dapper) == 1
-    assert len(list((tmp_path / "gen").glob("*--dapper.jpg"))) == 1
+    assert len(list((tmp_path / "paintings").glob("*--dapper.jpg"))) == 1
 
 
 def test_pose_and_native_plants(tmp_path, offline_paint):
@@ -1203,7 +1169,7 @@ def test_pose_and_native_plants(tmp_path, offline_paint):
             and "a plant of the country where it was seen" in pr["prompt"]
         )
         assert any(p in pr["prompt"] for p in plants)
-    names = {f.name for f in (tmp_path / "gen").glob("*.jpg")}
+    names = {f.name for f in (tmp_path / "paintings").glob("*.jpg")}
     assert names and all("--on_" in n for n in names)
     # all in flight: no perch, new paintings
     server.fetch({**options, "pose": "flight"}, settings, ctx=ctx)
@@ -1213,7 +1179,7 @@ def test_pose_and_native_plants(tmp_path, offline_paint):
     )
     assert all(
         "--flight" in f.name
-        for f in (tmp_path / "gen").glob("*.jpg")
+        for f in (tmp_path / "paintings").glob("*.jpg")
         if "--on_" not in f.name
     )
 
@@ -1242,7 +1208,7 @@ def test_hero_note_and_painted_backdrop(tmp_path, offline_paint):
         and "(Gymnorhina tibicen)" in hero[0]["prompt"]
         and hero[0]["aspect_ratio"] == "4:3"
     )
-    assert len(list((tmp_path / "gen").glob("*--hero.jpg"))) == 1
+    assert len(list((tmp_path / "paintings").glob("*--hero.jpg"))) == 1
     r = server.fetch(painted, settings, ctx=ctx)
     assert (
         r["species"][0]["pic"]["whole"] and r["species"][0]["pic"]["kind"] == "painting"
@@ -1282,19 +1248,17 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     _settle_paint()
     assert not offline_paint, "a preview starts nothing"
     assert len(server.held(tmp_path)) == 3
-    assert any("3 paintings waiting for Paint now" in x for x in r["status"])
+    assert any(
+        "3 pictures waiting for Paint now" in x for x in r["status"] + r["notices"]
+    )
     assert r["live_refresh_s"] > 0, (
         "the editor keeps coming back, so the settling starts them"
     )
     # the same preview again within the settling time holds nothing new
     server.fetch(options, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3 and not offline_paint
-    # a preview of the same settings twenty seconds on is a kept dashboard: it paints
-    seen = json.loads((tmp_path / "preview_seen.json").read_text())
-    (tmp_path / "preview_seen.json").write_text(
-        json.dumps({k: v - 30 for k, v in seen.items()})
-    )
-    r = server.fetch(options, settings, ctx=ctx)
+    # the host says the dashboard has settled: it paints
+    r = server.fetch(options, settings, ctx={**ctx, "settled": True})
     _settle_paint()
     assert len(offline_paint) == 3 and not server.held(tmp_path)
     assert not any("waiting" in x for x in r["status"])
@@ -1302,7 +1266,7 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     # and Paint now starts that cell's and no other's
     r = server.fetch({**options, "style": "woodblock"}, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3 and any(
-        "3 paintings waiting" in x for x in r["status"]
+        "3 pictures waiting" in x for x in r["status"] + r["notices"]
     )
     other = {
         **options,
@@ -1314,13 +1278,15 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     woodblock = [
         j["subject"]
         for j in server.held(tmp_path).values()
-        if j["style"] == "woodblock"
+        if j["payload"]["style"] == "woodblock"
     ][0]
     started = server.start_held(tmp_path, "k", 24, woodblock)
     _settle_paint()
     assert started == 3 and len(offline_paint) == 6
-    assert {j["style"] for j in server.held(tmp_path).values()} == {"linocut"}
-    server._unhold(tmp_path)
+    assert {j["payload"]["style"] for j in server.held(tmp_path).values()} == {
+        "linocut"
+    }
+    P.ART.unhold(tmp_path)
     r = server.fetch(options, settings, ctx={**ctx, "preview": False})
     assert all(s["pic"]["kind"] == "painting" for s in r["species"])
     # a panel render with new species starts them all straight away
@@ -1350,11 +1316,14 @@ def test_models_have_their_own_keys_and_request_shapes(tmp_path, offline_paint):
     )
     assert P.model_of("nope") == "nano_banana"
     for model in P.MODELS:
-        body = P.request_body(model, "p", "https://x/y.jpg", "3:4")
+        body = fal_mod.request_body(model, "p", ["https://x/y.jpg"], "3:4")
         assert body["prompt"] == "p" and (
             "image_url" in body or body["image_urls"] == ["https://x/y.jpg"]
         )
-    assert P.request_body("gpt_image", "p", "u", "4:3")["image_size"] == "landscape_4_3"
+    assert (
+        fal_mod.request_body("gpt_image", "p", ["u"], "4:3")["image_size"]
+        == "landscape_4_3"
+    )
     real = N.http.side_effect
     urls: list[str] = []
 
@@ -1373,18 +1342,17 @@ def test_models_have_their_own_keys_and_request_shapes(tmp_path, offline_paint):
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
     _settle_paint()
-    assert any(u == "https://fal.run/fal-ai/flux-pro/kontext" for u in urls)
-    keys = [f.stem for f in (tmp_path / "gen").glob("*--m_flux_kontext.jpg")]
+    assert any(
+        p["_url"] == "https://fal.run/fal-ai/flux-pro/kontext" for p in offline_paint
+    )
+    keys = [f.stem for f in (tmp_path / "paintings").glob("*--m_flux_kontext.jpg")]
     assert len(keys) == 4
-    meta = json.loads((tmp_path / "gen" / f"{keys[0]}.json").read_text())
+    meta = json.loads((tmp_path / "paintings" / f"{keys[0]}.json").read_text())
     assert (
         meta["model"] == "flux_kontext"
         and "FLUX.1 Kontext Pro on fal.ai" in meta["credit"]
     )
-    g = server._gallery(tmp_path, 12)
-    assert all(
-        e["model"] == "FLUX.1 Kontext Pro" for e in g["paintings"] if e["active"]
-    )
+    assert all(e["meta"]["model"] == "flux_kontext" for e in P.ART.listing(tmp_path))
     # the unknown-style fallback is gone: an unknown id fails rather than painting Gould
     assert P.style_of("nope")[1] == ""
 
@@ -1406,17 +1374,17 @@ def held_paint(tmp_path):
     gate = threading.Event()
     seen: list[str] = []
 
-    def slow(job, data_dir, fal_key, stop=None):  # noqa: ARG001
-        seen.append(job["key"])
+    def slow(job):
+        seen.append(job.key)
         gate.wait(5)
-        if stop is not None and stop.is_set():
-            return P.STOPPED
-        return None
+        if job.stopped:
+            raise artwork.ArtworkError("stopped")
+        return _jpeg(), {"credit": "slow", "style": job.payload.get("style", "gould")}
 
-    with patch.object(P, "paint", slow):
+    with patch.object(P, "make", slow):
         yield gate, seen
     gate.set()
-    _wait(lambda: not P._PAINTING)
+    _wait(lambda: not _busy())
 
 
 def _jobs(n):
@@ -1426,153 +1394,28 @@ def _jobs(n):
     ]
 
 
-def test_queue_runs_a_few_at_a_time(tmp_path, held_paint):
-    gate, seen = held_paint
-    for job in _jobs(5):
-        assert P.start(job, tmp_path, "k")
-    assert not P.start(_jobs(1)[0], tmp_path, "k")  # already queued
-    _wait(lambda: len(seen) == P.BATCH_PARALLEL)
-    got = P.progress(P.gen_dir(tmp_path), 24, True)
-    assert len(got["running"]) == P.BATCH_PARALLEL and len(got["queued"]) == 2
-    gate.set()
-    _wait(lambda: not P._PAINTING)
-    assert len(seen) == 5
-
-
-def test_stop_one_waiting_and_one_running(tmp_path, held_paint):
-    gate, seen = held_paint
-    for job in _jobs(5):
-        P.start(job, tmp_path, "k")
-    _wait(lambda: len(seen) == 3)
-    assert P.stop("bird4--gould", tmp_path)  # waiting
-    assert P.stop("bird0--gould", tmp_path)  # under way
-    assert not P.stop("nobody--gould", tmp_path)
-    assert P.state("bird4--gould", P.gen_dir(tmp_path)) == "failed"
-    _wait(lambda: "bird0--gould" not in P._PAINTING)
-    # the freed slot takes the next waiting job; the stopped one never starts
-    _wait(lambda: "bird3--gould" in seen)
-    gate.set()
-    _wait(lambda: not P._PAINTING)
-    assert "bird4--gould" not in seen
-    err = N.read_json(P.gen_dir(tmp_path) / "bird0--gould.err", {})
-    assert err["why"] == "stopped"
-
-
-def test_stop_all_empties_the_queue(tmp_path, held_paint):
-    gate, seen = held_paint
-    for job in _jobs(6):
-        P.start(job, tmp_path, "k")
-    _wait(lambda: len(seen) == 3)
-    assert P.stop_all(tmp_path) == 6
-    _wait(lambda: not P._PAINTING)
-    assert len(seen) == 3 and not P.progress(P.gen_dir(tmp_path), 24, True)["queued"]
-    assert not list(P.gen_dir(tmp_path).glob("*.jpg"))
-    gate.set()
-
-
-def test_queue_drops_jobs_past_the_cap(tmp_path):
-    ran: list[str] = []
-    folder = P.gen_dir(tmp_path)
-    folder.mkdir(parents=True, exist_ok=True)
-    N.write(
-        folder / "budget.json",
-        json.dumps({__import__("time").strftime("%Y-%m-%d"): 4}).encode(),
-    )
-    with patch.object(P, "paint", lambda job, *a, **k: ran.append(job["key"])):
-        P.start(_jobs(1)[0], tmp_path, "k", cap=4)
-        _wait(lambda: not P._PAINTING)
-    assert ran == []
-
-
-def test_stopped_cutout_is_dropped_and_holds_the_sheet(tmp_path):
-    import threading
-
-    gate = threading.Event()
-
-    def slow(key, picture, data_dir, fal_key, stop=None):  # noqa: ARG001
-        gate.wait(5)
-        return None
-
-    with patch.object(M, "make", slow):
-        assert M.start("a", b"x", tmp_path, "k", "A bird")
-        assert M.running()[0]["name"] == "A bird"
-        assert M.stop_all() == 1
-        assert not M.running() and not M._RUNNING
-        assert not M.start("b", b"x", tmp_path, "k")  # held after a stop
-        assert M.start("b", b"x", tmp_path, "k", force=True)
-        gate.set()
-        _wait(lambda: not M._RUNNING)
-    M._HOLD_UNTIL = 0.0
-
-
 def test_limits_are_the_owners_to_set():
     P, M = server.P, server.M
-    assert P.daily_cap({"gen_daily_cap": 500}) == 500
-    assert P.daily_cap({"gen_daily_cap": "7"}) == 7
-    assert P.daily_cap({"gen_daily_cap": 0}) == P.UNLIMITED
-    assert P.daily_cap({"gen_daily_cap": ""}) == P.GEN_DAILY_CAP
-    assert P.daily_cap({"gen_daily_cap": "lots"}) == P.GEN_DAILY_CAP
-    assert P.daily_cap({}) == P.GEN_DAILY_CAP
-    try:
-        P.configure({"gen_per_refresh": 9, "gen_parallel": 1})
-        M.configure({"mask_daily_cap": 0, "mask_per_refresh": 20})
-        assert (P.per_fetch(), P._PARALLEL, M._cap, M.per_fetch()) == (
-            9,
-            1,
-            P.UNLIMITED,
-            20,
-        )
-        P.configure({"gen_per_refresh": 0, "gen_parallel": 99})
-        assert (P.per_fetch(), P._PARALLEL) == (1, 8)
-    finally:
-        P.configure({})
-        M.configure({})
-    assert (P.per_fetch(), P._PARALLEL, M._cap) == (
-        P.PER_FETCH,
-        P.BATCH_PARALLEL,
-        M.DAILY_CAP,
+    assert P.daily_cap({"gen_daily_cap": 500}) == 2000, (
+        "an older count of paintings, at four cents each"
     )
-
-
-def test_tray_batches_paintings_and_cutouts():
-    tray = P.T
-
-    class FakeJobs:
-        def __init__(self):
-            self.log = []
-
-        def report(self, source, key, title, **kw):
-            self.log.append(
-                ("report", key, kw["progress"], kw["detail"], kw["stop"] is not None)
-            )
-
-        def finish(self, source, key, detail=""):
-            self.log.append(("finish", key, detail))
-
-        def cancel(self, source, key, detail=""):
-            self.log.append(("cancel", key, detail))
-
-    fake = FakeJobs()
-    old, tray.jobs = tray.jobs, fake
-    try:
-        b = tray.Batch("paint", "Painting specimens")
-        b.add("a", lambda: None)
-        b.add("b", lambda: None)
-        b.add("b", lambda: None)  # queued twice counts once
-        b.done("a")
-        b.done("a")  # idempotent
-        assert fake.log[-1] == ("report", "paint", 0.5, "1 of 2", True)
-        b.done("b")
-        assert fake.log[-1] == ("finish", "paint", "2 finished")
-        b.add("c", lambda: None)  # a new batch starts from zero
-        assert fake.log[-1] == ("report", "paint", 0.0, "0 of 1", True)
-        b.done("c", stopped=True)
-        assert fake.log[-1] == ("cancel", "paint", "0 of 1 finished")
-        tray.jobs = None
-        b.add("d", lambda: None)  # no tray: no error
-        b.done("d")
-    finally:
-        tray.jobs = old
+    assert P.daily_cap({"gen_daily_cap": "7"}) == 28
+    assert P.daily_cap({"gen_daily_cap": 0}) == P.UNLIMITED
+    assert P.daily_cap({"gen_daily_usd": "4"}) == 400 and P.daily_cap({}) == 400
+    assert P.daily_cap({"gen_daily_cap": "lots"}) == 400, "unreadable: the default"
+    P.configure({"gen_per_refresh": 9, "gen_parallel": 1})
+    M.configure({"mask_per_refresh": 20})
+    assert (
+        P.per_fetch(),
+        P.ART._parallel,
+        M.CUTS.cap({"mask_daily_cap": 0}),
+        M.per_fetch(),
+    ) == (9, 1, P.UNLIMITED, 20)
+    assert M.CUTS.cap({"mask_daily_usd": "6"}) == 600 and M.CUTS.cap({}) == 600
+    P.configure({"gen_per_refresh": 0, "gen_parallel": 99})
+    assert (P.per_fetch(), P.ART._parallel) == (1, 8)
+    P.configure({})
+    M.configure({})
 
 
 def test_perched_birds_keep_a_leafy_branch_and_flying_birds_have_none(tmp_path):
@@ -1680,22 +1523,6 @@ def test_reference_picture_modes(tmp_path, offline_classic):
     assert P.references(nope, tmp_path)[1] == "photo"
 
 
-def test_style_previews_come_from_paintings_of_the_preview_species(tmp_path):
-    folder = P.gen_dir(tmp_path)
-    folder.mkdir(parents=True, exist_ok=True)
-    for slug in ("corvus_corax--gould", "parus_major--gould", "parus_major--engraving"):
-        (folder / f"{slug}.jpg").write_bytes(b"x")
-        (folder / f"{slug}.json").write_text(
-            json.dumps({"sci": slug.split("--")[0].replace("_", " ").capitalize()})
-        )
-    tree = server._gallery(tmp_path, 12)["style_tree"]
-    files = {
-        s["id"]: s["file"] for t in tree for sub in t["subs"] for s in sub["styles"]
-    }
-    assert files["gould"] == "parus_major--gould.jpg" and files["engraving"]
-    assert "anime" not in files
-
-
 def test_every_option_type_is_one_the_server_installs():
     allowed = {
         "string",
@@ -1733,7 +1560,7 @@ def test_pictures_past_the_deadline_wait_for_the_next_refresh(tmp_path, offline)
     ]
     states = server._attach_pictures(rows, "", "", tmp_path, "colour", budget_s=-1)
     assert states.get("deferred") == 2 and all(r["pic"] is None for r in rows)
-    assert server._live_refresh(states) > 0
+    assert server._live(states)["live_refresh_s"] > 0
     rows = [
         {
             "name": "Australian Magpie",
@@ -1747,7 +1574,8 @@ def test_pictures_past_the_deadline_wait_for_the_next_refresh(tmp_path, offline)
 
 
 def test_a_stored_sheet_has_to_be_a_picture(tmp_path):
-    import base64, io
+    import base64
+    import io
     from PIL import Image
     from PIL import ImageDraw
 
@@ -1775,7 +1603,8 @@ def test_a_stored_sheet_has_to_be_a_picture(tmp_path):
 
 
 def test_a_blank_stored_sheet_is_dropped_when_read(tmp_path):
-    import base64, io
+    import base64
+    import io
     from PIL import Image
 
     blank = io.BytesIO()
@@ -1793,7 +1622,7 @@ def test_purge_takes_everything_but_the_count(tmp_path, offline_paint):
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     server.fetch(options, settings, ctx=ctx)
     _settle_paint()
-    gen = tmp_path / "gen"
+    gen = tmp_path / "paintings"
     made = len(list(gen.glob("*.jpg")))
     assert made >= 1 and (gen / "budget.json").exists()
     server.fetch(
@@ -1802,14 +1631,21 @@ def test_purge_takes_everything_but_the_count(tmp_path, offline_paint):
     assert server.held(tmp_path)
     (gen / "archive").mkdir(exist_ok=True)
     (gen / "archive" / "x__20260101-000000.jpg").write_bytes(b"x")
-    (tmp_path / "masks").mkdir(exist_ok=True)
-    (tmp_path / "masks" / "g_x.cut.png").write_bytes(b"x")
-    (tmp_path / "masks" / "f_keep.cut.png").write_bytes(b"x")
+    (tmp_path / "cutouts").mkdir(exist_ok=True)
+    (tmp_path / "cutouts" / "x.png").write_bytes(b"x")
+    (tmp_path / "cutouts" / "f_keep.png").write_bytes(b"x")
     got = server.purge_all(tmp_path)
-    assert got["paintings"] == made and got["versions"] == 1 and got["cut_outs"] == 1
-    assert [f.name for f in gen.iterdir() if f.is_file()] == ["budget.json"]
+    assert (
+        got["paintings"] == made
+        and got["versions"] == 1
+        and got["cut_outs"] == made + 2
+    ), "every cut-out goes with the paintings, theirs included"
+    assert (
+        not [f for f in gen.iterdir() if f.suffix in (".jpg", ".png")]
+        and (gen / "budget.json").exists()
+    )
+    assert not list((tmp_path / "cutouts").glob("*.png"))
     assert not list((gen / "archive").iterdir()) and not server.held(tmp_path)
-    assert (tmp_path / "masks" / "f_keep.cut.png").exists()
     assert server.P.budget_used(gen) >= made, "the day's count stays"
 
 
@@ -1846,50 +1682,6 @@ def test_a_new_look_drops_the_old_looks_held_paintings(tmp_path, offline_paint):
         and any("--linocut" in k for k in kept)
         and not any("--woodblock" in k for k in kept)
     )
-
-
-def test_a_new_look_drops_the_old_looks_queued_paintings(
-    tmp_path, offline_paint, monkeypatch
-):
-    """Queued, not yet painting: the workers are kept from starting, so the
-    queue holds what a settled preview started; the panel's own jobs stay."""
-    monkeypatch.setattr(P, "_work", lambda: None)
-    monkeypatch.setattr(server, "SETTLE_S", 0)
-    settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {
-        **MELBOURNE,
-        "url": "birdnet.local",
-        "pictures": "gen",
-        "count": "3",
-        "style": "gould",
-    }
-    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
-    try:
-        # the panel queues its own paintings in the pencil style
-        server.fetch({**options, "style": "pencil"}, settings, ctx=ctx)
-        assert any("--pencil" in j["key"] for j, *_r in P._QUEUE)
-        # the editor: a settled preview queues gould, then moves on to woodblock
-        server.fetch(options, settings, ctx={**ctx, "preview": True})
-        server.fetch(options, settings, ctx={**ctx, "preview": True})
-        assert any("--gould" in j["key"] for j, *_r in P._QUEUE)
-        server.fetch(
-            {**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True}
-        )
-        queued = [j["key"] for j, *_r in P._QUEUE]
-        assert not any("--gould" in k for k in queued), queued
-        assert any("--pencil" in k for k in queued), "the panel's own paintings stay"
-        assert not list((tmp_path / "gen").glob("*--gould*.err")), (
-            "nothing written: gould can be picked again"
-        )
-        # picked again, it is queued again
-        server.fetch(options, settings, ctx={**ctx, "preview": True})
-        server.fetch(options, settings, ctx={**ctx, "preview": True})
-        assert any("--gould" in j["key"] for j, *_r in P._QUEUE)
-    finally:
-        with P._LOCK:
-            P._QUEUE.clear()
-            P._PAINTING.clear()
-            P._WORKERS = 0
 
 
 def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
@@ -1935,39 +1727,13 @@ def test_paintings_group_by_dashboard(tmp_path, offline_paint):
         settings,
         ctx={**ctx, "preview": True, "page_name": "Draft"},
     )
-    got = server.dashboards(tmp_path)
+    got = P.ART.dashboards(tmp_path)
     assert [d["name"] for d in got] == ["Study", "Kitchen"]
-    g = server._gallery(tmp_path, 24)
-    assert [
-        (x["name"], [(t["style_label"], len(t["paintings"])) for t in x["tabs"]])
-        for x in g["groups"]
-    ] == [
-        ("Study", [("Japanese woodblock print", 2)]),
-        ("Kitchen", [("Hand-coloured lithograph (Gould)", 3)]),
+    assert [(d["name"], d["facet_label"], len(d["keys"])) for d in got] == [
+        ("Study", "Japanese woodblock print", 2),
+        ("Kitchen", "Hand-coloured lithograph (Gould)", 3),
     ]
-    assert g["rest"] == []
-    # the kitchen rendered in a second style: one group, a tab per style, the latest first
-    server.fetch({**options, "style": "linocut"}, settings, ctx=ctx)
-    _settle_paint()
-    g = server._gallery(tmp_path, 24)
-    kitchen = next(x for x in g["groups"] if x["name"] == "Kitchen")
-    assert [t["style"] for t in kitchen["tabs"]] == ["linocut", "gould"] and len(
-        g["groups"]
-    ) == 2
-    # the dashboard edited to show fewer: once its old self has not rendered for an hour it goes,
-    # and the painting nothing shows any more falls under the rest
-    data = json.loads((tmp_path / "dashboards.json").read_text())
-    for v in data.values():
-        if v["name"] == "Kitchen":
-            v["at"] -= 7200
-    (tmp_path / "dashboards.json").write_text(json.dumps(data))
-    server.fetch({**options, "count": "2"}, settings, ctx=ctx)
-    g = server._gallery(tmp_path, 24)
-    # the kitchen keeps its linocut tab (3) and its gould tab now wants 2; the third gould is left over
-    assert [
-        (x["name"], sum(len(t["paintings"]) for t in x["tabs"])) for x in g["groups"]
-    ] == [("Kitchen", 5), ("Study", 2)]
-    assert len(g["rest"]) == 1
+    assert all(P.ART.path(k, tmp_path) is not None for d in got for k in d["keys"])
 
 
 def _log(tmp_path, days, seen):
@@ -2021,7 +1787,7 @@ def test_tally_strokes_mark_the_count_line(tmp_path, offline):
 
 
 def test_year_list_from_the_log(tmp_path, offline):
-    from datetime import date, timedelta
+    from datetime import date
 
     today = date.today()
     y = today.year
@@ -2137,7 +1903,7 @@ def test_render_now_paints_only_what_the_panels_ask_for(tmp_path, offline_paint)
         ctx={**ctx, "preview": True},
     )
     assert len(offline_paint) == 5
-    gen = tmp_path / "gen"
+    gen = tmp_path / "paintings"
     gone = sorted(gen.glob("*--gould*.jpg"))[0]
     gone.unlink()
     (gen / gone.name.replace(".jpg", ".json")).unlink()
@@ -2153,11 +1919,11 @@ def test_render_now_paints_only_what_the_panels_ask_for(tmp_path, offline_paint)
     # one dashboard's own button
     gone2 = sorted(gen.glob("*--woodblock*.jpg"))[0]
     gone2.unlink()
-    who = next(d["id"] for d in server.dashboards(tmp_path) if d["name"] == "Kitchen")
+    who = next(d["id"] for d in P.ART.dashboards(tmp_path) if d["name"] == "Kitchen")
     assert server.render_now(tmp_path, "k", 24, who) == (0, 0), (
         "the kitchen is whole; the study's gap is not its"
     )
-    who = next(d["id"] for d in server.dashboards(tmp_path) if d["name"] == "Study")
+    who = next(d["id"] for d in P.ART.dashboards(tmp_path) if d["name"] == "Study")
     assert server.render_now(tmp_path, "k", 24, who) == (1, 1)
     _settle_paint()
 
@@ -2182,3 +1948,19 @@ def test_a_pale_bird_gets_a_contour_line(tmp_path, offline_paint):
         "contour line" not in offline_paint[-1]["prompt"]
         and "ornate" in offline_paint[-1]["prompt"]
     )
+
+
+def test_an_older_tesserae_still_draws_the_sheet(tmp_path, offline_paint, monkeypatch):
+    """Without app.artwork (Tesserae before 0.463) the sheet loads, shows the
+    plates and photographs, starts nothing and says what it is missing."""
+    monkeypatch.setattr(P, "ART", P._NoArtwork("paintings"))
+    monkeypatch.setattr(M, "CUTS", P._NoArtwork("cutouts"))
+    settings = {"fal_api_key": "k", "gen_daily_usd": "4"}
+    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3"}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    r = server.fetch(options, settings, ctx=ctx)
+    assert r["state"] == "ok" and P.NEEDS_HOST in r["notices"] and not offline_paint
+    assert all(
+        s["pic"] and s["pic"]["kind"] in ("plate", "photo") for s in r["species"]
+    )
+    assert r["live_refresh_s"] == 0 and r["live_pending"] == 0

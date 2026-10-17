@@ -51,8 +51,15 @@ S = _sibling("sources")
 M = _sibling("masks")
 C = _sibling("classic")
 P = _sibling("paint")
-T = _sibling("tray")
 
+try:
+    from app import fal as _fal  # Tesserae 0.463+
+except ImportError:
+    _fal = None  # type: ignore[assignment]
+
+LIVE_S = (
+    6  # the editors ask again this soon while a painting or a cut-out is on the way
+)
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 
 SOURCES = S.SOURCES
@@ -706,17 +713,12 @@ def _painting(
     key: str, data_dir: Path, levels: str, px: int = PICTURE_PX
 ) -> dict[str, Any] | None:
     """A kept painting, resized for the sheet, or None."""
-    folder = P.gen_dir(data_dir)
-    img = folder / f"{key}.jpg"
-    if not img.exists():
+    c = P.ART
+    path = c.path(key, data_dir)
+    if path is None:
         return None
-    meta = N.read_json(folder / f"{key}.json", {})
-    meta = meta if isinstance(meta, dict) else {}
-    try:
-        raw = img.read_bytes()
-    except OSError:
-        return None
-    src = N.render(raw, px, None, folder / f"{key}_{px}.jpg", levels)
+    meta = c.meta(key, data_dir)
+    src = c.url(key, data_dir, px=px, levels=levels)
     if not src:
         return None
     return {
@@ -724,16 +726,20 @@ def _painting(
         "kind": "painting",
         "on_paper": True,
         "credit": str(meta.get("credit") or "AI painting"),
-        "paper": N.paper_of(src, folder / f"{key}.paper", levels),
-        "key": f"g_{key}",
+        "paper": N.paper_of(
+            src, c.folder(data_dir) / "derived" / f"{key}__paper_{levels}.txt", levels
+        ),
+        "key": key,
         "aspect": N.aspect_of(src),
-        "file": str(img),
+        "file": str(path),
     }
 
 
-def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, Any]:
-    job = {
-        "key": key,
+def _paint_payload(
+    row: dict[str, Any], gen: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
+    """What the painter needs for one specimen, and the title the pages show."""
+    payload = {
         "style": gen["style"],
         "name": row["name"],
         "sci": row["sci"],
@@ -741,24 +747,18 @@ def _paint_job(key: str, row: dict[str, Any], gen: dict[str, Any]) -> dict[str, 
         "how": gen.get("how") or "",
         "model": gen.get("model", P.DEFAULT_MODEL),
         "ref_mode": gen.get("ref_mode", "photo"),
-        "subject": gen.get("subject", ""),
-        "origin": gen.get("origin", "panel"),
     }
     if gen.get("plants"):
-        job["perch"] = P.perch_for(row["sci"], gen["plants"])
-        job["plants"] = ", ".join(gen["plants"])
+        payload["perch"] = P.perch_for(row["sci"], gen["plants"])
+        payload["plants"] = ", ".join(gen["plants"])
     if gen.get("hero_sci") and row["sci"] == gen["hero_sci"]:
-        job["hero"] = True
-        job["aspect"] = gen.get("hero_aspect", "3:4")
+        payload["hero"] = True
+        payload["aspect"] = gen.get("hero_aspect", "3:4")
     if row.get("ref"):
-        job["ref"], job["ref_credit"] = row["ref"], row.get("ref_credit") or ""
-    return job
+        payload["ref"], payload["ref_credit"] = row["ref"], row.get("ref_credit") or ""
+    return payload, str(row["name"])
 
 
-HELD_MAX = 400
-_HELD_LOCK = threading.Lock()
-SETTLE_S = 20
-SEEN_S = 86400
 # The options that decide how a cell looks, not which species it shows: a cell
 # changing one of these is the same cell in a new look, and the paintings its
 # previews held or queued for the old look are no longer wanted.
@@ -813,256 +813,67 @@ def subject_id(options: dict[str, Any]) -> str:
     ).hexdigest()[:16]
 
 
-def cull(data_dir: Path, subject: str, keep: set[str]) -> tuple[int, int]:
-    """A preview of a cell in a new look drops what its previews held or
-    queued for the old one: the held and the queued paintings of the same
-    subject whose keys this look does not want. A painting under way is left
-    to finish, being paid for. (queued dropped, held dropped)."""
-    stale = [
-        k
-        for k, j in held(data_dir).items()
-        if j.get("subject") == subject and k not in keep
-    ]
-    if stale:
-        _unhold(data_dir, stale)
-    gone = P.cull_queued(subject, keep)
-    if stale or gone:
-        logger.info(
-            "specimen_sheet: dropped %d queued, %d held painting(s) for a look no longer wanted",
-            len(gone),
-            len(stale),
-        )
-    return len(gone), len(stale)
-
-
-def preview_settled(data_dir: Path, cell_id: str, now: float) -> bool:
-    """Whether a cell's settings have stood for SETTLE_S seconds of previews:
-    the first preview of a setting notes the time, and one coming back with
-    the same setting SETTLE_S later is taken as kept, so its paintings start
-    without a button. A setting changed is a new cell, so the clock restarts."""
-    path = data_dir / "preview_seen.json"
-    with _HELD_LOCK:
-        got = N.read_json(path, {})
-        got = (
-            {
-                k: float(v)
-                for k, v in got.items()
-                if isinstance(got, dict) and now - float(v) < SEEN_S
-            }
-            if isinstance(got, dict)
-            else {}
-        )
-        first = got.get(cell_id)
-        if first is None:
-            got[cell_id] = now
-        N.write(path, json.dumps(got).encode())
-    return first is not None and now - first >= SETTLE_S
-
-
 def held(data_dir: Path) -> dict[str, dict[str, Any]]:
     """Paintings a preview would have started, waiting for Paint now."""
-    got = N.read_json(data_dir / "held_paints.json", {})
-    return got if isinstance(got, dict) else {}
-
-
-def _hold(data_dir: Path, job: dict[str, Any], cell_id: str = "") -> None:
-    with _HELD_LOCK:
-        got = held(data_dir)
-        if job["key"] in got:
-            return
-        got[job["key"]] = {**job, "cell": cell_id}
-        for old in list(got)[: max(0, len(got) - HELD_MAX)]:
-            del got[old]
-        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
-
-
-def _unhold(data_dir: Path, keys: list[str] | None = None) -> None:
-    with _HELD_LOCK:
-        got = held(data_dir)
-        for k in keys if keys is not None else list(got):
-            got.pop(k, None)
-        N.write(data_dir / "held_paints.json", json.dumps(got).encode())
-
-
-def purge_all(data_dir: Path) -> dict[str, int]:
-    """Every painting, every earlier version, every painting's cut-out and
-    every held painting, gone; the day's count stays. What was removed."""
-    P.stop_all(data_dir)
-    M.stop_all()
-    folder = P.gen_dir(data_dir)
-    out = {"paintings": 0, "versions": 0, "cut_outs": 0}
-    with contextlib.suppress(OSError):
-        for f in folder.iterdir():
-            if f.is_file() and f.name != "budget.json":
-                if f.suffix == ".jpg":
-                    out["paintings"] += 1
-                f.unlink()
-        arch = folder / "archive"
-        if arch.is_dir():
-            for f in arch.iterdir():
-                if f.suffix == ".jpg":
-                    out["versions"] += 1
-                f.unlink()
-        masks = data_dir / "masks"
-        if masks.is_dir():
-            for f in masks.iterdir():
-                if f.name.startswith("g_"):
-                    if f.name.endswith(".cut.png"):
-                        out["cut_outs"] += 1
-                    f.unlink()
-    _unhold(data_dir)
-    T.waiting_over(0)
-    return out
-
-
-def start_held(data_dir: Path, fal_key: str, cap: int, subject: str = "") -> int:
-    """Paint what previews held back, for one cell when ``subject`` is given (the
-    dashboard whose card was pressed, not every dashboard ever previewed),
-    within the daily limit. The number started."""
-    folder = P.gen_dir(data_dir)
-    jobs = [
-        j for j in held(data_dir).values() if not subject or j.get("subject") == subject
-    ]
-    _unhold(data_dir, [j["key"] for j in jobs])
-    ready = [
-        j
-        for j in jobs
-        if not (folder / f"{j['key']}.jpg").exists()
-        and P.state(j["key"], folder) == "none"
-    ]
-    room = max(0, cap - P.budget_used(folder))
-    begin = ready[:room]
-    P.start_batch(begin, data_dir, fal_key, cap)
-    T.waiting_over(len(begin))
-    return len(begin)
-
-
-WANTED_S = 30 * 86400
-
-
-def _note_dashboard(
-    data_dir: Path,
-    ctx: dict[str, Any],
-    subject: str,
-    gen: dict[str, Any],
-    shown: list[dict[str, Any]],
-) -> None:
-    """Which dashboard a panel's sheet is on and the paintings it wants, so the
-    paintings page can group them by dashboard. Kept for WANTED_S. A dashboard
-    is its name, style and subject: a new style is a tab of its own; an edit
-    to the dashboard makes a new subject, and the old one goes once it has
-    not rendered for an hour, two sheets on one dashboard rendering together
-    both staying."""
-    path = data_dir / "dashboards.json"
-    now = time.time()
-    got = N.read_json(path, {})
-    got = got if isinstance(got, dict) else {}
-    got = {
-        k: v
-        for k, v in got.items()
-        if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S
-    }
-    name = " ".join(str(ctx.get("page_name") or "").split())[:80]
-    rid = f"{name}|{gen['style']}|{subject}"
-    got = {
-        k: v
-        for k, v in got.items()
-        if not (
-            v.get("name") == name
-            and v.get("style") == gen["style"]
-            and k != rid
-            and now - float(v.get("at") or 0) > 3600
-        )
-    }
-    got[rid] = {
-        "name": name,
-        "icon": str(ctx.get("page_icon") or "")[:40],
-        "style": gen["style"],
-        "style_label": P.style_of(gen["style"])[0],
-        "keys": list(dict.fromkeys(gen.get("keys") or [])),
-        # the painting each key asks for, so Render now can paint exactly what this sheet wants
-        "jobs": {
-            k: j
-            for k, j in (gen.get("jobs") or {}).items()
-            if k in set(gen.get("keys") or [])
-        },
-        "species": [r["name"] for r in shown if r.get("sci")][:60],
-        "at": now,
-    }
-    N.write(path, json.dumps(got, ensure_ascii=False).encode())
+    return P.ART.held(Path(data_dir))
 
 
 def dashboards(data_dir: Path) -> list[dict[str, Any]]:
-    """The dashboards with a sheet on a panel in the last WANTED_S, latest first."""
-    got = N.read_json(data_dir / "dashboards.json", {})
-    if not isinstance(got, dict):
-        return []
-    now = time.time()
-    out = [
-        {**v, "id": k}
-        for k, v in got.items()
-        if isinstance(v, dict)
-        and now - float(v.get("at") or 0) < WANTED_S
-        and isinstance(v.get("keys"), list)
-    ]
-    return sorted(out, key=lambda v: -float(v.get("at") or 0))
+    """The dashboards with a sheet on a panel lately, latest first."""
+    return P.ART.dashboards(Path(data_dir))
+
+
+def _settings_for(cap: Any) -> dict[str, Any]:
+    """The widget's settings, or an older caller's count of paintings a day."""
+    if isinstance(cap, dict):
+        return cap
+    return {"gen_daily_cap": 0 if int(cap) >= P.UNLIMITED else int(cap)}
 
 
 def render_now(
-    data_dir: Path, fal_key: str, cap: int, who: str = ""
+    data_dir: Path, fal_key: str, cap: Any, who: str = ""
 ) -> tuple[int, int]:
-    """Paint what the panels are missing: the paintings the sheets rendered to
-    a panel in the last ON_FRAME_S asked for and do not have, nothing more;
-    one dashboard's when ``who`` names it. (started, found)."""
-    folder = P.gen_dir(data_dir)
-    now = time.time()
-    jobs: dict[str, dict[str, Any]] = {}
-    for d in dashboards(data_dir):
-        if who and d["id"] != who:
-            continue
-        if not who and now - float(d.get("at") or 0) > ON_FRAME_S:
-            continue
-        for key, job in (d.get("jobs") or {}).items():
-            if isinstance(job, dict) and job.get("key") == key:
-                jobs.setdefault(key, {**job, "origin": "panel"})
-    ready = [j for j in jobs.values() if not (folder / f"{j['key']}.jpg").exists()]
-    room = max(0, cap - P.budget_used(folder))
-    begin = [j for j in ready if P.state(j["key"], folder) == "none"][:room]
-    P.start_batch(begin, data_dir, fal_key, cap)
-    return len(begin), len(ready)
+    """Paint what the panels' sheets ask for and do not have. (started, found)."""
+    return P.ART.render_now(Path(data_dir), fal_key, _settings_for(cap), who)
 
 
-LIVE_S = 6
+def start_held(data_dir: Path, fal_key: str, cap: Any, subject: str = "") -> int:
+    return P.ART.start_held(Path(data_dir), fal_key, _settings_for(cap), subject)
 
 
-def _live_refresh(states: dict[str, int]) -> int:
-    """Seconds after which the editor should ask for the sheet again, while a
-    painting or a cut-out is on the way; 0 once there is nothing to wait for."""
-    # a held painting keeps the editor coming back too: the preview that comes back with the
-    # same settings SETTLE_S later is what starts them
-    busy = ("running", "paint_running", "paint_waiting", "deferred", "paint_held")
-    return LIVE_S if any(states.get(k) for k in busy) else 0
+def purge_all(data_dir: Path) -> dict[str, int]:
+    """Every painting, every earlier version, every cut-out and every held
+    painting, gone; the day's spend stays. What was removed."""
+    cut_outs = len(M.CUTS.listing(Path(data_dir)))
+    out = P.ART.purge(Path(data_dir))
+    return {
+        "paintings": out["pictures"],
+        "versions": out["versions"],
+        "cut_outs": cut_outs,
+    }
 
 
-def _live_pending(states: dict[str, int]) -> int:
-    """How many paintings and cut-outs are still on the way for this page: what
-    a Tesserae warm-ahead learns its seconds per painting from. A held painting
-    is not counted, since nothing is working on it."""
-    return sum(
-        states.get(k, 0)
-        for k in ("running", "paint_running", "paint_waiting", "deferred")
+def _live(mask_states: dict[str, int], *arts: Any) -> dict[str, int]:
+    """``live_refresh_s`` and ``live_pending``: the editors ask again while a
+    painting or a cut-out is on the way, and a warm-ahead learns the pace."""
+    busy = any(mask_states.get(k) for k in ("running", "deferred")) or any(
+        a.busy for a in arts if a
     )
+    pending = sum(mask_states.get(k, 0) for k in ("running", "deferred")) + sum(
+        a.pending for a in arts if a
+    )
+    return {"live_refresh_s": LIVE_S if busy else 0, "live_pending": pending}
 
 
-def _unpainted_hint(n: int, states: dict[str, int], has_key: bool) -> str:
+def _unpainted_hint(n: int, art: Any, has_key: bool) -> str:
     """What an only-painted sheet says while none of its species is painted."""
     many = f"{n} specimen{'' if n == 1 else 's'}"
     if not has_key:
-        return "Painting needs a fal.ai key in the plugin settings."
-    if states.get("paint_held"):
+        return "Painting needs a fal.ai key: this widget's own, or the app's under Settings."
+    if art is not None and art.states.get("held"):
         return f"{many} waiting for Paint now in the job tray."
-    if states.get("paint_capped"):
-        return f"{many} to paint; today's painting limit is used up."
+    if art is not None and art.states.get("capped"):
+        return f"{many} to paint; to-day's painting budget is spent."
     return f"Painting {many}. The sheet fills in as each one finishes."
 
 
@@ -1072,29 +883,28 @@ def _attach_pictures(
     token: str,
     data_dir: Path,
     levels: str,
-    fal_key: str = "",
+    cuts: Any = None,
     gen: dict[str, Any] | None = None,
     classic: bool = False,
     budget_s: float = 7.0,
 ) -> dict[str, int]:
     """Each row's best picture to-day, up the ladder: its AI painting when
     one is kept (``gen`` carries the style, the custom words, the day's
-    dapper species and the cap; a few new paintings are started per refresh),
-    else a classic plate (Fugleramme's, cut already), else a plate from the
-    bundled pack, else the record's own photo (or BirdNET-Go's
-    thumbnail, or, for a bird, the first openly licensed iNaturalist photo).
-    Then its cut-out: a kept mask rides along as ``cut``; a picture without
-    one starts a mask job in the background. Returns the states counted."""
+    dapper species and the bound collection ``art``, which starts what is
+    missing within Tesserae's rules), else a classic plate (Fugleramme's, cut
+    already), else a plate from the bundled pack, else the record's own photo
+    (or BirdNET-Go's thumbnail, or, for a bird, the first openly licensed
+    iNaturalist photo). Then its cut-out: a kept one rides along as ``cut``;
+    a picture without one is asked of the ``cuts`` collection. Returns the
+    states counted."""
     pack = _pack(data_dir)
     deadline = time.time() + budget_s
     states: dict[str, int] = {}
-    folder = P.gen_dir(data_dir) if gen else None
-    started_paint = 0
     only_painted = bool(gen and gen.get("only_painted"))
+    art = gen.get("art") if gen else None
 
     def wanted(row: dict[str, Any]) -> dict[str, Any] | None:
-        nonlocal started_paint
-        if not gen or not row.get("sci"):
+        if not gen or art is None or not row.get("sci"):
             return None
         dapper = row["sci"] == gen.get("dapper_sci")
         hero = bool(gen.get("hero_sci")) and row["sci"] == gen["hero_sci"]
@@ -1109,28 +919,18 @@ def _attach_pictures(
             hero,
         )
         gen.setdefault("keys", []).append(key)
-        gen.setdefault("jobs", {})[key] = _paint_job(key, row, gen)
-        pic = _painting(key, data_dir, levels, HERO_PX if hero else PICTURE_PX)
-        if pic:
-            states["painted"] = states.get("painted", 0) + 1
-            # a hero on its painted backdrop is the whole plate, kept entire
-            pic["whole"] = hero
-            return pic
-        go, why = P.may_start(key, folder, fal_key, gen["cap"])
-        if go and gen.get("hold"):
-            _hold(data_dir, _paint_job(key, row, gen), str(gen.get("cell") or ""))
-            why = "held"
-        elif go and started_paint < int(gen.get("per_fetch") or P.per_fetch()):
-            job = _paint_job(key, row, gen)
-            if P.start(job, data_dir, fal_key, gen["cap"]):
-                started_paint += 1
-                why = "running"
-                _unhold(data_dir, [key])
-        elif go:
-            why = "waiting"
-        states["paint_" + (why or "waiting")] = (
-            states.get("paint_" + (why or "waiting"), 0) + 1
-        )
+        payload, title = _paint_payload(row, gen)
+        got = art.request(key, payload, title=title)
+        if got.ready:
+            pic = _painting(key, data_dir, levels, HERO_PX if hero else PICTURE_PX)
+            if pic:
+                states["painted"] = states.get("painted", 0) + 1
+                # a hero on its painted backdrop is the whole plate, kept entire
+                pic["whole"] = hero
+                return pic
+            return None
+        st = {"painting": "running"}.get(got.state, got.state)
+        states["paint_" + st] = states.get("paint_" + st, 0) + 1
         return None
 
     def best(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -1146,7 +946,7 @@ def _attach_pictures(
             or _photo(row, base, token, data_dir, levels)
         )
 
-    # paintings are decided in order (a few new ones per refresh); the rest side by side
+    # paintings are decided in order (a few new ones per preview); the rest side by side
     painted = [wanted(r) for r in rows]
     with ThreadPoolExecutor(max_workers=6) as pool:
         pics = list(
@@ -1155,7 +955,6 @@ def _attach_pictures(
                 zip(rows, painted, strict=True),
             )
         )
-    started = 0
     for row, pic in zip(rows, pics, strict=True):
         row["pic"] = pic
         if not pic or not pic.get("key"):
@@ -1164,18 +963,18 @@ def _attach_pictures(
         if st == "ready":
             pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
             st = "ready" if pic["cut"] else "failed"
-        elif st == "none" and fal_key and started < M.per_fetch():
-            try:
-                picture = Path(pic["file"]).read_bytes()
-            except OSError:
-                picture = b""
-            if picture and M.start(
-                pic["key"], picture, data_dir, fal_key, str(row.get("name") or "")
-            ):
-                started += 1
-                st = "running"
-        elif st == "none" and not fal_key:
-            st = "no_key"
+        elif st == "none":
+            if cuts is not None and pic.get("file"):
+                got = cuts.request(
+                    pic["key"],
+                    {"source": pic["file"]},
+                    title=str(row.get("name") or pic["key"]),
+                )
+                st = {"painting": "running", "ready": "ready"}.get(got.state, got.state)
+                if st == "ready":
+                    pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
+            else:
+                st = "no_key"
         if st == "bad" and pic.get("kind") != "painting":
             # the model could not find one specimen in it: a soft oval, never a
             # rectangle. A painting is on plain white paper by construction, so
@@ -1677,30 +1476,26 @@ def fetch(
         )
 
     # --- pictures, sizes, labels ------------------------------------------
-    P.configure(settings)
-    M.configure(settings)
+    P.adopt_old_install(
+        data_dir
+    )  # a 0.8.x install's gen/ and masks/ become the collections', once
+    M.adopt_old_masks(data_dir)
     gen = None
+    art = None
     if pictures == "gen":
+        art = P.ART.open(
+            ctx, settings, subject=subject
+        )  # Tesserae's store, budget, queue and hold
         gen = {
             "style": art_style,
             "how": how,
             "model": model,
-            "cap": P.daily_cap(settings),
             "only_painted": only_painted,
             "ref_mode": "photo",
             "pose": pose,
             "plants": P.plants_for(*place[:2]) if place else [],
-            # a preview looks: a painting it would start is held for Paint now in the job tray,
-            # so an option tried in the editor costs nothing; one that stands SETTLE_S is kept
-            "hold": bool(ctx.get("preview"))
-            and not preview_settled(data_dir, cell_id, time.time()),
-            "cell": cell_id,
-            "subject": subject,
-            "origin": "preview" if ctx.get("preview") else "panel",
+            "art": art,
             "keys": [],
-            # a panel paints everything its sheet needs at once, within the daily limit; a
-            # preview a few at a time
-            "per_fetch": P.per_fetch() if ctx.get("preview") else SHEET_MAX,
             "hero_sci": (shown[0].get("sci") or "")
             if layout == "hero" and hero_frame == "painted"
             else "",
@@ -1713,28 +1508,34 @@ def fetch(
             if dapper
             else "",
         }
+    # cut-outs are cheap and start even from a preview, a few at a time
+    cuts = M.CUTS.open({**ctx, "settled": True}, settings, subject=subject)
     mask_states = _attach_pictures(
-        shown, base, token, data_dir, levels, fal_key, gen, True
+        shown, base, token, data_dir, levels, cuts, gen, True
     )
-    if gen:
+    if gen and art is not None:
         # one line in the server log per fetch, so a panel without paintings can be read:
-        # how many were painted, started, held for Paint now, waiting on the limit or a key
+        # how many were painted, started, held for Paint now, waiting on the budget or a key
         logger.info(
             "specimen_sheet: %s render, %d species, painted %d, started %d, held %d, capped %d, no key %d, failed %d",
             "preview" if ctx.get("preview") else "panel",
             len(shown),
-            mask_states.get("painted", 0),
-            mask_states.get("paint_running", 0),
-            mask_states.get("paint_held", 0),
-            mask_states.get("paint_capped", 0),
-            mask_states.get("paint_no_key", 0),
-            mask_states.get("paint_failed", 0),
+            art.states.get("ready", 0),
+            art.started,
+            art.states.get("held", 0),
+            art.states.get("capped", 0),
+            art.states.get("no_key", 0),
+            art.states.get("failed", 0),
         )
     unpainted = 0
     if gen and only_painted:
         unpainted = len([r for r in shown if not r.get("pic")])
         shown = [r for r in shown if r.get("pic")]
         if not shown:
+            if art is not None and not demo:
+                art.finish(ctx, facet=gen["style"])
+            if not demo:
+                cuts.finish(ctx)
             return out(
                 state="painting",
                 title=title,
@@ -1742,11 +1543,10 @@ def fetch(
                 period=period,
                 species_total=species_total,
                 excluded=excluded,
-                hint=_unpainted_hint(unpainted, mask_states, bool(fal_key)),
+                hint=_unpainted_hint(unpainted, art, bool(art.key if art else fal_key)),
                 sky=sky,
                 demo=demo,
-                live_refresh_s=_live_refresh(mask_states),
-                live_pending=_live_pending(mask_states),
+                **_live(mask_states, art, cuts),
             )
     _size(shown, sizing)
     if layout == "hero" and hero_note and shown and shown[0].get("sci"):
@@ -1788,49 +1588,27 @@ def fetch(
         status.append(f"{n} cut-out{'' if n == 1 else 's'} on the way")
     if mask_states.get("no_key"):
         notices.append(NOTE_NO_KEY)
-    if gen:
-        want = len([r for r in shown if r.get("sci")])
-        have = mask_states.get("painted", 0)
-        if mask_states.get("paint_running") or mask_states.get("paint_waiting"):
-            status.append(
-                f"painting {have + 1} of {want}" if have < want else "painting"
-            )
-        if mask_states.get("paint_held"):
-            n = len([j for j in held(data_dir).values() if j.get("subject") == subject])
-            status.append(
-                f"{n} painting{'' if n == 1 else 's'} waiting for Paint now in the job tray"
-            )
-            T.waiting(
-                n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings), subject)
-            )
-        if mask_states.get("paint_no_key"):
-            notices.append(P.NOTE_NO_KEY)
-        if mask_states.get("paint_capped"):
-            status.append(P.NOTE_GEN_CAP.format(cap=gen["cap"]))
-        if mask_states.get("paint_failed"):
-            n = mask_states["paint_failed"]
-            notices.append(
-                f"{n} painting{'' if n == 1 else 's'} failed; tried again later"
-            )
+    if mask_states.get("no_host") and P.NEEDS_HOST not in notices:
+        notices.append(P.NEEDS_HOST)
+    if gen and art is not None:
+        status.extend(art.status())
+        notices.extend(n_ for n_ in art.notes() if n_ not in notices)
     scene_out = None
-    if gen and arrangement == "scene":
+    if gen and art is not None and arrangement == "scene":
         scene_out, more = _scene(
-            shown,
-            gen,
-            scene_text,
-            fidelity,
-            scene_every,
-            fal_key,
-            data_dir,
-            levels,
-            ctx,
+            shown, gen, scene_text, fidelity, scene_every, art, data_dir, levels, ctx
         )
         status += [m_ for m_ in more if m_ not in status]
-    # a preview in a new look drops what the previews of this cell held or queued for the old one
-    if gen and ctx.get("preview") and not demo:
-        cull(data_dir, subject, set(gen.get("keys") or []))
-    if gen and not demo and not ctx.get("preview"):
-        _note_dashboard(data_dir, ctx, subject, gen, shown)
+    # a preview in a new look drops what the previews of this cell held or queued for the
+    # old one; a panel records what its sheet asked for, so the paintings page groups it
+    if gen and art is not None and not demo:
+        art.finish(
+            ctx,
+            facet=gen["style"],
+            extra={"species": [r["name"] for r in shown if r.get("sci")][:60]},
+        )
+    if not demo:
+        cuts.finish(ctx)
     return out(
         title=title,
         area=area,
@@ -1844,14 +1622,13 @@ def fetch(
         day_page=day_page,
         year=year,
         state="asleep" if asleep else "ok",
-        live_refresh_s=_live_refresh(mask_states),
-        live_pending=_live_pending(mask_states),
         credits=([scene_out["pic"]["credit"]] if scene_out else credits),
         notices=notices,
         status=status,
         demo=demo,
         sheet=stored_sheet(data_dir, cell_id),
         scene=scene_out,
+        **_live(mask_states, art, cuts),
     )
 
 
@@ -1861,7 +1638,7 @@ def _scene(
     text: str,
     fidelity: str,
     every_h: int,
-    fal_key: str,
+    art: Any,
     data_dir: Path,
     levels: str,
     ctx: dict[str, Any],
@@ -1869,10 +1646,10 @@ def _scene(
     """The sheet repainted as one scene: once every specimen is painted and
     cut out, their cut-outs go on a collage and fal.ai repaints it in the
     scene ``text`` asks for, at most once per ``every_h`` hours for a given
-    line-up. Until then the sheet shows. (the scene payload or None, status)."""
-    folder = P.gen_dir(data_dir)
+    line-up. A line-up is a key of its own, so the last scene shows (marked
+    stale) while the new one paints. (the scene payload or None, status)."""
     keys = [
-        str(r["pic"]["key"])[2:]
+        str(r["pic"]["key"])
         for r in shown
         if (r.get("pic") or {}).get("kind") == "painting"
     ]
@@ -1894,66 +1671,66 @@ def _scene(
     if not made:
         return None, ["composing the scene"]
     scene_id = hashlib.sha1(text.encode()).hexdigest()[:12]
-    skey = P.scene_key(
+    base_key = P.scene_key(
         gen["style"], scene_id, fidelity, gen.get("model", P.DEFAULT_MODEL)
     )
+    skey = f"{base_key}--t_{made['tag'][:8]}"
     gen.setdefault("keys", []).append(skey)
-    meta = N.read_json(folder / f"{skey}.json", {})
-    meta = meta if isinstance(meta, dict) else {}
-    have = (folder / f"{skey}.jpg").exists()
-    age_h = (time.time() - float(meta.get("made") or 0)) / 3600 if have else 1e9
+    c = P.ART
+    if art.c is None:
+        return None, [P.NEEDS_HOST]
+    have_now = c.path(skey, data_dir) is not None
+    # the newest scene of this base, whatever its line-up, shows meanwhile
+    current, current_made = "", 0
+    with contextlib.suppress(OSError):
+        for f in c.folder(data_dir).glob(f"{base_key}--t_*.jpg"):
+            made_at = int(c.meta(f.stem, data_dir).get("made") or f.stat().st_mtime)
+            if made_at > current_made:
+                current, current_made = f.stem, made_at
+    age_h = (time.time() - current_made) / 3600 if current else 1e9
     status: list[str] = []
-    if not have or (meta.get("tag") != made["tag"] and age_h >= every_h):
-        go, why = P.may_start(skey, folder, fal_key, gen["cap"])
-        if go:
-            by_key = {str(r["pic"]["key"])[2:]: r for r in shown}
-            boxes = [b for b in made["boxes"] if b["key"] in by_key]
-            job = {
-                "key": skey,
-                "style": gen["style"],
-                "how": gen.get("how") or "",
-                "model": gen.get("model", P.DEFAULT_MODEL),
-                "name": "the scene",
-                "sci": "",
-                "kind": "",
-                "collage": made["path"],
-                "tag": made["tag"],
-                "boxes": [
-                    {
-                        **b,
-                        "name": by_key[b["key"]]["name"],
-                        "sci": by_key[b["key"]]["sci"],
-                    }
-                    for b in boxes
-                ],
-                "names": [
-                    f"the {by_key[b['key']]['name']} ({by_key[b['key']]['sci']})"
-                    for b in boxes
-                ],
-                "scene_text": text,
-                "plants": ", ".join(gen.get("plants") or []),
-                "fidelity": fidelity,
-                "aspect": "4:3" if ratio >= 1 else "3:4",
-                "subject": gen.get("subject", ""),
-                "origin": gen.get("origin", "panel"),
-            }
-            if gen.get("hold"):
-                _hold(data_dir, job, str(gen.get("cell") or ""))
-                status.append("the scene waits for Paint now")
-            else:
-                P.start(job, data_dir, fal_key, gen["cap"])
-                status.append("composing the scene (fal.ai)")
-        elif why == "running":
-            status.append("composing the scene (fal.ai)")
-        elif why == "capped":
-            status.append(P.NOTE_GEN_CAP.format(cap=gen["cap"]))
-    if not have:
+    if not have_now and (not current or age_h >= every_h):
+        by_key = {str(r["pic"]["key"]): r for r in shown}
+        boxes = [b for b in made["boxes"] if b["key"] in by_key]
+        payload = {
+            "style": gen["style"],
+            "how": gen.get("how") or "",
+            "model": gen.get("model", P.DEFAULT_MODEL),
+            "name": "the scene",
+            "sci": "",
+            "kind": "",
+            "collage": made["path"],
+            "tag": made["tag"],
+            "boxes": [
+                {**b, "name": by_key[b["key"]]["name"], "sci": by_key[b["key"]]["sci"]}
+                for b in boxes
+            ],
+            "names": [
+                f"the {by_key[b['key']]['name']} ({by_key[b['key']]['sci']})"
+                for b in boxes
+            ],
+            "scene_text": text,
+            "plants": ", ".join(gen.get("plants") or []),
+            "fidelity": fidelity,
+            "aspect": "4:3" if ratio >= 1 else "3:4",
+        }
+        got = art.request(skey, payload, title="the scene")
+        word = {
+            "held": "the scene waits for Paint now",
+            "painting": "composing the scene (fal.ai)",
+            "waiting": "composing the scene (fal.ai)",
+            "capped": f"AI pictures: to-day's budget of {P.dollars(art.cap)} is spent; more to-morrow.",
+            "failed": f"the scene failed: {got.why}"
+            if got.why
+            else "the scene failed; tried again later",
+        }.get(got.state, "")
+        if word:
+            status.append(word)
+    show = skey if have_now else current
+    if not show:
         return None, status
-    try:
-        raw = (folder / f"{skey}.jpg").read_bytes()
-    except OSError:
-        return None, status
-    src = N.render(raw, 1600, None, folder / f"{skey}_1600.jpg", levels)
+    meta = c.meta(show, data_dir)
+    src = c.url(show, data_dir, px=1600, levels=levels)
     if not src:
         return None, status
     return {
@@ -1961,7 +1738,11 @@ def _scene(
             "src": src,
             "kind": "scene",
             "credit": str(meta.get("credit") or "AI scene (fal.ai)"),
-            "paper": N.paper_of(src, folder / f"{skey}.paper", levels),
+            "paper": N.paper_of(
+                src,
+                c.folder(data_dir) / "derived" / f"{show}__paper_{levels}.txt",
+                levels,
+            ),
         },
         "items": [
             {"name": b.get("name", ""), "sci": b.get("sci", ""), "box": b["box"]}
@@ -1969,7 +1750,7 @@ def _scene(
             if isinstance(b, dict) and b.get("box")
         ],
         "fidelity": str(meta.get("fidelity") or fidelity),
-        "stale": meta.get("tag") != made["tag"],
+        "stale": show != skey,
     }, status
 
 
@@ -2048,220 +1829,81 @@ _SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,7}")
 _ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z0-9_]{1,24}){0,7})__(\d{8}-\d{6})")
 
 
-def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
-    """Everything the paintings page shows, read from gen/: one entry per
-    painting key (a species in a style, perched or in flight, dapper or not)."""
-    folder = P.gen_dir(data_dir)
-    entries: dict[str, dict[str, Any]] = {}
-
-    def entry(key: str) -> dict[str, Any]:
-        parts = key.split("--")
-        style = parts[1] if len(parts) > 1 else "gould"
-        return entries.setdefault(
-            key,
-            {
-                "slug": key,
-                "name": parts[0].replace("_", " ").capitalize(),
-                "sci": "",
-                "kind": "",
-                "style": style,
-                "style_label": P.style_of(style)[0],
-                "flight": "flight" in parts[2:],
-                "dapper": "dapper" in parts[2:],
-                "model": next(
-                    (
-                        P.MODELS[x[2:]]["label"]
-                        for x in parts[2:]
-                        if x.startswith("m_") and x[2:] in P.MODELS
-                    ),
-                    "",
-                ),
-                "active": None,
-                "archive": [],
-                "error": None,
-                "cut": "none",
-                "cut_why": "",
-            },
-        )
-
-    def take(e: dict[str, Any], meta: Any) -> None:
-        if not isinstance(meta, dict):
-            return
-        if meta.get("name"):
-            e["name"] = str(meta["name"])
-        e["sci"] = e["sci"] or str(meta.get("sci") or "")
-        e["kind"] = e["kind"] or str(meta.get("kind") or "")
-        if meta.get("how") and not e.get("how"):
-            e["how"] = str(meta["how"])
-            words = e["how"]
-            e["style_label"] = "Custom: " + (
-                words[:44].rstrip() + "…" if len(words) > 45 else words
-            )
-
-    with contextlib.suppress(OSError):
-        for f in folder.glob("*.jpg"):
-            if (
-                not _SLUG_RE.fullmatch(f.stem)
-                or not (folder / f"{f.stem}.json").exists()
-            ):
-                continue  # a resized copy, not a painting
-            meta = N.read_json(folder / f"{f.stem}.json", {})
-            e = entry(f.stem)
-            take(e, meta)
-            e["active"] = {
-                "file": f.name,
-                "credit": str(meta.get("credit") or ""),
-                "made": time.strftime(
-                    "%d %b %Y",
-                    time.localtime(int(meta.get("made") or f.stat().st_mtime)),
-                ),
-            }
-            e["cut"] = M.state(f"g_{f.stem}", data_dir)
-            e["cut_why"] = (
-                M.why_bad(f"g_{f.stem}", data_dir) if e["cut"] == "bad" else ""
-            )
-        for f in sorted((folder / "archive").glob("*.jpg"), reverse=True):
-            m = _ARCHIVED_RE.fullmatch(f.stem)
-            if not m:
-                continue
-            e = entry(m.group(1))
-            take(e, N.read_json(f.with_suffix(".json"), {}))
-            e["archive"].append(
-                {
-                    "file": f.name,
-                    "made": datetime.strptime(m.group(2), "%Y%m%d-%H%M%S").strftime(
-                        "%d %b"
-                    ),
-                }
-            )
-        for f in folder.glob("*.err"):
-            if _SLUG_RE.fullmatch(f.stem):
-                err = N.read_json(f, {})
-                e = entry(f.stem)
-                take(e, err)
-                e["error"] = (
-                    str(err.get("why") or "failed")
-                    if isinstance(err, dict)
-                    else "failed"
-                )
-    with P._LOCK:
-        running = set(P._PAINTING)
-    known = {N.slug(sci): (n, sci, k) for n, sci, k in known_species(data_dir)}
-    for key, e in entries.items():
-        e["painting"] = key in running
-        base = key.split("--")[0]
-        if base in known:
-            name, sci, kind = known[base]
-            e["sci"] = e["sci"] or sci
-            e["kind"] = e["kind"] or kind
-            if e["name"].lower() == base.replace("_", " "):
-                e["name"] = name
-    ordered = sorted(
-        entries.values(),
-        key=lambda e: (e["active"] is None, e["name"].lower(), e["style"]),
-    )
-    # the paintings grouped by the dashboard showing them, a tab per style (a dashboard
-    # rendered in more than one style, or with more than one sheet), in the sheet's order
-    groups: list[dict[str, Any]] = []
-    by_name: dict[str, dict[str, Any]] = {}
-    placed: set[str] = set()
-    now = time.time()
-    for d in dashboards(data_dir):
-        have = [entries[k] for k in d["keys"] if k in entries]
-        missing = len(
-            [k for k in d["keys"] if k not in entries or not entries[k]["active"]]
-        )
-        if not have and not missing:
-            continue
-        placed.update(e["slug"] for e in have)
-        grp = by_name.get(d.get("name") or "")
-        if grp is None:
-            grp = {"name": d.get("name") or "", "icon": d.get("icon") or "", "tabs": []}
-            by_name[grp["name"]] = grp
-            groups.append(grp)
-        grp["tabs"].append(
-            {
-                "id": d["id"],
-                "style": d.get("style") or "",
-                "style_label": d.get("style_label") or "",
-                "paintings": have,
-                "missing": missing,
-                "on_panel": now - float(d.get("at") or 0) <= ON_FRAME_S,
-            }
-        )
-    rest = [e for e in ordered if e["slug"] not in placed]
+def known_for_page(data_dir: Path) -> dict[str, Any]:
+    """What the widget's own forms on the paintings page need."""
     return {
-        "paintings": ordered,
-        "groups": groups,
-        "rest": rest,
-        "used": P.budget_used(folder),
-        "cap": cap,
-        "masks_used": M.budget_used(data_dir),
-        "running": sorted(running),
-        "styles": [(k, v[0]) for k, v in P.STYLES.items()],
-        "custom_example": P.CUSTOM_EXAMPLE,
-        "style_tree": _style_tree(ordered),
-        "style_groups": [
-            (g, [(k, P.STYLES[k][0]) for k in ids]) for g, ids in P.STYLE_GROUPS
+        "known": known_species(data_dir),
+        "kinds": [
+            (
+                k,
+                K.KINDS[k][0]
+                if isinstance(K.KINDS.get(k), tuple)
+                else str(K.KINDS.get(k, k)),
+            )
+            for k in K.KINDS
         ],
-        "kinds": [(k, v[0]) for k, v in K.KINDS.items()],
-        "models": [(k, f"{v['label']} ({v['cost']})") for k, v in P.MODELS.items()],
+        "style_groups": P.STYLE_GROUPS,
+        "models": [
+            (k, f"{v['label']} ({v.get('cost', '')})".replace(" ()", ""))
+            for k, v in P.MODELS.items()
+        ],
     }
 
 
-def _style_tree(paintings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The styles, each with a painting to preview it: the
-    preview species' if there is one, else the newest painting in that style."""
-    shown: dict[str, tuple[bool, str]] = {}
-    for e in paintings:
-        if not e.get("active") or e.get("dapper") or e.get("flight"):
-            continue
-        mine = e["sci"] == P.PREVIEW_SPECIES[1] and not e.get("model")
-        if e["style"] not in shown or (mine and not shown[e["style"]][0]):
-            shown[e["style"]] = (mine, e["active"]["file"])
-    return [
-        {
-            "name": "Styles",
-            "subs": [
-                {
-                    "name": group,
-                    "styles": [
-                        {
-                            "id": i,
-                            "label": P.STYLES[i][0],
-                            "file": shown.get(i, (False, ""))[1],
-                        }
-                        for i in ids
-                    ],
-                }
-                for group, ids in P.STYLE_GROUPS
-            ],
-        }
-    ]
+P.ART.extra_template = "specimen_sheet/artwork_extra.html"
+P.ART.extra_context = known_for_page
 
 
-def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
-    if not e["sci"]:
-        return None
-    job = {
-        "key": e["slug"],
-        "style": e["style"],
-        "name": e["name"],
-        "sci": e["sci"],
-        "kind": e.get("kind") or "",
-    }
-    if e.get("how"):
-        job["how"] = e["how"]
-    for part in e["slug"].split("--")[2:]:
-        if part.startswith("m_"):
-            job["model"] = part[2:]
-    return job
+def _recut(key: str, data_dir: Path) -> str:
+    """Cut a painting out again: the kept cut-out goes and a new one is asked for."""
+    path = P.ART.path(key, data_dir)
+    if path is None:
+        return "There is no painting under that key."
+    M.CUTS.delete(key, data_dir)
+    settings = _settings_now()
+    fal_key = _fal.resolve_key(settings) if _fal is not None else ""
+    if not fal_key:
+        return "No fal.ai key: add one to this widget's settings, or the app's under Settings."
+    job = M.CUTS.job(
+        key,
+        {"source": str(path)},
+        str(P.ART.meta(key, data_dir).get("name") or key),
+        data_dir,
+        fal_key,
+    )
+    if M.CUTS.start(job, M.CUTS.cap(settings)):
+        return "Cutting the painting out again; it takes a few seconds."
+    return "That cut-out is already being made."
+
+
+def _settings_now() -> dict[str, Any]:
+    try:
+        from flask import current_app
+
+        store = current_app.config.get("SETTINGS_STORE")
+        registry = current_app.config.get("PLUGIN_REGISTRY")
+        if store is None or registry is None:
+            return {}
+        for pl in registry.plugins.values():
+            with contextlib.suppress(OSError, AttributeError):
+                if Path(pl.path).resolve() == HERE:
+                    got = store.get_for_runtime(
+                        "plugins", pl.id, pl.manifest.get("settings", [])
+                    )
+                    return got if isinstance(got, dict) else {}
+    except Exception:  # noqa: BLE001
+        pass
+    return {}
+
+
+P.ART.action("recut", "Cut out again", _recut)
 
 
 def blueprint() -> Any:
-    """The page under Widgets: every AI painting this widget has made, with
-    earlier versions kept, buttons to paint, repaint, cut out again, delete
-    or bring back a version, and the species seen for the Leave out lists."""
+    """The widget's own routes beside the paintings page Tesserae renders
+    for it (Plugins › Specimen Sheet opens that page): a species painted by
+    name, a style previewed, a style's paintings retired, and the sheet a
+    page packed, sent back for the next render."""
     from flask import (
         Blueprint,
         abort,
@@ -2269,10 +1911,7 @@ def blueprint() -> Any:
         flash,
         jsonify,
         redirect,
-        render_template,
         request,
-        send_from_directory,
-        url_for,
     )
 
     bp = Blueprint("specimen_sheet_admin", __name__, template_folder="templates")
@@ -2298,75 +1937,116 @@ def blueprint() -> Any:
         got = store.get_for_runtime("plugins", pl.id, pl.manifest.get("settings", []))
         return got if isinstance(got, dict) else {}
 
-    def fal_key() -> str:
-        return str(settings().get("fal_api_key") or "").strip()
-
-    def cap() -> int:
-        P.configure(settings())
-        M.configure(settings())
-        return P.daily_cap(settings())
-
-    def slug_or_404(slug: str) -> str:
-        if not _SLUG_RE.fullmatch(slug):
-            abort(404)
-        return slug
-
     def back() -> Any:
-        return redirect(url_for("specimen_sheet_admin.index"))
+        return redirect(P.ART.href)
 
-    def start(job: dict[str, Any], label: str) -> None:
-        key = fal_key()
-        folder = P.gen_dir(data_dir())
-        if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
-        elif P.budget_used(folder) >= cap():
+    def start(key: str, payload: dict[str, Any], label: str) -> None:
+        fal_key = _fal.resolve_key(settings()) if _fal is not None else ""
+        dd = data_dir()
+        cap = P.ART.cap(settings())
+        if not fal_key:
             flash(
-                f"To-day's limit of {cap()} paintings is used up. Raise it in this widget's settings.",
+                "Add a fal.ai key to this widget's settings, or the app's under Settings, first.",
                 "warn",
             )
-        elif not P.start(job, data_dir(), key, cap()):
+        elif cap < P.UNLIMITED and P.ART.budget_used(dd) >= cap:
+            flash(
+                f"To-day's painting budget of {P.dollars(cap)} is spent. Raise it in this widget's settings.",
+                "warn",
+            )
+        elif P.ART.path(key, dd) is not None:
+            flash(
+                f"{label} is painted already; use Paint again on its card for another version.",
+                "info",
+            )
+        elif not P.ART.start(P.ART.job(key, payload, label, dd, fal_key), cap):
             flash(f"{label} is already being painted.", "info")
         else:
-            with contextlib.suppress(OSError):
-                (folder / f"{job['key']}.err").unlink()
+            P.ART.clear_error(key, dd)
             flash(
-                f"Painting {label}. It takes up to a minute; this page redraws when it lands.",
+                f"Painting {label}. It takes up to a minute; the page redraws when it lands.",
                 "success",
             )
 
     @bp.get("/")
-    def index() -> str:
-        dd = data_dir()
-        return render_template(
-            "specimen_sheet/admin.html",
-            g=_gallery(dd, cap()),
-            known=known_species(dd),
-            has_key=bool(fal_key()),
-            wanted=len(dashboards(dd)),
-            held=len(held(dd)),
-        )
+    def index() -> Any:
+        return redirect(P.ART.href)
 
-    @bp.post("/paint-held")
-    def paint_held() -> Any:
-        key = fal_key()
-        if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
+    @bp.post("/paint")
+    def paint() -> Any:
+        sci = request.form.get("sci", "").strip()
+        name = request.form.get("name", "").strip()
+        known = {s_: (n, k) for n, s_, k in known_species(data_dir())}
+        kind = request.form.get("kind", "").strip()
+        if not name:
+            name = known.get(sci, (sci, ""))[0]
+        if not kind:
+            kind = known.get(sci, ("", "Aves"))[1]
+        if not sci or not re.fullmatch(r"[A-Z][a-z-]+ [a-z-]+( [a-z-]+)?", sci):
+            flash("Give the scientific name, for example Gymnorhina tibicen.", "warn")
             return back()
-        n = start_held(data_dir(), key, cap())
-        flash(
-            f"Painting {n} held painting{'' if n == 1 else 's'}."
-            if n
-            else "Nothing is waiting, or to-day's limit is used up.",
-            "success" if n else "info",
+        if kind not in K.KINDS:
+            kind = "Aves"
+        style = _choice(request.form.get("style"), P.STYLE_IDS)
+        payload: dict[str, Any] = {
+            "style": style,
+            "name": name[:80],
+            "sci": sci,
+            "kind": kind,
+        }
+        if style == "custom":
+            how = (
+                " ".join(request.form.get("how", "").split())[:800] or P.CUSTOM_EXAMPLE
+            )
+            payload["style"] = P.register_custom(how)
+            payload["how"] = how
+        payload["model"] = P.model_of(request.form.get("model"))
+        key = P.key_for(
+            sci,
+            payload["style"],
+            kind,
+            request.form.get("dapper") == "1",
+            payload["model"],
+        )
+        start(key, payload, f"the {name[:80]}")
+        return back()
+
+    @bp.post("/preview")
+    def preview() -> Any:
+        style = request.form.get("style", "")
+        if style not in P.STYLES:
+            abort(400)
+        name, sci, kind = P.PREVIEW_SPECIES
+        payload = {
+            "style": style,
+            "name": name,
+            "sci": sci,
+            "kind": kind,
+            "model": P.DEFAULT_MODEL,
+        }
+        start(
+            P.key_for(sci, style, kind, False, P.DEFAULT_MODEL),
+            payload,
+            f"a preview in {P.STYLES[style][0]}",
         )
         return back()
 
-    @bp.post("/purge")
-    def purge() -> Any:
-        got = purge_all(data_dir())
+    @bp.post("/style-delete")
+    def style_delete() -> Any:
+        style = request.form.get("art", "")
+        if style not in P.STYLES and not P._CUSTOM_RE.fullmatch(style):
+            abort(400)
+        dd = data_dir()
+        n = 0
+        for e in P.ART.listing(dd):
+            if e["facet"] == style:
+                P.ART.archive(e["key"], dd)
+                n += 1
         flash(
-            f"Gone: {got['paintings']} painting{'' if got['paintings'] == 1 else 's'}, {got['versions']} earlier version{'' if got['versions'] == 1 else 's'}, {got['cut_outs']} cut-out{'' if got['cut_outs'] == 1 else 's'}.",
-            "success",
+            f"{n} painting{'' if n == 1 else 's'} moved to earlier versions. The widget paints them again as the species are shown, within the budget."
+            if n
+            else "No paintings in that style.",
+            "success" if n else "info",
         )
         return back()
 
@@ -2403,315 +2083,5 @@ def blueprint() -> Any:
             abort(400)
         store_sheet(data_dir(), cell, key[:200], sheet)
         return jsonify({"ok": True})
-
-    @bp.get("/progress")
-    def progress() -> Any:
-        got = P.progress(P.gen_dir(data_dir()), cap(), bool(fal_key()))
-        got["cutting"] = M.running()
-        return jsonify(got)
-
-    def stopped(n: int) -> Any:
-        if "application/json" in request.headers.get("Accept", ""):
-            return jsonify({"stopped": n})
-        flash(
-            f"Stopped {n} render{'s' if n != 1 else ''}."
-            if n
-            else "Nothing was being rendered.",
-            "info",
-        )
-        return back()
-
-    @bp.post("/stop")
-    def stop_one() -> Any:
-        key = request.form.get("key", "")
-        if not key:
-            abort(400)
-        n = int(P.stop(key, data_dir())) + int(M.stop(key))
-        return stopped(min(n, 1))
-
-    @bp.post("/stop-all")
-    def stop_all() -> Any:
-        return stopped(P.stop_all(data_dir()) + M.stop_all())
-
-    @bp.get("/painting/<path:name>")
-    def image(name: str) -> Any:
-        folder = P.gen_dir(data_dir())
-        stem, _, ext = name.rpartition(".")
-        if ext != "jpg":
-            abort(404)
-        if _SLUG_RE.fullmatch(stem):
-            return send_from_directory(folder, name)
-        if stem.startswith("archive/") and _ARCHIVED_RE.fullmatch(stem[8:]):
-            return send_from_directory(folder / "archive", name[8:])
-        abort(404)
-
-    @bp.post("/paint")
-    def paint() -> Any:
-        sci = request.form.get("sci", "").strip()
-        name = request.form.get("name", "").strip()
-        known = {s_: (n, k) for n, s_, k in known_species(data_dir())}
-        kind = request.form.get("kind", "").strip()
-        if not name:
-            name = known.get(sci, (sci, ""))[0]
-        if not kind:
-            kind = known.get(sci, ("", "Aves"))[1]
-        if not sci or not re.fullmatch(r"[A-Z][a-z-]+ [a-z-]+( [a-z-]+)?", sci):
-            flash("Give the scientific name, for example Gymnorhina tibicen.", "warn")
-            return back()
-        if kind not in K.KINDS:
-            kind = "Aves"
-        style = _choice(request.form.get("style"), P.STYLE_IDS)
-        job: dict[str, Any] = {
-            "style": style,
-            "name": name[:80],
-            "sci": sci,
-            "kind": kind,
-        }
-        if style == "custom":
-            how = (
-                " ".join(request.form.get("how", "").split())[:800] or P.CUSTOM_EXAMPLE
-            )
-            job["style"] = P.register_custom(how)
-            job["how"] = how
-        job["model"] = P.model_of(request.form.get("model"))
-        job["key"] = P.key_for(
-            sci, job["style"], kind, request.form.get("dapper") == "1", job["model"]
-        )
-        start(job, f"the {name[:80]}")
-        return back()
-
-    @bp.post("/preview")
-    def preview() -> Any:
-        style = request.form.get("style", "")
-        if style not in P.STYLES:
-            abort(400)
-        name, sci, kind = P.PREVIEW_SPECIES
-        job = {
-            "style": style,
-            "name": name,
-            "sci": sci,
-            "kind": kind,
-            "model": P.DEFAULT_MODEL,
-        }
-        job["key"] = P.key_for(sci, style, kind, False, job["model"])
-        start(job, f"a preview in {P.STYLES[style][0]}")
-        return back()
-
-    @bp.post("/<slug>/repaint")
-    def repaint(slug: str) -> Any:
-        slug = slug_or_404(slug)
-        e = next(
-            (e for e in _gallery(data_dir(), cap())["paintings"] if e["slug"] == slug),
-            None,
-        )
-        job = _job_for(e) if e else None
-        if job is None:
-            abort(404)
-        start(job, f"the {e['name']}")
-        return back()
-
-    @bp.post("/<slug>/recut")
-    def recut(slug: str) -> Any:
-        slug = slug_or_404(slug)
-        dd = data_dir()
-        img = P.gen_dir(dd) / f"{slug}.jpg"
-        if not img.exists():
-            abort(404)
-        for f in M.folder(dd).glob(f"g_{slug}.*"):
-            with contextlib.suppress(OSError):
-                f.unlink()
-        key = fal_key()
-        if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
-        elif M.start(f"g_{slug}", img.read_bytes(), dd, key, slug, force=True):
-            flash("Cutting the painting out again; it takes a few seconds.", "success")
-        else:
-            flash(
-                "That cut-out is already being made, or to-day's cut-outs are used up.",
-                "info",
-            )
-        return back()
-
-    @bp.post("/<slug>/delete")
-    def delete(slug: str) -> Any:
-        slug = slug_or_404(slug)
-        folder = P.gen_dir(data_dir())
-        for f in (
-            folder / f"{slug}.jpg",
-            folder / f"{slug}.json",
-            folder / f"{slug}.err",
-        ):
-            with contextlib.suppress(OSError):
-                f.unlink()
-        P.drop_derived(folder, slug)
-        flash(
-            "Painting deleted. With AI paintings on, the species is painted again the next time it is shown.",
-            "success",
-        )
-        return back()
-
-    def retire(keys: list[str]) -> int:
-        folder = P.gen_dir(data_dir())
-        done = 0
-        for key in keys:
-            if not _SLUG_RE.fullmatch(key) or not (folder / f"{key}.jpg").exists():
-                continue
-            P.archive(folder, key)
-            with contextlib.suppress(OSError):
-                (folder / f"{key}.err").unlink()
-            done += 1
-        return done
-
-    def retired(n: int) -> None:
-        if n:
-            flash(
-                f"{n} painting{'' if n == 1 else 's'} moved to earlier versions. The widget paints them again as the species are shown, within the daily limit.",
-                "success",
-            )
-        else:
-            flash("No paintings were selected.", "info")
-
-    @bp.post("/budget-reset")
-    def budget_reset() -> Any:
-        N.write(
-            P.gen_dir(data_dir()) / "budget.json",
-            json.dumps({time.strftime("%Y-%m-%d"): 0}).encode(),
-        )
-        flash("To-day's count is back to 0.", "success")
-        return back()
-
-    @bp.post("/bulk-delete")
-    def bulk_delete() -> Any:
-        retired(retire(list(dict.fromkeys(request.form.getlist("keys")))))
-        return back()
-
-    @bp.post("/render-now")
-    def render_now_route() -> Any:
-        key = fal_key()
-        if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
-            return back()
-        n, found = render_now(data_dir(), key, cap(), request.form.get("who", ""))
-        if not found:
-            flash(
-                "Nothing is missing: every painting the panels' sheets ask for is there. A sheet that has not rendered to a panel yet asks for nothing here.",
-                "info",
-            )
-        elif not n:
-            flash(
-                f"To-day's limit of {cap()} paintings is used up, or those are already being painted. Raise it in this widget's settings.",
-                "warn",
-            )
-        else:
-            flash(
-                f"Painting {n} species, a few at a time. Watch the job tray at the bottom right.",
-                "success",
-            )
-        return back()
-
-    @bp.post("/style-paint")
-    def style_paint() -> Any:
-        style = request.form.get("art", "")
-        if style not in P.STYLES:
-            abort(400)
-        key = fal_key()
-        if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
-            return back()
-        folder = P.gen_dir(data_dir())
-        jobs = []
-        for name, sci, kind in on_frame_species(data_dir()):
-            k = P.key_for(sci, style, kind)
-            if not (folder / f"{k}.jpg").exists():
-                jobs.append(
-                    {"key": k, "style": style, "name": name, "sci": sci, "kind": kind}
-                )
-        label = P.STYLES[style][0]
-        room = max(0, cap() - P.budget_used(folder))
-        if not on_frame_species(data_dir()):
-            flash(
-                "No species has been on a frame in the last three days; the sheet has to show some first.",
-                "info",
-            )
-        elif not jobs:
-            flash(
-                f"Every species on a frame already has a painting in {label}.", "info"
-            )
-        elif not room:
-            flash(
-                f"To-day's limit of {cap()} paintings is used up. Raise it in this widget's settings.",
-                "warn",
-            )
-        elif not P.start_batch(jobs, data_dir(), key, cap()):
-            flash(
-                f"{label} is already being painted for the species on a frame.", "info"
-            )
-        else:
-            n = min(len(jobs), room)
-            flash(
-                f"Painting {n} species in {label}, a few at a time"
-                + (
-                    f"; {len(jobs) - n} more wait for to-morrow's limit"
-                    if len(jobs) > n
-                    else ""
-                )
-                + ". This page redraws as they arrive.",
-                "success",
-            )
-        return back()
-
-    @bp.post("/style-delete")
-    def style_delete() -> Any:
-        style = request.form.get("art", "")
-        if style not in P.STYLES and not P._CUSTOM_RE.fullmatch(style):
-            abort(400)
-        keys = [
-            e["slug"]
-            for e in _gallery(data_dir(), cap())["paintings"]
-            if e["style"] == style and e["active"]
-        ]
-        retired(retire(keys))
-        return back()
-
-    @bp.post("/<slug>/clear-error")
-    def clear_error(slug: str) -> Any:
-        slug = slug_or_404(slug)
-        with contextlib.suppress(OSError):
-            (P.gen_dir(data_dir()) / f"{slug}.err").unlink()
-        return back()
-
-    @bp.post("/archive/<stem>/use")
-    def use_archived(stem: str) -> Any:
-        import os
-
-        m = _ARCHIVED_RE.fullmatch(stem)
-        if not m:
-            abort(404)
-        folder = P.gen_dir(data_dir())
-        slug, src = m.group(1), folder / "archive" / f"{stem}.jpg"
-        if not src.exists():
-            abort(404)
-        meta = N.read_json(src.with_suffix(".json"), {})
-        if (folder / f"{slug}.jpg").exists():
-            P.archive(folder, slug)
-        os.replace(src, folder / f"{slug}.jpg")
-        if not isinstance(meta, dict) or not meta:
-            meta = {"credit": "AI painting", "made": int(time.time())}
-        N.write(folder / f"{slug}.json", json.dumps(meta).encode())
-        with contextlib.suppress(OSError):
-            src.with_suffix(".json").unlink()
-        P.drop_derived(folder, slug)
-        flash("That version is the species' painting again.", "success")
-        return back()
-
-    @bp.post("/archive/<stem>/delete")
-    def delete_archived(stem: str) -> Any:
-        if not _ARCHIVED_RE.fullmatch(stem):
-            abort(404)
-        arch = P.gen_dir(data_dir()) / "archive"
-        for f in (arch / f"{stem}.jpg", arch / f"{stem}.json"):
-            with contextlib.suppress(OSError):
-                f.unlink()
-        return back()
 
     return bp

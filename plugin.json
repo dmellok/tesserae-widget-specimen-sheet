@@ -1,7 +1,8 @@
 {
   "tesserae_compat": "1.x",
+  "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1865,11 +1866,15 @@
       "help": "With a key, every plate and photo on the sheet is cut out by a background-removal model on fal.ai (BiRefNet, well under a cent a picture, once per picture, 300 a day unless you change the cut-out limit below), so a plate with a painted sky or a photo arrives on the page as the specimen alone. Without one, pictures on plain paper are cut by their edges and photos are shown as soft ovals. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
     },
     {
-      "name": "gen_daily_cap",
-      "type": "number",
-      "label": "AI paintings per day",
-      "default": 12,
-      "help": "The most new AI paintings made in a day, at about US$0.04 each. Any whole number; 0 is no limit. Paintings are kept, so a place's species only cost once; raise this to fill a sheet faster."
+      "name": "gen_daily_usd",
+      "type": "slider",
+      "label": "Painting budget per day",
+      "default": 4,
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "unit": "US$",
+      "help": "The most the widget may spend on new paintings in a day, at the models' listed prices (US$4 is about a hundred Nano Banana paintings). 0 is no limit. Paintings are kept, so a species in a style only costs once."
     },
     {
       "name": "gen_per_refresh",
@@ -1886,11 +1891,15 @@
       "help": "How many paintings fal.ai works on side by side (1 to 8). The others wait in the queue on the paintings page."
     },
     {
-      "name": "mask_daily_cap",
-      "type": "number",
-      "label": "Cut-outs per day",
-      "default": 300,
-      "help": "The most background-removal cut-outs made in a day, well under a cent each. Any whole number; 0 is no limit."
+      "name": "mask_daily_usd",
+      "type": "slider",
+      "label": "Cut-out budget per day",
+      "default": 6,
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "unit": "US$",
+      "help": "Cut-outs (BiRefNet on fal.ai) cost about two cents each. 0 is no limit."
     },
     {
       "name": "mask_per_refresh",

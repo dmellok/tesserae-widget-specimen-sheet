@@ -1,0 +1,53 @@
+{% from "_components.html" import card_head %}
+{{ card_head('Paint a species', icon_name='paint-brush', level=2, blurb='One species now, from an openly licensed photo, about US$0.04; or a style previewed on a Great Tit.') }}
+<form method="post" action="{{ url_for('specimen_sheet_admin.paint') }}" class="form ss-paint">
+  <div class="field">
+    <label for="ss-sci">Species</label>
+    <input type="text" id="ss-sci" name="sci" list="ss-known" placeholder="Gymnorhina tibicen" required autocomplete="off">
+    <datalist id="ss-known">{% for name, sci, kind in known %}<option value="{{ sci }}">{{ name }}</option>{% endfor %}</datalist>
+    <p class="field-help">The scientific name; every species the widget has shown is suggested.</p>
+  </div>
+  <div class="field">
+    <label for="ss-name">Common name</label>
+    <input type="text" id="ss-name" name="name" placeholder="Australian Magpie">
+  </div>
+  <div class="field">
+    <label for="ss-kind">Kind</label>
+    <select id="ss-kind" name="kind"><option value="">As the widget knows it</option>{% for value, label in kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+  </div>
+  <div class="field">
+    <label for="ss-style">Style</label>
+    <select id="ss-style" name="style">{% for group, styles in style_groups %}{% for value in styles %}<option value="{{ value }}">{{ c.facet_label(value) }}</option>{% endfor %}{% endfor %}<option value="custom">Your own prompt</option></select>
+  </div>
+  <div class="field">
+    <label for="ss-how">Your own prompt</label>
+    <input type="text" id="ss-how" name="how" placeholder="a chalk pastel drawing on grey paper">
+  </div>
+  <div class="field">
+    <label for="ss-model">Model</label>
+    <select id="ss-model" name="model">{% for value, label in models %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+    <label class="ss-check"><input type="checkbox" name="dapper" value="1"> Dapper: a hat, perhaps a monocle</label>
+  </div>
+  <div class="ss-row">
+    <button type="submit" {% if not has_key %}disabled{% endif %}><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint</button>
+  </div>
+</form>
+<div class="ss-row ss-tools">
+  <form method="post" action="{{ url_for('specimen_sheet_admin.preview') }}" class="form form--inline">
+    <label for="ss-prev">Preview a style</label>
+    <select id="ss-prev" name="style">{% for group, styles in style_groups %}{% for value in styles %}<option value="{{ value }}">{{ c.facet_label(value) }}</option>{% endfor %}{% endfor %}</select>
+    <button type="submit" class="ghost" {% if not has_key %}disabled{% endif %}>Paint a Great Tit in it</button>
+  </form>
+  <form method="post" action="{{ url_for('specimen_sheet_admin.style_delete') }}" class="form form--inline" onsubmit="return confirm('Move every painting in that style to earlier versions?');">
+    <label for="ss-del">Retire a style</label>
+    <select id="ss-del" name="art">{% for group, styles in style_groups %}{% for value in styles %}<option value="{{ value }}">{{ c.facet_label(value) }}</option>{% endfor %}{% endfor %}</select>
+    <button type="submit" class="ghost danger">Retire</button>
+  </form>
+</div>
+<style>
+  .ss-paint { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 14px; align-items: end; }
+  .ss-paint .field { margin: 0; }
+  .ss-row { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-top: 12px; }
+  .ss-tools form { display: flex; gap: 8px; align-items: center; margin: 0; }
+  .ss-check { display: block; margin-top: 6px; font-size: 13px; }
+</style>

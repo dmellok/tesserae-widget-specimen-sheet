@@ -2,8 +2,9 @@
 background-removal model (fal.ai's BiRefNet), the mask is checked before
 it is trusted, and a bad one is thrown away so the page falls back to a
 vignette rather than printing a rectangle. A mask is made once per picture
-in a background thread and kept beside it under data/masks/. Loaded by
-server.py by path.
+and kept as a cut-out PNG in Tesserae's "cutouts" collection for the widget
+(``app.artwork``, 0.463 and later), which queues, budgets and lists them.
+Loaded by server.py by path.
 
 The check (plan, section 3.2): the foreground must cover 4 to 85 percent
 of the frame, touch at most two of the frame's edges, and have one piece
@@ -17,10 +18,7 @@ import base64
 import contextlib
 import importlib.util
 import io
-import json
 import sys
-import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -41,32 +39,89 @@ def _sibling(name: str) -> Any:
 
 N = _sibling("net")
 
-FAL_CUTOUT = "https://fal.run/fal-ai/birefnet/v2"
-FAL_TIMEOUT_S = 90
-PER_FETCH = 6  # masks started per refresh
-DAILY_CAP = 300  # masks a day; they cost well under a cent each
-_cap = DAILY_CAP
-_per_fetch = PER_FETCH
-RETRY_S = 6 * 3600  # after the model or the network failed
-BAD_S = 30 * 86400  # after the model answered but the mask was no good
+try:
+    from app import artwork  # Tesserae 0.463+
+except ImportError:  # an older Tesserae: no cut-outs are made, the sheet says why
+    artwork = None  # type: ignore[assignment]
+
+P = _sibling("paint")
+
 MIN_COVER, MAX_COVER = 0.04, 0.85
 MAX_EDGES = 2
 MAIN_SHARE = 0.35  # the largest piece must hold this much of the foreground (a plate's second bird is dropped)
 HOLE_SHARE = 0.01  # holes smaller than this share of the piece are filled
+BAD = "bad: "  # the model answered, the mask was no good: kept as the failure's reason
 
-_RUNNING: set[str] = set()
-_STOPS: dict[str, threading.Event] = {}
-_SINCE: dict[str, tuple[float, str]] = {}
-_HOLD_UNTIL = 0.0  # after a stop, the sheet starts no cut-outs of its own until then
-HOLD_S = 1800
-_LOCK = threading.Lock()
-_TRAY = _sibling("tray").Batch("cutout", "Cutting out pictures")
+CUTS: Any = (
+    artwork.Collection(
+        "specimen_sheet",
+        "cutouts",
+        make=lambda job: make(job),
+        label="Specimen Sheet",
+        title="Cutting out pictures",
+        budget_setting="mask_daily_usd",
+        count_setting="mask_daily_cap",
+        parallel_setting="mask_parallel",
+        per_preview_setting="mask_per_refresh",
+        default_cents=600,
+        typical_cents=2,
+        parallel=6,
+        per_preview=6,
+        retry_after_s=24 * 3600,
+        parent=P.ART,
+        keep_versions=False,
+    )
+    if artwork is not None
+    else P._NoArtwork("cutouts")
+)
 
 
 def folder(data_dir: Path) -> Path:
-    f = data_dir / "masks"
-    f.mkdir(parents=True, exist_ok=True)
-    return f
+    return CUTS.folder(Path(data_dir))
+
+
+def adopt_old_masks(data_dir: Path) -> bool:
+    """Before 0.9.0 the cut-outs lived in masks/ as ``<key>.cut.png`` (``g_``
+    before a painting's key) with ``.bad`` and ``.miss`` markers; they become
+    the collection's, under the painting's own key. Once."""
+    data_dir = Path(data_dir)
+    old = data_dir / "masks"
+    new = CUTS.folder(data_dir)
+    if new.exists() or not old.is_dir():
+        return False
+    new.mkdir(parents=True, exist_ok=True)
+    import json
+    import os
+    import time
+
+    with contextlib.suppress(OSError):
+        for f in old.iterdir():
+            name = f.name
+            key = name[2:] if name.startswith("g_") else name
+            if name.endswith(".cut.png"):
+                os.replace(f, new / (key[: -len(".cut.png")] + ".png"))
+            elif name.endswith(".bad"):
+                got = N.read_json(f, {})
+                why = (
+                    str(got.get("why") or "no good")
+                    if isinstance(got, dict)
+                    else "no good"
+                )
+                N.write(
+                    new / (key[: -len(".bad")] + ".err"),
+                    json.dumps({"why": BAD + why, "at": int(time.time())}).encode(),
+                )
+            elif (
+                name.endswith(".cut_gray16.png")
+                or name.endswith(".cut_gray4.png")
+                or name.endswith(".cut_mono.png")
+            ):
+                pass  # converted copies: made again as needed
+    with contextlib.suppress(OSError):
+        for f in old.iterdir():
+            f.unlink()
+        old.rmdir()
+    return True
 
 
 # ----------------------------------------------------------------------
@@ -250,225 +305,76 @@ def cut_png(picture: bytes, alpha: Any) -> bytes:
 def state(key: str, data_dir: Path) -> str:
     """'ready', 'bad' (the model answered, the mask was no good), 'failed'
     (recently), 'running' or 'none'."""
-    f = folder(data_dir)
-    with _LOCK:
-        if key in _RUNNING:
-            return "running"
-    if (f / f"{key}.cut.png").exists():
-        return "ready"
-    with contextlib.suppress(OSError):
-        if time.time() - (f / f"{key}.bad").stat().st_mtime < BAD_S:
-            return "bad"
-    with contextlib.suppress(OSError):
-        if time.time() - (f / f"{key}.miss").stat().st_mtime < RETRY_S:
-            return "failed"
-    return "none"
+    st = CUTS.state(key, data_dir)
+    if st == "failed" and CUTS.why_failed(key, data_dir).startswith(BAD):
+        return "bad"
+    return st
 
 
 def why_bad(key: str, data_dir: Path) -> str:
-    got = N.read_json(folder(data_dir) / f"{key}.bad", {})
-    return str(got.get("why") or "") if isinstance(got, dict) else ""
+    why = CUTS.why_failed(key, data_dir)
+    return why[len(BAD) :] if why.startswith(BAD) else why
 
 
 def cut_url(key: str, data_dir: Path, levels: str = "colour") -> str | None:
     """The kept cut-out as a PNG data URL, converted for the panel."""
-    f = folder(data_dir)
-    path = f / f"{key}.cut.png"
-    if levels != "colour":
-        conv = f / f"{key}.cut_{levels}.png"
-        if not conv.exists() and path.exists():
-            with contextlib.suppress(Exception):
-                from PIL import Image, ImageOps
-
-                im = Image.open(path).convert("RGBA")
-                a = im.getchannel("A")
-                cutoff = {"gray16": 0.5, "gray4": 1.0, "mono": 1.0}.get(levels, 1.0)
-                g = ImageOps.autocontrast(im.convert("L"), cutoff=cutoff)
-                if levels == "mono":
-                    g = g.point([round(255 * (i / 255) ** 0.8) for i in range(256)])
-                out = g.convert("RGBA")
-                out.putalpha(a)
-                buf = io.BytesIO()
-                out.save(buf, "PNG", optimize=True)
-                N.write(conv, buf.getvalue())
-        path = conv
-    try:
-        return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
-    except OSError:
-        return None
-
-
-def _whole(value: Any, default: int, low: int, high: int) -> int:
-    try:
-        if str(value).strip() != "":
-            return min(high, max(low, int(float(value))))
-    except (TypeError, ValueError):
-        pass
-    return default
+    return CUTS.url(key, data_dir, px=4000, levels=levels, cut=True) or None
 
 
 def configure(settings: dict[str, Any] | None) -> None:
-    """Take the owner's cut-out limits: masks a day (0 for no limit) and started per refresh."""
-    global _cap, _per_fetch
-    s = settings or {}
-    _cap = _whole(s.get("mask_daily_cap"), DAILY_CAP, 0, 100000) or 10**9
-    _per_fetch = _whole(s.get("mask_per_refresh"), PER_FETCH, 1, 100)
+    CUTS.configure(settings)
 
 
 def per_fetch() -> int:
-    return _per_fetch
+    return CUTS.per_preview()
 
 
 def budget_used(data_dir: Path) -> int:
-    got = N.read_json(folder(data_dir) / "budget.json", {})
-    if isinstance(got, dict) and got.get("day") == time.strftime("%Y-%m-%d"):
-        return int(got.get("used") or 0)
-    return 0
+    return CUTS.budget_used(Path(data_dir))
 
 
-def _spend(data_dir: Path) -> None:
-    # several masks are made side by side: the count is read and written under the lock
-    with _LOCK:
-        N.write(
-            folder(data_dir) / "budget.json",
-            json.dumps(
-                {"day": time.strftime("%Y-%m-%d"), "used": budget_used(data_dir) + 1}
-            ).encode(),
+def make(job: Any) -> tuple[bytes, dict[str, Any]]:
+    """Ask the model for the picture's mask, check it, keep the cut-out: on a
+    worker thread, through the collection's budget. The payload names the
+    picture's file (``source``)."""
+    source = str(job.payload.get("source") or "")
+    try:
+        picture = Path(source).read_bytes() if source else b""
+    except OSError:
+        picture = b""
+    if not picture:
+        raise P._art_error(
+            "the picture to cut out has gone; it is fetched again on the next refresh"
         )
-
-
-def make(
-    key: str,
-    picture: bytes,
-    data_dir: Path,
-    fal_key: str,
-    stop: threading.Event | None = None,
-) -> str | None:
-    """Ask the model for the picture's mask, check it, keep the cut-out.
-    Blocking; run through ``start``. Returns None, or why there is no cut."""
-    f = folder(data_dir)
-    body = json.dumps(
-        {
-            "image_url": "data:image/jpeg;base64," + base64.b64encode(picture).decode(),
-            "model": "General Use (Light)",
-            "operating_resolution": "1024x1024",
-            "output_format": "png",
-            "refine_foreground": True,
-        }
-    ).encode()
-    if stop is not None and stop.is_set():
-        return "stopped"
-    _spend(data_dir)
-    answer, err = N.get_json(
-        FAL_CUTOUT,
-        fal_key,
-        auth_scheme="Key",
-        body=body,
-        timeout=FAL_TIMEOUT_S,
-        detail=True,
+    raw = job.fal.generate(
+        "birefnet",
+        "",
+        refs=["data:image/jpeg;base64," + base64.b64encode(picture).decode()],
     )
-    url = (
-        str((answer.get("image") or {}).get("url") or "")
-        if isinstance(answer, dict)
-        else ""
-    )
-    raw = None
-    if url and not (stop is not None and stop.is_set()):
-        raw, err = N.http(url, accept="image/*", timeout=60)
-    if stop is not None and stop.is_set():
-        return "stopped"
-    if not raw or raw[:2] != b"\x89P":
-        (f / f"{key}.miss").touch()
-        return f"the cut-out model answered {err or 'nothing'}"
+    if raw[:2] != b"\x89P":
+        raise P._art_error("the cut-out model answered no mask")
     try:
         from PIL import Image
 
         alpha = Image.open(io.BytesIO(raw)).convert("RGBA").getchannel("A")
     except Exception as exc:  # noqa: BLE001
-        (f / f"{key}.miss").touch()
-        return f"the mask would not decode ({exc})"
+        raise P._art_error(f"the mask would not decode ({exc})") from exc
     cleaned, why = check(alpha)
     if cleaned is None:
-        N.write(
-            f / f"{key}.bad", json.dumps({"why": why, "at": int(time.time())}).encode()
-        )
-        return why
-    N.write(f / f"{key}.cut.png", cut_png(picture, cleaned))
-    with contextlib.suppress(OSError):
-        (f / f"{key}.bad").unlink()
-    with contextlib.suppress(OSError):
-        (f / f"{key}.miss").unlink()
-    return None
+        raise P._art_error(BAD + why)
+    return cut_png(picture, cleaned), {"title": job.title, "source": source}
 
 
-def start(
-    key: str,
-    picture: bytes,
-    data_dir: Path,
-    fal_key: str,
-    label: str = "",
-    force: bool = False,
-) -> bool:
-    """Make the mask in the background; False when one is already under way,
-    the day's allowance is used, or cut-outs were just stopped (``force`` is
-    for a cut-out someone asked for by name)."""
-    if not fal_key or budget_used(data_dir) >= _cap:
-        return False
-    if not force and time.time() < _HOLD_UNTIL:
-        return False
-    with _LOCK:
-        if key in _RUNNING:
-            return False
-        _RUNNING.add(key)
-        stop = _STOPS[key] = threading.Event()
-        _SINCE[key] = (time.time(), label or key)
-        _TRAY.add(key, stop_all)
-
-    def run() -> None:
-        try:
-            make(key, picture, data_dir, fal_key, stop)
-        except Exception as exc:  # noqa: BLE001 - a thread must not die loudly
-            if not stop.is_set():
-                with contextlib.suppress(OSError):
-                    (folder(data_dir) / f"{key}.miss").touch()
-                N.write(folder(data_dir) / f"{key}.err", str(exc).encode())
-        finally:
-            with _LOCK:
-                if _STOPS.get(key) is stop:
-                    _RUNNING.discard(key)
-                    _STOPS.pop(key, None)
-                    _SINCE.pop(key, None)
-            _TRAY.done(key)
-
-    threading.Thread(target=run, name=f"specimen-mask-{key[:8]}", daemon=True).start()
-    return True
+def stop(key: str, data_dir: Path) -> bool:
+    return CUTS.stop(key, Path(data_dir))
 
 
-def stop(key: str) -> bool:
-    """Stop one cut-out: its call to fal.ai finishes by itself and is dropped."""
-    with _LOCK:
-        ev = _STOPS.pop(key, None)
-        _RUNNING.discard(key)
-        _SINCE.pop(key, None)
-    if ev is None:
-        return False
-    ev.set()
-    _TRAY.done(key, stopped=True)
-    return True
+def stop_all(data_dir: Path) -> int:
+    return CUTS.stop_all(Path(data_dir))
 
 
-def stop_all() -> int:
-    global _HOLD_UNTIL
-    with _LOCK:
-        keys = list(_STOPS)
-    _HOLD_UNTIL = time.time() + HOLD_S
-    return sum(1 for k in keys if stop(k))
-
-
-def running() -> list[dict[str, Any]]:
-    now = time.time()
-    with _LOCK:
-        return [
-            {"key": k, "name": name, "seconds": int(now - since)}
-            for k, (since, name) in _SINCE.items()
-        ]
+def running(data_dir: Path) -> list[dict[str, Any]]:
+    return [
+        {"key": r["key"], "name": r["title"], "seconds": r["seconds"]}
+        for r in CUTS.progress(Path(data_dir), None)["running"]
+    ]

@@ -14,7 +14,6 @@ import importlib.util
 import io
 import json
 import math
-import os
 import re
 import sys
 import threading
@@ -41,8 +40,134 @@ def _sibling(name: str) -> Any:
 N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
-T = _sibling("tray")
 C = _sibling("classic")
+
+try:
+    from app import artwork  # Tesserae 0.463+: the pictures a widget makes and keeps
+except (
+    ImportError
+):  # an older Tesserae: the sheet still draws, without paintings, and says why
+    artwork = None  # type: ignore[assignment]
+
+NEEDS_HOST = "AI paintings need Tesserae 0.463 or later; this server is older, so the plates and photographs show."
+
+
+class _NoArt:
+    """What a collection opens to on a Tesserae without app.artwork: every
+    request answers no_host, nothing is started, the note says why."""
+
+    key = ""
+    preview = False
+    settled = True
+    subject = ""
+    cell = ""
+    cap = 0
+    started = 0
+    pending = 0
+    busy = False
+    c = None
+
+    def __init__(self) -> None:
+        self.states: dict[str, int] = {}
+        self.asked: dict[str, Any] = {}
+        self.data_dir = Path(".")
+
+    def request(
+        self, key: str, payload: dict[str, Any], *, title: str = "", want: bool = True
+    ) -> Any:
+        from types import SimpleNamespace
+
+        self.states["no_host"] = self.states.get("no_host", 0) + 1
+        return SimpleNamespace(
+            key=key,
+            state="no_host",
+            ready=False,
+            path=None,
+            meta={},
+            why=NEEDS_HOST,
+            credit="",
+        )
+
+    def url(self, *a: Any, **k: Any) -> str:
+        return ""
+
+    def picture(self, *a: Any, **k: Any) -> None:
+        return None
+
+    def live(self) -> dict[str, int]:
+        return {"live_refresh_s": 0, "live_pending": 0}
+
+    def notes(self) -> list[str]:
+        return [NEEDS_HOST] if self.states.get("no_host") else []
+
+    def status(self) -> list[str]:
+        return []
+
+    def finish(self, *a: Any, **k: Any) -> None:
+        return None
+
+
+class _NoArtwork:
+    """A collection on an older Tesserae: it opens to _NoArt and answers
+    nothing to everything else (the paintings page does not exist there)."""
+
+    actions: list[Any] = []
+    extra_template: Any = None
+    extra_context: Any = None
+    _DEFAULTS: dict[str, Any] = {
+        "state": "none",
+        "why_failed": "",
+        "held": {},
+        "dashboards": [],
+        "listing": [],
+        "errors": [],
+        "versions": [],
+        "budget_used": 0,
+        "cap": 0,
+        "adopt": False,
+        "purge": {"pictures": 0, "versions": 0},
+        "render_now": (0, 0),
+        "start_held": 0,
+        "progress": {
+            "running": [],
+            "queued": [],
+            "finished": [],
+            "used": 0,
+            "cap": 0,
+            "used_text": "",
+            "cap_text": "",
+            "held": 0,
+        },
+    }
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.href = "/plugins/specimen_sheet/"
+
+    def open(
+        self,
+        ctx: dict[str, Any],
+        settings: dict[str, Any] | None,
+        *,
+        subject: str = "",
+        cell: str = "",
+    ) -> _NoArt:
+        return _NoArt()
+
+    def folder(self, data_dir: Path) -> Path:
+        return Path(data_dir) / self.name
+
+    def action(self, *a: Any, **k: Any) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        default = self._DEFAULTS.get(name)
+        return lambda *a, **k: default
+
+
+def _art_error(why: str) -> Exception:
+    return artwork.ArtworkError(why) if artwork is not None else RuntimeError(why)
+
 
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
 # The models a painting may be made with, all on fal.ai and all painting
@@ -149,7 +274,9 @@ STYLE_REVISIONS: dict[str, int] = {
     "stainedglass": 2,
 }
 
-NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
+NOTE_NO_KEY = (
+    "AI pictures need a fal.ai key: this widget's own, or the app's under Settings."
+)
 NOTE_GEN_CAP = "AI paintings: to-day's limit of {cap} is used up; more to-morrow."
 
 # The styles a specimen may be painted in. {kind} is the subject's noun; the
@@ -526,8 +653,19 @@ STYLE_TREE: tuple[tuple[str, tuple[tuple[str, tuple[str, ...]], ...]], ...] = (
 # What the admin's select and the manifest offer: one group per subgroup, named
 # "Realistic · Plates and paintings" so a flat dropdown still reads as a tree.
 KEPT_STYLES = (
-    "gould", "audubon", "watercolour", "engraving", "sketch", "pencil",
-    "woodblock", "linocut", "mucha", "folkart", "sumie", "stainedglass", "pointillism",
+    "gould",
+    "audubon",
+    "watercolour",
+    "engraving",
+    "sketch",
+    "pencil",
+    "woodblock",
+    "linocut",
+    "mucha",
+    "folkart",
+    "sumie",
+    "stainedglass",
+    "pointillism",
 )
 STYLES = {k: STYLES[k] for k in KEPT_STYLES}
 STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (("Styles", KEPT_STYLES),)
@@ -907,16 +1045,7 @@ def scene_for(scene: str, kinds: list[str]) -> str:
     return SCENE_AUTO_BY_KIND.get(top, "auto")
 
 
-_PAINTING: set[str] = set()
-_SINCE: dict[str, tuple[float, str, str]] = {}  # key -> (since, name, style)
-_FINISHED: list[tuple[str, float]] = []
-# Paintings wait here and _PARALLEL workers take them in order. A key
-# is in _PAINTING from the moment it is queued; in _STOPS once it runs.
-_QUEUE: list[tuple[dict[str, Any], Path, str, int | None]] = []
-_STOPS: dict[str, threading.Event] = {}
-_WORKERS = 0
 _LOCK = threading.Lock()
-_TRAY = T.Batch("paint", "Painting specimens")
 # Custom prompts live in the cell, not the folder: the fetch sets the tag
 # for the call so the painting threads it starts know the words.
 _CUSTOM: dict[str, str] = {}
@@ -925,13 +1054,6 @@ _CUSTOM: dict[str, str] = {}
 # ----------------------------------------------------------------------
 # Keys, styles, prompts
 # ----------------------------------------------------------------------
-
-
-def gen_dir(data_dir: Path) -> Path:
-    folder = data_dir / "gen"
-    with contextlib.suppress(OSError):
-        folder.mkdir(parents=True, exist_ok=True)
-    return folder
 
 
 def custom_tag(how: str) -> str:
@@ -969,23 +1091,202 @@ def flies(sci: str) -> bool:
 
 
 PLANT_REGIONS: tuple[tuple[str, float, float, float, float, tuple[str, ...]], ...] = (
-    ("Australia", -45, -10, 110, 155, ("eucalyptus", "banksia", "golden wattle", "bottlebrush", "grevillea", "tea-tree", "she-oak", "lilly pilly")),
-    ("New Zealand", -48, -34, 165, 179, ("pōhutukawa", "kōwhai", "mānuka", "harakeke flax", "tōtara", "kahikatea")),
-    ("British Isles", 49, 61, -11, 2, ("oak", "hawthorn", "blackthorn", "hazel", "rowan", "elder", "silver birch", "holly")),
-    ("Mediterranean", 35, 45, -10, 36, ("olive", "cork oak", "fig", "almond", "Aleppo pine", "carob", "wild rose")),
-    ("Northern Europe", 45, 71, -5, 32, ("oak", "beech", "Scots pine", "silver birch", "rowan", "hazel", "lime", "wild cherry")),
-    ("Japan and Korea", 30, 46, 125, 146, ("cherry", "Japanese maple", "bamboo", "plum", "pine", "camellia", "zelkova")),
-    ("East Asia", 18, 54, 97, 125, ("ginkgo", "bamboo", "plum", "magnolia", "camphor", "pine")),
-    ("South Asia", 5, 36, 66, 97, ("neem", "banyan", "mango", "peepal", "tamarind", "flame of the forest")),
-    ("Southeast Asia", -11, 24, 95, 141, ("frangipani", "rambutan", "banana", "bamboo", "mangrove", "flame tree")),
-    ("Eastern North America", 24, 50, -100, -52, ("red oak", "sugar maple", "flowering dogwood", "American beech", "sumac", "sassafras", "eastern redbud", "serviceberry")),
-    ("Western North America", 24, 60, -170, -100, ("Douglas fir", "Pacific madrone", "manzanita", "Garry oak", "red alder", "big-leaf maple", "ponderosa pine", "toyon")),
-    ("Mexico and Central America", 7, 24, -118, -77, ("ceiba", "mesquite", "guava", "ahuehuete cypress", "frangipani")),
-    ("South America", -56, 12, -82, -34, ("araucaria", "ceibo", "jacaranda", "brazilwood", "yerba mate", "quebracho", "ombú")),
-    ("Southern Africa", -35, -15, 10, 41, ("protea", "sweet thorn acacia", "aloe", "yellowwood", "wild olive", "coral tree")),
-    ("Tropical Africa", -15, 20, -18, 52, ("umbrella thorn acacia", "baobab", "marula", "fig", "mopane")),
-    ("North Africa and the Middle East", 20, 42, -18, 66, ("date palm", "olive", "cedar of Lebanon", "pomegranate", "tamarisk")),
-    ("Russia and Central Asia", 40, 75, 32, 180, ("silver birch", "Siberian larch", "Scots pine", "aspen", "bird cherry")),
+    (
+        "Australia",
+        -45,
+        -10,
+        110,
+        155,
+        (
+            "eucalyptus",
+            "banksia",
+            "golden wattle",
+            "bottlebrush",
+            "grevillea",
+            "tea-tree",
+            "she-oak",
+            "lilly pilly",
+        ),
+    ),
+    (
+        "New Zealand",
+        -48,
+        -34,
+        165,
+        179,
+        ("pōhutukawa", "kōwhai", "mānuka", "harakeke flax", "tōtara", "kahikatea"),
+    ),
+    (
+        "British Isles",
+        49,
+        61,
+        -11,
+        2,
+        (
+            "oak",
+            "hawthorn",
+            "blackthorn",
+            "hazel",
+            "rowan",
+            "elder",
+            "silver birch",
+            "holly",
+        ),
+    ),
+    (
+        "Mediterranean",
+        35,
+        45,
+        -10,
+        36,
+        ("olive", "cork oak", "fig", "almond", "Aleppo pine", "carob", "wild rose"),
+    ),
+    (
+        "Northern Europe",
+        45,
+        71,
+        -5,
+        32,
+        (
+            "oak",
+            "beech",
+            "Scots pine",
+            "silver birch",
+            "rowan",
+            "hazel",
+            "lime",
+            "wild cherry",
+        ),
+    ),
+    (
+        "Japan and Korea",
+        30,
+        46,
+        125,
+        146,
+        ("cherry", "Japanese maple", "bamboo", "plum", "pine", "camellia", "zelkova"),
+    ),
+    (
+        "East Asia",
+        18,
+        54,
+        97,
+        125,
+        ("ginkgo", "bamboo", "plum", "magnolia", "camphor", "pine"),
+    ),
+    (
+        "South Asia",
+        5,
+        36,
+        66,
+        97,
+        ("neem", "banyan", "mango", "peepal", "tamarind", "flame of the forest"),
+    ),
+    (
+        "Southeast Asia",
+        -11,
+        24,
+        95,
+        141,
+        ("frangipani", "rambutan", "banana", "bamboo", "mangrove", "flame tree"),
+    ),
+    (
+        "Eastern North America",
+        24,
+        50,
+        -100,
+        -52,
+        (
+            "red oak",
+            "sugar maple",
+            "flowering dogwood",
+            "American beech",
+            "sumac",
+            "sassafras",
+            "eastern redbud",
+            "serviceberry",
+        ),
+    ),
+    (
+        "Western North America",
+        24,
+        60,
+        -170,
+        -100,
+        (
+            "Douglas fir",
+            "Pacific madrone",
+            "manzanita",
+            "Garry oak",
+            "red alder",
+            "big-leaf maple",
+            "ponderosa pine",
+            "toyon",
+        ),
+    ),
+    (
+        "Mexico and Central America",
+        7,
+        24,
+        -118,
+        -77,
+        ("ceiba", "mesquite", "guava", "ahuehuete cypress", "frangipani"),
+    ),
+    (
+        "South America",
+        -56,
+        12,
+        -82,
+        -34,
+        (
+            "araucaria",
+            "ceibo",
+            "jacaranda",
+            "brazilwood",
+            "yerba mate",
+            "quebracho",
+            "ombú",
+        ),
+    ),
+    (
+        "Southern Africa",
+        -35,
+        -15,
+        10,
+        41,
+        (
+            "protea",
+            "sweet thorn acacia",
+            "aloe",
+            "yellowwood",
+            "wild olive",
+            "coral tree",
+        ),
+    ),
+    (
+        "Tropical Africa",
+        -15,
+        20,
+        -18,
+        52,
+        ("umbrella thorn acacia", "baobab", "marula", "fig", "mopane"),
+    ),
+    (
+        "North Africa and the Middle East",
+        20,
+        42,
+        -18,
+        66,
+        ("date palm", "olive", "cedar of Lebanon", "pomegranate", "tamarisk"),
+    ),
+    (
+        "Russia and Central Asia",
+        40,
+        75,
+        32,
+        180,
+        ("silver birch", "Siberian larch", "Scots pine", "aspen", "bird cherry"),
+    ),
 )
 
 
@@ -1005,7 +1306,9 @@ def perch_for(sci: str, plants: list[str]) -> str:
     species every time, '' with no plants."""
     if not plants:
         return ""
-    return plants[int(hashlib.sha1(("perch|" + sci).encode()).hexdigest()[:6], 16) % len(plants)]
+    return plants[
+        int(hashlib.sha1(("perch|" + sci).encode()).hexdigest()[:6], 16) % len(plants)
+    ]
 
 
 def in_flight(sci: str, kind: str, pose: str = "mixed") -> bool:
@@ -1080,18 +1383,21 @@ def collage(
     from PIL import Image
 
     folder = gen_dir(data_dir)
-    masks = data_dir / "masks"
     M = _sibling("masks")
     stamps = []
     for k in keys:
         # the model's cut-out, or the painting cut by its paper when the model's failed
+        cut = M.CUTS.path(k, data_dir)
+        painting = ART.path(k, data_dir)
         try:
-            stamps.append(f"{k}:{int((masks / f'g_{k}.cut.png').stat().st_mtime)}")
-        except OSError:
-            try:
-                stamps.append(f"{k}:paper:{int((folder / f'{k}.jpg').stat().st_mtime)}")
-            except OSError:
+            if cut is not None:
+                stamps.append(f"{k}:{int(cut.stat().st_mtime)}")
+            elif painting is not None:
+                stamps.append(f"{k}:paper:{int(painting.stat().st_mtime)}")
+            else:
                 return None
+        except OSError:
+            return None
     if not keys:
         return None
     tag = hashlib.sha1(
@@ -1105,10 +1411,12 @@ def collage(
     cuts = []
     for k in keys:
         with contextlib.suppress(OSError):
-            if (masks / f"g_{k}.cut.png").exists():
-                cuts.append((k, Image.open(masks / f"g_{k}.cut.png").convert("RGBA")))
-            else:
-                cuts.append((k, M.paper_cut((folder / f"{k}.jpg").read_bytes())))
+            cut = M.CUTS.path(k, data_dir)
+            painting = ART.path(k, data_dir)
+            if cut is not None:
+                cuts.append((k, Image.open(cut).convert("RGBA")))
+            elif painting is not None:
+                cuts.append((k, M.paper_cut(painting.read_bytes())))
     if len(cuts) != len(keys):
         return None
     cuts.sort(key=lambda c: -(c[1].width * c[1].height))
@@ -1273,7 +1581,13 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         "{camera}", camera_for(job.get("sci") or "")
     )
     words = about(job.get("sci") or "", data_dir)
-    gen = GEN_HERO if job.get("hero") else GEN_WHOLE if str(job.get("style") or "") in WHOLE else GEN
+    gen = (
+        GEN_HERO
+        if job.get("hero")
+        else GEN_WHOLE
+        if str(job.get("style") or "") in WHOLE
+        else GEN
+    )
     if str(job.get("style") or "") in MONO:
         gen = gen.replace(
             "its colours, markings, bill, feet and proportions kept exactly",
@@ -1288,7 +1602,9 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         about=f" About the subject: {words}" if words else "",
         dapper=DAPPER.format(kind=noun) if job["key"].endswith("--dapper") else "",
         # a cut-out subject needs its edge even when it is white; a whole plate does not
-        outline=OUTLINE.format(kind=noun) if gen is not GEN_HERO and gen is not GEN_WHOLE else "",
+        outline=OUTLINE.format(kind=noun)
+        if gen is not GEN_HERO and gen is not GEN_WHOLE
+        else "",
     )
     used = job.get("ref_used")
     if used == "plate":
@@ -1306,17 +1622,53 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
 # ----------------------------------------------------------------------
 
 
-def budget_used(folder: Path) -> int:
-    used = N.read_json(folder / "budget.json", {})
-    return int(used.get(time.strftime("%Y-%m-%d"), 0)) if isinstance(used, dict) else 0
+ART: Any = (
+    artwork.Collection(
+        "specimen_sheet",
+        "paintings",
+        make=lambda job: make(job),
+        label="Specimen Sheet",
+        title="Painting specimens",
+        facet="style",
+        facet_label=lambda s: style_of(s)[0],
+    )
+    if artwork is not None
+    else _NoArtwork("paintings")
+)
+UNLIMITED = artwork.UNLIMITED if artwork is not None else 10**9
+OLD_DERIVED_RE = r".*(_\d+(_\w+)?\.jpg|(_\w+)?\.paper)"
 
 
-def _spend(folder: Path) -> None:
-    with _LOCK:
-        N.write(
-            folder / "budget.json",
-            json.dumps({time.strftime("%Y-%m-%d"): budget_used(folder) + 1}).encode(),
-        )
+def _old_job(job: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    payload = {k: v for k, v in job.items() if k not in ("key", "subject", "origin")}
+    return payload, str(job.get("name") or job.get("key") or "")
+
+
+def adopt_old_install(data_dir: Path) -> bool:
+    """Before 0.9.0 the paintings lived in gen/ with the day's limit as a count
+    of paintings; they become the collection's, with what the previews held and
+    the dashboards asked for."""
+    return ART.adopt(
+        Path(data_dir),
+        "gen",
+        drop=OLD_DERIVED_RE,
+        budget_counts=True,
+        job_to_payload=_old_job,
+    )
+
+
+def gen_dir(data_dir: Path) -> Path:
+    """The paintings' folder, the collection's, for the tools and the tests."""
+    return ART.folder(Path(data_dir))
+
+
+def _data_dir(path: Path) -> Path:
+    path = Path(path)
+    return path.parent if path.name == ART.name else path
+
+
+def budget_used(path: Path) -> int:
+    return ART.budget_used(_data_dir(path))
 
 
 def whole(value: Any, default: int, low: int = 0, high: int = 100000) -> int:
@@ -1328,65 +1680,37 @@ def whole(value: Any, default: int, low: int = 0, high: int = 100000) -> int:
 
 
 def daily_cap(settings: dict[str, Any] | None) -> int:
-    """New paintings a day. Any whole number; 0 is no limit."""
-    n = whole((settings or {}).get("gen_daily_cap"), GEN_DAILY_CAP)
-    return n or UNLIMITED
+    """The day's painting budget in US cents (an older count of paintings
+    still counts at the typical price); UNLIMITED for 0."""
+    return ART.cap(settings)
+
+
+def dollars(cents: int) -> str:
+    return "no limit" if cents >= UNLIMITED else f"US${cents / 100:.2f}"
 
 
 def configure(settings: dict[str, Any] | None) -> None:
-    """Take the knobs the owner has set: paintings started per refresh and made at once."""
-    global _PARALLEL, _PER_FETCH
-    s = settings or {}
-    _PER_FETCH = whole(s.get("gen_per_refresh"), PER_FETCH, 1, 50)
-    _PARALLEL = whole(s.get("gen_parallel"), BATCH_PARALLEL, 1, 8)
+    ART.configure(settings)
 
 
 def per_fetch() -> int:
-    return _PER_FETCH
+    return ART.per_preview()
 
 
-def archive(folder: Path, key: str) -> None:
-    """Move a painting (and its credit) into gen/archive/."""
-    arch = folder / "archive"
-    arch.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    for ext in (".jpg", ".json"):
-        with contextlib.suppress(OSError):
-            os.replace(folder / f"{key}{ext}", arch / f"{key}__{stamp}{ext}")
-    drop_derived(folder, key)
+def archive(path: Path, key: str) -> None:
+    ART.archive(key, _data_dir(path))
 
 
-def drop_derived(folder: Path, key: str) -> None:
-    """Remove the resized copies, paper colours and the cut-out made from a
-    painting, after it is replaced or deleted."""
-    pattern = re.compile(rf"{re.escape(key)}(_\d+(_\w+)?\.jpg|(_\w+)?\.paper)")
-    with contextlib.suppress(OSError):
-        for f in folder.iterdir():
-            if pattern.fullmatch(f.name):
-                with contextlib.suppress(OSError):
-                    f.unlink()
-    masks = folder.parent / "masks"
-    with contextlib.suppress(OSError):
-        for f in masks.glob(f"g_{key}.*"):
-            f.unlink()
+def drop_derived(path: Path, key: str) -> None:
+    ART.drop_derived(key, _data_dir(path))
 
 
-def state(key: str, folder: Path) -> str:
-    """'ready', 'running', 'failed' (within GEN_RETRY_S) or 'none'."""
-    with _LOCK:
-        if key in _PAINTING:
-            return "running"
-    if (folder / f"{key}.jpg").exists():
-        return "ready"
-    err = N.read_json(folder / f"{key}.err", None)
-    if isinstance(err, dict) and time.time() - float(err.get("at") or 0) < GEN_RETRY_S:
-        return "failed"
-    return "none"
+def state(key: str, path: Path) -> str:
+    return ART.state(key, _data_dir(path))
 
 
-def why_failed(key: str, folder: Path) -> str:
-    err = N.read_json(folder / f"{key}.err", None)
-    return str(err.get("why") or "") if isinstance(err, dict) else ""
+def why_failed(key: str, path: Path) -> str:
+    return ART.why_failed(key, _data_dir(path))
 
 
 # ----------------------------------------------------------------------
@@ -1394,327 +1718,75 @@ def why_failed(key: str, folder: Path) -> str:
 # ----------------------------------------------------------------------
 
 
-def paint(
-    job: dict[str, Any],
-    data_dir: Path,
-    fal_key: str,
-    stop: threading.Event | None = None,
-) -> str | None:
-    """Make one painting and keep it under job["key"]. Blocking: run it
-    through ``start``. ``job`` is {key, style, name, sci, kind} and may carry
-    ``ref`` (an openly licensed photo of the record itself) with
-    ``ref_credit``, and ``how`` for a custom style. Returns None, or why it
-    failed (also kept in <key>.err)."""
-    folder = gen_dir(data_dir)
-    key = job["key"]
-    err_path = folder / f"{key}.err"
-
-    def fail(why: str) -> str:
-        info = {k: job.get(k) for k in ("name", "sci", "style", "kind")}
-        N.write(
-            err_path, json.dumps({"why": why, "at": int(time.time()), **info}).encode()
-        )
-        return why
-
-    label, how = style_of(job.get("style"))
-    how = str(job.get("how") or how)
+def make(job: Any) -> tuple[bytes, dict[str, Any]]:
+    """One painting, on a worker thread: the reference pictures and the
+    prompt from the payload, the picture from fal.ai through the collection's
+    budget. Raises ArtworkError with why not. The payload is {style, name,
+    sci, kind} and may carry ``ref`` (an openly licensed photo of the record
+    itself) with ``ref_credit``, ``how`` for a custom style, ``collage`` for
+    the scene."""
+    j = dict(job.payload)
+    j["key"] = job.key
+    data_dir = job.data_dir
+    label, how = style_of(j.get("style"))
+    how = str(j.get("how") or how)
     if not how:
-        return fail(
+        raise _art_error(
             "the custom prompt behind this painting is not known; paint it again from the widget"
         )
-    aspect = str(job.get("aspect") or "3:4") if job.get("hero") else "3:4"
+    aspect = str(j.get("aspect") or "3:4") if j.get("hero") else "3:4"
     ref_credit = ""
-    if job.get("collage"):
+    model = model_of(j.get("model"))
+    if j.get("collage"):
         # the scene: the sheet's own cut-outs, repainted as one picture
         try:
-            sheet = Path(job["collage"]).read_bytes()
+            sheet = Path(j["collage"]).read_bytes()
         except OSError:
-            return fail(
+            raise _art_error(
                 "the collage to paint from has gone; it is made again on the next refresh"
-            )
-        image_url = "data:image/jpeg;base64," + base64.b64encode(sheet).decode()
-        names = job.get("names") or []
-        noun = K.noun_of(job.get("kind"))[0] if job.get("kind") else "specimen"
+            ) from None
+        refs: list[str] = ["data:image/jpeg;base64," + base64.b64encode(sheet).decode()]
+        names = j.get("names") or []
+        noun = K.noun_of(j.get("kind"))[0] if j.get("kind") else "specimen"
         prompt = GEN_SCENE.format(
             n=len(names),
             names="; ".join(names),
             style=how.replace("{kind}", noun),
-            scene=str(job.get("scene_text") or "").strip()
-            or SCENES.get(job.get("scene") or "auto", SCENES["auto"]),
-            fidelity=FIDELITY.get(job.get("fidelity") or "exact", FIDELITY["exact"]),
-            plants=GEN_PLANTS.format(plants=job["plants"]) if job.get("plants") else "",
+            scene=str(j.get("scene_text") or "").strip()
+            or SCENES.get(j.get("scene") or "auto", SCENES["auto"]),
+            fidelity=FIDELITY.get(j.get("fidelity") or "exact", FIDELITY["exact"]),
+            plants=GEN_PLANTS.format(plants=j["plants"]) if j.get("plants") else "",
         )
-        aspect = str(job.get("aspect") or "4:3")
+        aspect = str(j.get("aspect") or "4:3")
     else:
-        pictures, used, ref_credit = references(
-            job, data_dir, model_of(job.get("model")) != "flux_kontext"
-        )
-        if not pictures and job.get("sci"):
-            photo, ref_credit = S.inat_reference(job["sci"], data_dir)
+        pictures, used, ref_credit = references(j, data_dir, model != "flux_kontext")
+        if not pictures and j.get("sci"):
+            photo, ref_credit = S.inat_reference(j["sci"], data_dir)
             pictures = [photo] if photo else []
         if not pictures:
-            return fail("no openly licensed reference photo of the species")
-        image_url = pictures
-        prompt = prompt_for({**job, "how": how, "ref_used": used}, data_dir)
-    model = model_of(job.get("model"))
-    if stop is not None and stop.is_set():
-        return STOPPED
-    _spend(folder)
-    body = json.dumps(request_body(model, prompt, image_url, aspect)).encode()
-    answer, err = N.get_json(
-        "https://fal.run/" + MODELS[model]["endpoint"],
-        fal_key,
-        auth_scheme="Key",
-        body=body,
-        timeout=GEN_TIMEOUT_S,
-        detail=True,
-    )
-    if stop is not None and stop.is_set():
-        return STOPPED
-    if err:
-        if err.startswith(("HTTP 401", "HTTP 403")):
-            err = "fal.ai refused the key or the account has no balance (" + err + ")"
-        return fail(err if err.startswith("fal") else f"fal.ai answered {err}")
-    images = answer.get("images") if isinstance(answer, dict) else None
-    out_url = str(images[0].get("url") or "") if images else ""
-    raw, err = (
-        N.http(out_url, accept="image/*", timeout=60) if out_url else (None, "no image")
-    )
-    if stop is not None and stop.is_set():
-        return STOPPED
-    if not raw:
-        return fail(f"fal.ai sent no picture ({err})")
+            raise _art_error("no openly licensed reference photo of the species")
+        refs = list(pictures)
+        prompt = prompt_for({**j, "how": how, "ref_used": used}, data_dir)
+    raw = job.fal.generate(model, prompt, refs=refs, aspect=aspect, retries=1)
     mname = MODELS[model]["label"]
     credit = f"AI painting, {label.split(' (')[0].lower()} ({mname} on fal.ai)"
-    if job.get("collage"):
+    if j.get("collage"):
         credit = f"AI scene, {label.split(' (')[0].lower()} ({mname} on fal.ai), from each specimen's own painting"
     elif ref_credit:
         credit += f" after {ref_credit}"
-    if (folder / f"{key}.jpg").exists():  # a repaint keeps the old one
-        archive(folder, key)
-    meta = {
+    meta: dict[str, Any] = {
         "credit": credit,
-        "made": int(time.time()),
-        "style": job.get("style") or "gould",
-        "name": job.get("name", ""),
-        "sci": job.get("sci", ""),
-        "kind": job.get("kind", ""),
+        "style": j.get("style") or "gould",
+        "name": j.get("name", ""),
+        "sci": j.get("sci", ""),
+        "kind": j.get("kind", ""),
         "prompt_version": PROMPT_VERSION,
         "model": model,
     }
-    if job.get("collage"):
-        meta["tag"] = job.get("tag", "")
-        meta["boxes"] = job.get("boxes") or []
-        meta["scene"] = job.get("scene", "auto")
-    if _CUSTOM_RE.fullmatch(str(job.get("style") or "")):
+    if j.get("collage"):
+        meta["tag"] = j.get("tag", "")
+        meta["boxes"] = j.get("boxes") or []
+        meta["scene"] = j.get("scene", "auto")
+    if _CUSTOM_RE.fullmatch(str(j.get("style") or "")):
         meta["how"] = how
-    N.write(folder / f"{key}.json", json.dumps(meta).encode())
-    N.write(folder / f"{key}.jpg", raw)
-    drop_derived(folder, key)
-    with contextlib.suppress(OSError):
-        err_path.unlink()
-    return None
-
-
-def _finish(key: str) -> None:
-    with _LOCK:
-        _PAINTING.discard(key)
-        _SINCE.pop(key, None)
-        _STOPS.pop(key, None)
-        _FINISHED.append((key, time.time()))
-        del _FINISHED[:-20]
-    _TRAY.done(key)
-
-
-def _note_stopped(key: str, job: dict[str, Any], data_dir: Path) -> None:
-    """A stopped painting counts as a failure for GEN_RETRY_S, so the next
-    refresh does not queue it again."""
-    info = {k: job.get(k) for k in ("name", "sci", "style", "kind")}
-    N.write(
-        gen_dir(data_dir) / f"{key}.err",
-        json.dumps({"why": STOPPED, "at": int(time.time()), **info}).encode(),
-    )
-
-
-def _run_one(job: dict[str, Any], data_dir: Path, fal_key: str) -> None:
-    """Paint one job, giving the slot up at once if it is stopped: the call
-    to fal.ai cannot be recalled, so it finishes on its own and its result
-    is dropped."""
-    key = job["key"]
-    stop = _STOPS[key]
-
-    def go() -> None:
-        try:
-            why = paint(job, data_dir, fal_key, stop)
-            if why == STOPPED:
-                _note_stopped(key, job, data_dir)
-        except Exception as exc:  # noqa: BLE001 - a thread must not die loudly
-            if not stop.is_set():
-                N.write(
-                    gen_dir(data_dir) / f"{key}.err",
-                    json.dumps(
-                        {"why": str(exc)[:200], "at": int(time.time())}
-                    ).encode(),
-                )
-
-    t = threading.Thread(target=go, name=f"specimen-paint-{key[:16]}", daemon=True)
-    t.start()
-    while t.is_alive() and not stop.is_set():
-        t.join(0.25)
-    if stop.is_set():
-        _note_stopped(key, job, data_dir)
-
-
-def _work() -> None:
-    global _WORKERS
-    while True:
-        with _LOCK:
-            if not _QUEUE:
-                _WORKERS -= 1
-                return
-            job, data_dir, fal_key, cap = _QUEUE.pop(0)
-            key = job["key"]
-            _STOPS[key] = threading.Event()
-            _SINCE[key] = (
-                time.time(),
-                str(job.get("name") or key),
-                str(job.get("style") or "gould"),
-            )
-        try:
-            if cap is not None and budget_used(gen_dir(data_dir)) >= cap:
-                continue
-            _run_one(job, data_dir, fal_key)
-        finally:
-            _finish(key)
-
-
-def start(
-    job: dict[str, Any], data_dir: Path, fal_key: str, cap: int | None = None
-) -> bool:
-    """Queue a painting; False when this key is already queued or painting.
-    ``cap`` is the day's limit, checked again when the job reaches the front."""
-    global _WORKERS
-    key = job["key"]
-    if not job.get("how"):
-        job["how"] = style_of(job.get("style"))[1]
-    with _LOCK:
-        if key in _PAINTING:
-            return False
-        _PAINTING.add(key)
-        _QUEUE.append((job, data_dir, fal_key, cap))
-        _TRAY.add(key, lambda: stop_all(data_dir))
-        spawn = _WORKERS < _PARALLEL
-        if spawn:
-            _WORKERS += 1
-    if spawn:
-        threading.Thread(
-            target=_work, name="specimen-paint-worker", daemon=True
-        ).start()
-    return True
-
-
-def start_batch(
-    jobs: list[dict[str, Any]], data_dir: Path, fal_key: str, cap: int
-) -> bool:
-    """Queue ``jobs``; the workers take them a few at a time and drop what is
-    left once the day's cap is reached. False when every one was already queued."""
-    queued = False
-    for job in jobs:
-        if budget_used(gen_dir(data_dir)) >= cap:
-            break
-        queued = start(job, data_dir, fal_key, cap) or queued
-    return queued
-
-
-def stop(key: str, data_dir: Path) -> bool:
-    """Stop one painting, waiting or under way. A painting under way has been
-    paid for by fal.ai already; its result is dropped."""
-    with _LOCK:
-        for i, (job, *_rest) in enumerate(_QUEUE):
-            if job["key"] == key:
-                gone = _QUEUE.pop(i)[0]
-                _PAINTING.discard(key)
-                break
-        else:
-            gone = None
-            ev = _STOPS.get(key)
-            if ev is None:
-                return False
-            ev.set()
-    if gone is not None:
-        _note_stopped(key, gone, data_dir)
-    _TRAY.done(key, stopped=True)
-    return True
-
-
-def cull_queued(subject: str, keep: set[str]) -> list[str]:
-    """Drop the waiting paintings a cell's previews queued for a look it has
-    moved on from: those of ``subject`` from a preview whose key is not in
-    ``keep``. One under way is left alone. Nothing is written for the
-    dropped ones, so the look can be picked again later. The keys dropped."""
-    gone: list[str] = []
-    with _LOCK:
-        for i in range(len(_QUEUE) - 1, -1, -1):
-            job = _QUEUE[i][0]
-            if (
-                job.get("origin") == "preview"
-                and job.get("subject") == subject
-                and job["key"] not in keep
-            ):
-                _QUEUE.pop(i)
-                _PAINTING.discard(job["key"])
-                gone.append(job["key"])
-    for key in gone:
-        _TRAY.done(key, stopped=True)
-    return gone
-
-
-def stop_all(data_dir: Path) -> int:
-    with _LOCK:
-        keys = [j["key"] for j, *_r in _QUEUE] + list(_STOPS)
-    return sum(1 for k in keys if stop(k, data_dir))
-
-
-def may_start(key: str, folder: Path, fal_key: str, cap: int) -> tuple[bool, str]:
-    """(go ahead, why not): not while running, not within GEN_RETRY_S of a
-    failure, not without a key, not past the daily cap."""
-    st = state(key, folder)
-    if st != "none":
-        return False, st
-    if not fal_key:
-        return False, "no_key"
-    if budget_used(folder) >= cap:
-        return False, "capped"
-    return True, ""
-
-
-def progress(folder: Path, cap: int, has_key: bool) -> dict[str, Any]:
-    """What is painting right now, for the paintings page's live ticker."""
-    now = time.time()
-    with _LOCK:
-        running = [
-            {
-                "key": k,
-                "name": name,
-                "style": style_of(style)[0],
-                "seconds": int(now - since),
-            }
-            for k, (since, name, style) in _SINCE.items()
-        ]
-        queued = [
-            {
-                "key": j["key"],
-                "name": str(j.get("name") or j["key"]),
-                "style": style_of(j.get("style"))[0],
-            }
-            for j, *_r in _QUEUE
-        ]
-        finished = [{"key": k, "at": int(at)} for k, at in _FINISHED]
-    return {
-        "running": running,
-        "queued": queued,
-        "finished": finished,
-        "used": budget_used(folder),
-        "cap": cap,
-        "has_key": has_key,
-    }
+    return raw, meta

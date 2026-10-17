@@ -174,7 +174,7 @@ def plate(sci: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
     if not entry:
         return None
     key = f"c_{hashlib.sha1(entry['stem'].encode()).hexdigest()[:20]}"
-    cut_path = M.folder(data_dir) / f"{key}.cut.png"
+    cut_path = M.folder(data_dir) / f"{key}.png"
     colour = data_dir / "img" / f"{key}.jpg"
     if cut_path.exists() and colour.exists():
         try:
