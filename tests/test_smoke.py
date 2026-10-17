@@ -290,7 +290,9 @@ def test_birdnet_rows_and_cache(tmp_path, offline):
     ]
     dove = r["species"][1]
     assert dove["flag"] == "new" and dove["lines"][-1] == "new to-day"
-    assert magpie["pic"]["kind"] == "plate"  # a plate wins: the thumbnail is never fetched
+    assert (
+        magpie["pic"]["kind"] == "plate"
+    )  # a plate wins: the thumbnail is never fetched
     assert not any(u.endswith("/magpie.jpg") for u in offline)
     assert dove["pic"]["kind"] in ("photo", "plate")
     if dove["pic"]["kind"] == "photo":
@@ -484,7 +486,15 @@ def test_style_builder_composes_a_custom_style(tmp_path, offline):
 
 def test_built_style_words_survive_a_hold_and_a_restart(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "style": "builder", "build_medium": "linocut", "build_extra": "with a crescent moon", "count": "2"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "style": "builder",
+        "build_medium": "linocut",
+        "build_extra": "with a crescent moon",
+        "count": "2",
+    }
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "preview": True}
     server.fetch(options, settings, ctx=ctx)
     held = list(server.held(tmp_path).values())
@@ -800,7 +810,9 @@ def test_masks_need_a_key_and_a_bad_one_is_remembered(tmp_path, offline_masks):
     assert len(list((tmp_path / "masks").glob("*.bad"))) == 1
     r = server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
     need = [s for s in r["species"] if not s["pic"].get("classic")]
-    assert need and all(s["pic"]["cut_state"] == "bad" for s in need) and not r["status"]
+    assert (
+        need and all(s["pic"]["cut_state"] == "bad" for s in need) and not r["status"]
+    )
     assert "covers" in M.why_bad(need[0]["pic"]["key"], tmp_path)
 
 
@@ -978,6 +990,9 @@ def test_sheet_asks_to_be_refreshed_while_paintings_are_on_the_way(
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     r = server.fetch(options, settings, ctx=ctx)
     assert r["live_refresh_s"] == server.LIVE_S
+    assert r["live_pending"] >= 1, (
+        "the paintings on the way are counted for a warm-ahead"
+    )
     for _ in range(4):
         _settle_paint()
         r = server.fetch(options, settings, ctx=ctx)
@@ -985,7 +1000,7 @@ def test_sheet_asks_to_be_refreshed_while_paintings_are_on_the_way(
     r = server.fetch(options, settings, ctx=ctx)
     assert r["live_refresh_s"] == 0
     plain = server.fetch({**MELBOURNE, "url": "birdnet.local"}, {}, ctx=ctx)
-    assert plain["live_refresh_s"] == 0
+    assert plain["live_refresh_s"] == 0 and plain["live_pending"] == 0
 
 
 def test_paintings_need_a_key_and_respect_the_cap(tmp_path, offline_paint):
@@ -1104,7 +1119,9 @@ def test_scene_is_painted_once_everything_is_cut_out(tmp_path, offline_paint):
         and len(r["scene"]["items"]) == 4
     )
     assert r["scene"]["items"][0]["box"] and not r["scene"]["stale"]
-    assert r["credits"] == [r["scene"]["pic"]["credit"]] and "AI scene" in r["credits"][0]
+    assert (
+        r["credits"] == [r["scene"]["pic"]["credit"]] and "AI scene" in r["credits"][0]
+    )
     r = server.fetch(options, settings, ctx=ctx)
     assert len([pr for pr in offline_paint if "collage" in pr["prompt"]]) == 1, (
         "the same line-up paints no second scene"
@@ -1132,7 +1149,13 @@ def test_scene_is_painted_once_everything_is_cut_out(tmp_path, offline_paint):
 
 def test_dapper_is_one_species_a_day(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "dapper": True, "count": "4"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "dapper": True,
+        "count": "4",
+    }
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     server.fetch(options, settings, ctx=ctx)
     _settle_paint()
@@ -1145,30 +1168,54 @@ def test_dapper_is_one_species_a_day(tmp_path, offline_paint):
 
 def test_pose_and_native_plants(tmp_path, offline_paint):
     P = server.P
-    assert P.plants_for(-37.81, 144.96)[0] == "eucalyptus" and P.plants_for(51.5, -0.1)[0] == "oak"
+    assert (
+        P.plants_for(-37.81, 144.96)[0] == "eucalyptus"
+        and P.plants_for(51.5, -0.1)[0] == "oak"
+    )
     assert P.plants_for(None, None) == [] and P.plants_for(0, -160) == []
     plants = P.plants_for(-37.81, 144.96)
     assert P.perch_for("Gymnorhina tibicen", plants) in plants
-    assert P.perch_for("Gymnorhina tibicen", plants) == P.perch_for("Gymnorhina tibicen", plants)
+    assert P.perch_for("Gymnorhina tibicen", plants) == P.perch_for(
+        "Gymnorhina tibicen", plants
+    )
     assert P.key_for("Gymnorhina tibicen", "gould", pose="flight").endswith("--flight")
-    assert "--on_" in P.key_for("Gymnorhina tibicen", "gould", pose="perched", perch="golden wattle")
-    assert P.key_for("Gymnorhina tibicen", "gould", pose="flight", perch="golden wattle").endswith("--flight")
+    assert "--on_" in P.key_for(
+        "Gymnorhina tibicen", "gould", pose="perched", perch="golden wattle"
+    )
+    assert P.key_for(
+        "Gymnorhina tibicen", "gould", pose="flight", perch="golden wattle"
+    ).endswith("--flight")
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "pose": "perched", "count": "3"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "pose": "perched",
+        "count": "3",
+    }
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     server.fetch(options, settings, ctx=ctx)
     _settle_paint()
     assert len(offline_paint) == 3
     for pr in offline_paint:
-        assert "in flight" not in pr["prompt"] and "a plant of the country where it was seen" in pr["prompt"]
+        assert (
+            "in flight" not in pr["prompt"]
+            and "a plant of the country where it was seen" in pr["prompt"]
+        )
         assert any(p in pr["prompt"] for p in plants)
     names = {f.name for f in (tmp_path / "gen").glob("*.jpg")}
     assert names and all("--on_" in n for n in names)
     # all in flight: no perch, new paintings
     server.fetch({**options, "pose": "flight"}, settings, ctx=ctx)
     _settle_paint()
-    assert len(offline_paint) == 6 and all("in flight" in pr["prompt"] for pr in offline_paint[3:])
-    assert all("--flight" in f.name for f in (tmp_path / "gen").glob("*.jpg") if "--on_" not in f.name)
+    assert len(offline_paint) == 6 and all(
+        "in flight" in pr["prompt"] for pr in offline_paint[3:]
+    )
+    assert all(
+        "--flight" in f.name
+        for f in (tmp_path / "gen").glob("*.jpg")
+        if "--on_" not in f.name
+    )
 
 
 def test_hero_note_and_painted_backdrop(tmp_path, offline_paint):
@@ -1179,7 +1226,9 @@ def test_hero_note_and_painted_backdrop(tmp_path, offline_paint):
     assert r["hero_note"] and r["hero_frame"] == "plain"
     assert "magpie" in r["species"][0]["about"].lower()
     assert "about" not in r["species"][1]
-    r = server.fetch({**options, "hero_note": False, "hero_frame": "ornate"}, settings, ctx=ctx)
+    r = server.fetch(
+        {**options, "hero_note": False, "hero_frame": "ornate"}, settings, ctx=ctx
+    )
     assert "about" not in r["species"][0] and r["hero_frame"] == "ornate"
     # painted needs AI paintings; with them the hero gets a plate of its own, shown whole
     r = server.fetch({**options, "hero_frame": "painted"}, settings, ctx=ctx)
@@ -1188,21 +1237,40 @@ def test_hero_note_and_painted_backdrop(tmp_path, offline_paint):
     r = server.fetch(painted, settings, ctx=ctx)
     _settle_paint()
     hero = [pr for pr in offline_paint if "ornate framed plate" in pr["prompt"]]
-    assert len(hero) == 1 and "(Gymnorhina tibicen)" in hero[0]["prompt"] and hero[0]["aspect_ratio"] == "4:3"
+    assert (
+        len(hero) == 1
+        and "(Gymnorhina tibicen)" in hero[0]["prompt"]
+        and hero[0]["aspect_ratio"] == "4:3"
+    )
     assert len(list((tmp_path / "gen").glob("*--hero.jpg"))) == 1
     r = server.fetch(painted, settings, ctx=ctx)
-    assert r["species"][0]["pic"]["whole"] and r["species"][0]["pic"]["kind"] == "painting"
+    assert (
+        r["species"][0]["pic"]["whole"] and r["species"][0]["pic"]["kind"] == "painting"
+    )
     assert not r["species"][1]["pic"].get("whole")
     for frame in ("ornate", "painted"):
-        data = r if frame == "painted" else server.fetch({**options, "hero_frame": "ornate"}, settings, ctx=ctx)
+        data = (
+            r
+            if frame == "painted"
+            else server.fetch({**options, "hero_frame": "ornate"}, settings, ctx=ctx)
+        )
         script = (
             f"import('file://{ROOT}/client.js').then(async (m) => {{ const s = {{innerHTML: ''}};"
             f" await m.default(s, {{data: {json.dumps(data)}, cell: {{size: 'md', w: 800, h: 480}}}});"
             " const h = s.innerHTML; if (!h.includes('hero-note') || !h.includes('hero-also')) throw new Error(h.slice(0, 300));"
-            + (" if (!h.includes('hero-whole') || !h.includes('hero-title')) throw new Error('no hero page');" if frame == "painted" else " if (!h.includes('orn-c')) throw new Error('no frame');")
+            + (
+                " if (!h.includes('hero-whole') || !h.includes('hero-title')) throw new Error('no hero page');"
+                if frame == "painted"
+                else " if (!h.includes('orn-c')) throw new Error('no frame');"
+            )
             + " console.log('ok'); })"
         )
-        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=30)
+        out = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         assert out.returncode == 0, out.stderr
 
 
@@ -1215,13 +1283,17 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     assert not offline_paint, "a preview starts nothing"
     assert len(server.held(tmp_path)) == 3
     assert any("3 paintings waiting for Paint now" in x for x in r["status"])
-    assert r["live_refresh_s"] > 0, "the editor keeps coming back, so the settling starts them"
+    assert r["live_refresh_s"] > 0, (
+        "the editor keeps coming back, so the settling starts them"
+    )
     # the same preview again within the settling time holds nothing new
     server.fetch(options, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 3 and not offline_paint
     # a preview of the same settings twenty seconds on is a kept dashboard: it paints
     seen = json.loads((tmp_path / "preview_seen.json").read_text())
-    (tmp_path / "preview_seen.json").write_text(json.dumps({k: v - 30 for k, v in seen.items()}))
+    (tmp_path / "preview_seen.json").write_text(
+        json.dumps({k: v - 30 for k, v in seen.items()})
+    )
     r = server.fetch(options, settings, ctx=ctx)
     _settle_paint()
     assert len(offline_paint) == 3 and not server.held(tmp_path)
@@ -1229,11 +1301,21 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     # a changed look is the same cell in a new look: held again, the old look's held dropped,
     # and Paint now starts that cell's and no other's
     r = server.fetch({**options, "style": "woodblock"}, settings, ctx=ctx)
-    assert len(server.held(tmp_path)) == 3 and any("3 paintings waiting" in x for x in r["status"])
-    other = {**options, "style": "linocut", "count": "2"}  # another cell: fewer species shown
+    assert len(server.held(tmp_path)) == 3 and any(
+        "3 paintings waiting" in x for x in r["status"]
+    )
+    other = {
+        **options,
+        "style": "linocut",
+        "count": "2",
+    }  # another cell: fewer species shown
     server.fetch(other, settings, ctx=ctx)
     assert len(server.held(tmp_path)) == 5
-    woodblock = [j["subject"] for j in server.held(tmp_path).values() if j["style"] == "woodblock"][0]
+    woodblock = [
+        j["subject"]
+        for j in server.held(tmp_path).values()
+        if j["style"] == "woodblock"
+    ][0]
     started = server.start_held(tmp_path, "k", 24, woodblock)
     _settle_paint()
     assert started == 3 and len(offline_paint) == 6
@@ -1242,7 +1324,9 @@ def test_previews_hold_paintings_for_paint_now(tmp_path, offline_paint):
     r = server.fetch(options, settings, ctx={**ctx, "preview": False})
     assert all(s["pic"]["kind"] == "painting" for s in r["species"])
     # a panel render with new species starts them all straight away
-    more = server.fetch({**options, "count": "4"}, settings, ctx={**ctx, "preview": False})
+    more = server.fetch(
+        {**options, "count": "4"}, settings, ctx={**ctx, "preview": False}
+    )
     _settle_paint()
     assert len(offline_paint) == 7 and not server.held(tmp_path) and more["species"][3]
 
@@ -1255,6 +1339,8 @@ def test_every_style_is_offered():
     for k, (label, how) in P.STYLES.items():
         assert "pure white paper" in how, k
         assert label and len(label) < 40, k
+
+
 def test_models_have_their_own_keys_and_request_shapes(tmp_path, offline_paint):
     assert P.key_for("Gymnorhina tibicen", "gould", model="nano_banana") == P.key_for(
         "Gymnorhina tibicen", "gould"
@@ -1612,20 +1698,50 @@ def test_style_previews_come_from_paintings_of_the_preview_species(tmp_path):
 
 def test_every_option_type_is_one_the_server_installs():
     allowed = {
-        "string", "textarea", "variables_textarea", "entity_overrides", "location_search",
-        "number", "slider", "select", "multiselect", "boolean", "color",
+        "string",
+        "textarea",
+        "variables_textarea",
+        "entity_overrides",
+        "location_search",
+        "number",
+        "slider",
+        "select",
+        "multiselect",
+        "boolean",
+        "color",
     }
-    manifest = json.loads((Path(__file__).resolve().parent.parent / "plugin.json").read_text(encoding="utf-8"))
-    bad = [(o["name"], o["type"]) for o in manifest["cell_options"] if o["type"] not in allowed]
+    manifest = json.loads(
+        (Path(__file__).resolve().parent.parent / "plugin.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    bad = [
+        (o["name"], o["type"])
+        for o in manifest["cell_options"]
+        if o["type"] not in allowed
+    ]
     assert not bad
 
 
 def test_pictures_past_the_deadline_wait_for_the_next_refresh(tmp_path, offline):
-    rows = [{"name": n, "sci": c, "count": 1, "kind": "Aves"} for n, c in (("Australian Magpie", "Gymnorhina tibicen"), ("Rock Dove", "Columba livia"))]
+    rows = [
+        {"name": n, "sci": c, "count": 1, "kind": "Aves"}
+        for n, c in (
+            ("Australian Magpie", "Gymnorhina tibicen"),
+            ("Rock Dove", "Columba livia"),
+        )
+    ]
     states = server._attach_pictures(rows, "", "", tmp_path, "colour", budget_s=-1)
     assert states.get("deferred") == 2 and all(r["pic"] is None for r in rows)
     assert server._live_refresh(states) > 0
-    rows = [{"name": "Australian Magpie", "sci": "Gymnorhina tibicen", "count": 1, "kind": "Aves"}]
+    rows = [
+        {
+            "name": "Australian Magpie",
+            "sci": "Gymnorhina tibicen",
+            "count": 1,
+            "kind": "Aves",
+        }
+    ]
     states = server._attach_pictures(rows, "", "", tmp_path, "colour")
     assert not states.get("deferred") and rows[0]["pic"]
 
@@ -1634,24 +1750,36 @@ def test_a_stored_sheet_has_to_be_a_picture(tmp_path):
     import base64, io
     from PIL import Image
     from PIL import ImageDraw
+
     page = Image.new("RGB", (120, 160), (243, 234, 214))
     ImageDraw.Draw(page).ellipse((30, 40, 90, 120), fill=(40, 30, 20))
-    buf = io.BytesIO(); page.save(buf, "JPEG")
+    buf = io.BytesIO()
+    page.save(buf, "JPEG")
     good = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
     assert server._decodes(good)
-    blank = io.BytesIO(); Image.new("RGB", (120, 160), (243, 234, 214)).save(blank, "JPEG")
-    assert not server._decodes("data:image/jpeg;base64," + base64.b64encode(blank.getvalue()).decode()), "plain paper is not a sheet"
+    blank = io.BytesIO()
+    Image.new("RGB", (120, 160), (243, 234, 214)).save(blank, "JPEG")
+    assert not server._decodes(
+        "data:image/jpeg;base64," + base64.b64encode(blank.getvalue()).decode()
+    ), "plain paper is not a sheet"
     assert not server._decodes("data:image/jpeg;base64,AAAA")
     assert not server._decodes("https://example.com/x.jpg")
-    assert not server._decodes("data:text/plain;base64," + base64.b64encode(b"hello").decode())
-    tiny = io.BytesIO(); Image.new("RGB", (8, 8)).save(tiny, "PNG")
-    assert not server._decodes("data:image/png;base64," + base64.b64encode(tiny.getvalue()).decode())
+    assert not server._decodes(
+        "data:text/plain;base64," + base64.b64encode(b"hello").decode()
+    )
+    tiny = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(tiny, "PNG")
+    assert not server._decodes(
+        "data:image/png;base64," + base64.b64encode(tiny.getvalue()).decode()
+    )
 
 
 def test_a_blank_stored_sheet_is_dropped_when_read(tmp_path):
     import base64, io
     from PIL import Image
-    blank = io.BytesIO(); Image.new("RGB", (120, 160), (243, 234, 214)).save(blank, "JPEG")
+
+    blank = io.BytesIO()
+    Image.new("RGB", (120, 160), (243, 234, 214)).save(blank, "JPEG")
     src = "data:image/jpeg;base64," + base64.b64encode(blank.getvalue()).decode()
     server.store_sheet(tmp_path, "a" * 16, "k", {"src": src, "items": [{"name": "x"}]})
     assert (tmp_path / "sheets" / ("a" * 16 + ".json")).exists()
@@ -1668,7 +1796,9 @@ def test_purge_takes_everything_but_the_count(tmp_path, offline_paint):
     gen = tmp_path / "gen"
     made = len(list(gen.glob("*.jpg")))
     assert made >= 1 and (gen / "budget.json").exists()
-    server.fetch({**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True})
+    server.fetch(
+        {**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True}
+    )
     assert server.held(tmp_path)
     (gen / "archive").mkdir(exist_ok=True)
     (gen / "archive" / "x__20260101-000000.jpg").write_bytes(b"x")
@@ -1685,7 +1815,13 @@ def test_purge_takes_everything_but_the_count(tmp_path, offline_paint):
 
 def test_a_new_look_drops_the_old_looks_held_paintings(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "count": "3",
+        "style": "gould",
+    }
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "preview": True}
     server.fetch(options, settings, ctx=ctx)
     held = server.held(tmp_path)
@@ -1695,21 +1831,38 @@ def test_a_new_look_drops_the_old_looks_held_paintings(tmp_path, offline_paint):
     held = server.held(tmp_path)
     assert held and all("--woodblock" in k for k in held), list(held)
     # a different cell (another place) with its own held paintings is left alone
-    other = {**options, "latitude": -33.87, "longitude": 151.21, "location": {"label": "Sydney", "timezone": "Australia/Sydney"}}
+    other = {
+        **options,
+        "latitude": -33.87,
+        "longitude": 151.21,
+        "location": {"label": "Sydney", "timezone": "Australia/Sydney"},
+    }
     server.fetch(other, settings, ctx=ctx)
     assert any("--gould" in k for k in server.held(tmp_path))
     server.fetch({**options, "style": "linocut"}, settings, ctx=ctx)
     kept = server.held(tmp_path)
-    assert any("--gould" in k for k in kept) and any("--linocut" in k for k in kept) and not any("--woodblock" in k for k in kept)
+    assert (
+        any("--gould" in k for k in kept)
+        and any("--linocut" in k for k in kept)
+        and not any("--woodblock" in k for k in kept)
+    )
 
 
-def test_a_new_look_drops_the_old_looks_queued_paintings(tmp_path, offline_paint, monkeypatch):
+def test_a_new_look_drops_the_old_looks_queued_paintings(
+    tmp_path, offline_paint, monkeypatch
+):
     """Queued, not yet painting: the workers are kept from starting, so the
     queue holds what a settled preview started; the panel's own jobs stay."""
     monkeypatch.setattr(P, "_work", lambda: None)
     monkeypatch.setattr(server, "SETTLE_S", 0)
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "count": "3",
+        "style": "gould",
+    }
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     try:
         # the panel queues its own paintings in the pencil style
@@ -1719,11 +1872,15 @@ def test_a_new_look_drops_the_old_looks_queued_paintings(tmp_path, offline_paint
         server.fetch(options, settings, ctx={**ctx, "preview": True})
         server.fetch(options, settings, ctx={**ctx, "preview": True})
         assert any("--gould" in j["key"] for j, *_r in P._QUEUE)
-        server.fetch({**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True})
+        server.fetch(
+            {**options, "style": "woodblock"}, settings, ctx={**ctx, "preview": True}
+        )
         queued = [j["key"] for j, *_r in P._QUEUE]
         assert not any("--gould" in k for k in queued), queued
         assert any("--pencil" in k for k in queued), "the panel's own paintings stay"
-        assert not list((tmp_path / "gen").glob("*--gould*.err")), "nothing written: gould can be picked again"
+        assert not list((tmp_path / "gen").glob("*--gould*.err")), (
+            "nothing written: gould can be picked again"
+        )
         # picked again, it is queued again
         server.fetch(options, settings, ctx={**ctx, "preview": True})
         server.fetch(options, settings, ctx={**ctx, "preview": True})
@@ -1733,7 +1890,6 @@ def test_a_new_look_drops_the_old_looks_queued_paintings(tmp_path, offline_paint
             P._QUEUE.clear()
             P._PAINTING.clear()
             P._WORKERS = 0
-
 
 
 def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
@@ -1751,18 +1907,41 @@ def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
 
 def test_paintings_group_by_dashboard(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
-    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "page_name": "Kitchen", "page_icon": "ph-coffee"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "count": "3",
+        "style": "gould",
+    }
+    ctx = {
+        "data_dir": str(tmp_path),
+        "cell_w": 800,
+        "cell_h": 480,
+        "page_name": "Kitchen",
+        "page_icon": "ph-coffee",
+    }
     server.fetch(options, settings, ctx=ctx)
     _settle_paint()
-    server.fetch({**options, "style": "woodblock", "count": "2"}, settings, ctx={**ctx, "page_name": "Study", "page_icon": ""})
+    server.fetch(
+        {**options, "style": "woodblock", "count": "2"},
+        settings,
+        ctx={**ctx, "page_name": "Study", "page_icon": ""},
+    )
     _settle_paint()
     # a preview is not a dashboard
-    server.fetch({**options, "style": "linocut"}, settings, ctx={**ctx, "preview": True, "page_name": "Draft"})
+    server.fetch(
+        {**options, "style": "linocut"},
+        settings,
+        ctx={**ctx, "preview": True, "page_name": "Draft"},
+    )
     got = server.dashboards(tmp_path)
     assert [d["name"] for d in got] == ["Study", "Kitchen"]
     g = server._gallery(tmp_path, 24)
-    assert [(x["name"], [(t["style_label"], len(t["paintings"])) for t in x["tabs"]]) for x in g["groups"]] == [
+    assert [
+        (x["name"], [(t["style_label"], len(t["paintings"])) for t in x["tabs"]])
+        for x in g["groups"]
+    ] == [
         ("Study", [("Japanese woodblock print", 2)]),
         ("Kitchen", [("Hand-coloured lithograph (Gould)", 3)]),
     ]
@@ -1772,7 +1951,9 @@ def test_paintings_group_by_dashboard(tmp_path, offline_paint):
     _settle_paint()
     g = server._gallery(tmp_path, 24)
     kitchen = next(x for x in g["groups"] if x["name"] == "Kitchen")
-    assert [t["style"] for t in kitchen["tabs"]] == ["linocut", "gould"] and len(g["groups"]) == 2
+    assert [t["style"] for t in kitchen["tabs"]] == ["linocut", "gould"] and len(
+        g["groups"]
+    ) == 2
     # the dashboard edited to show fewer: once its old self has not rendered for an hour it goes,
     # and the painting nothing shows any more falls under the rest
     data = json.loads((tmp_path / "dashboards.json").read_text())
@@ -1783,9 +1964,10 @@ def test_paintings_group_by_dashboard(tmp_path, offline_paint):
     server.fetch({**options, "count": "2"}, settings, ctx=ctx)
     g = server._gallery(tmp_path, 24)
     # the kitchen keeps its linocut tab (3) and its gould tab now wants 2; the third gould is left over
-    assert [(x["name"], sum(len(t["paintings"]) for t in x["tabs"])) for x in g["groups"]] == [("Kitchen", 5), ("Study", 2)]
+    assert [
+        (x["name"], sum(len(t["paintings"]) for t in x["tabs"])) for x in g["groups"]
+    ] == [("Kitchen", 5), ("Study", 2)]
     assert len(g["rest"]) == 1
-
 
 
 def _log(tmp_path, days, seen):
@@ -1799,7 +1981,11 @@ def test_marks_new_and_rare(tmp_path, offline):
     days = [(today - timedelta(days=i)).isoformat() for i in range(40, 0, -1)]
     # the magpie every day, the rock dove (flagged new by BirdNET-Go) never before, the gull once
     # (one day in forty, plus to-day: within one in twenty)
-    _log(tmp_path, days, {"Gymnorhina tibicen": days, "Chroicocephalus novaehollandiae": days[3:4]})
+    _log(
+        tmp_path,
+        days,
+        {"Gymnorhina tibicen": days, "Chroicocephalus novaehollandiae": days[3:4]},
+    )
     r = _fetch(tmp_path, offline, url="birdnet.local", marks="both", count="8")
     marks = {s["name"]: s.get("mark", "") for s in r["species"]}
     assert marks["Rock Dove"] == "new" and marks["Australian Magpie"] == ""
@@ -1807,7 +1993,11 @@ def test_marks_new_and_rare(tmp_path, offline):
     assert marks["Silver Gull"] == "rare", "on the log once in forty days"
     r = _fetch(tmp_path, offline, url="birdnet.local", marks="rare", count="8")
     marks = {s["name"]: s.get("mark", "") for s in r["species"]}
-    assert marks["Rock Dove"] == "" and marks["Silver Gull"] == "rare" and marks["Australian Magpie"] == ""
+    assert (
+        marks["Rock Dove"] == ""
+        and marks["Silver Gull"] == "rare"
+        and marks["Australian Magpie"] == ""
+    )
     # too short a log marks nothing rare, but a flagged bird is still new
     _log(tmp_path, days[-3:], {"Chroicocephalus novaehollandiae": days[-1:]})
     r = _fetch(tmp_path, offline, url="birdnet.local", marks="rare", count="8")
@@ -1820,7 +2010,11 @@ def test_marks_new_and_rare(tmp_path, offline):
 def test_tally_strokes_mark_the_count_line(tmp_path, offline):
     r = _fetch(tmp_path, offline, url="birdnet.local", tally="strokes")
     s = r["species"][0]
-    assert r["tally"] == "strokes" and s["tally"] == s["count"] and s["tally_line"].endswith("calls")
+    assert (
+        r["tally"] == "strokes"
+        and s["tally"] == s["count"]
+        and s["tally_line"].endswith("calls")
+    )
     assert any(ln.startswith(s["tally_line"]) for ln in s["lines"])
     r = _fetch(tmp_path, offline, url="birdnet.local")
     assert "tally_line" not in r["species"][0]
@@ -1836,21 +2030,38 @@ def test_year_list_from_the_log(tmp_path, offline):
     if first > today:
         first = today
     days = [first.isoformat(), today.isoformat()]
-    (tmp_path / "species_seen.json").write_text(json.dumps({"Corvus mellori": ["Little Raven", "Aves"]}))
-    _log(tmp_path, days, {
-        "Gymnorhina tibicen": [first.isoformat(), today.isoformat()],
-        "Corvus mellori": [first.isoformat()],
-        "Turdus merula": [f"{y - 1}-06-01"],
-    })
+    (tmp_path / "species_seen.json").write_text(
+        json.dumps({"Corvus mellori": ["Little Raven", "Aves"]})
+    )
+    _log(
+        tmp_path,
+        days,
+        {
+            "Gymnorhina tibicen": [first.isoformat(), today.isoformat()],
+            "Corvus mellori": [first.isoformat()],
+            "Turdus merula": [f"{y - 1}-06-01"],
+        },
+    )
     r = _fetch(tmp_path, offline, url="birdnet.local", layout="year", count="2")
     # the log's two this year, and the four birds heard to-day, the magpie among both
     assert r["year"]["n"] == 5 and r["year"]["today"] == 4
     names = [s["name"] for s in r["species"]]
-    assert names[0] in ("Australian Magpie", "Little Raven") and "Turdus merula" not in names
+    assert (
+        names[0] in ("Australian Magpie", "Little Raven")
+        and "Turdus merula" not in names
+    )
     raven = next(s for s in r["species"] if s["name"] == "Little Raven")
-    assert raven["year_days"] == 1 and raven["today"] is False and raven["lines"][1] == "1 day"
+    assert (
+        raven["year_days"] == 1
+        and raven["today"] is False
+        and raven["lines"][1] == "1 day"
+    )
     magpie = next(s for s in r["species"] if s["name"] == "Australian Magpie")
-    assert magpie["year_days"] == 2 and magpie["today"] is True and magpie["lines"][1] == "2 days"
+    assert (
+        magpie["year_days"] == 2
+        and magpie["today"] is True
+        and magpie["lines"][1] == "2 days"
+    )
     assert len(r["species"]) > 2, "the year list is not cut to the sheet's count"
 
 
@@ -1863,22 +2074,36 @@ def test_dawn_and_dusk_pages(tmp_path, offline, monkeypatch):
 
     def sky_with(rise, set_):
         return lambda place, when: {
-            "dark": False, "sunrise": f"{rise // 60:02d}:{rise % 60:02d}",
-            "sunset": f"{set_ // 60:02d}:{set_ % 60:02d}", "sunset_min": set_, "moon": 0.5, "moon_name": "Full",
+            "dark": False,
+            "sunrise": f"{rise // 60:02d}:{rise % 60:02d}",
+            "sunset": f"{set_ // 60:02d}:{set_ % 60:02d}",
+            "sunset_min": set_,
+            "moon": 0.5,
+            "moon_name": "Full",
         }
 
     # half an hour before sunrise: the dawn page, the birds in the order they started
-    monkeypatch.setattr(server, "_sky", sky_with((mins + 30) % 1440, (mins + 600) % 1440))
+    monkeypatch.setattr(
+        server, "_sky", sky_with((mins + 30) % 1440, (mins + 600) % 1440)
+    )
     r = _fetch(tmp_path, offline, url="birdnet.local", day_pages="on", count="8")
-    assert r["day_page"]["kind"] == "dawn" and r["day_page"]["sun"].startswith("sunrise")
+    assert r["day_page"]["kind"] == "dawn" and r["day_page"]["sun"].startswith(
+        "sunrise"
+    )
     firsts = [s["first"] for s in r["species"]]
-    assert firsts == sorted(firsts) and r["day_page"]["song"].startswith(f"first song {firsts[0]}")
+    assert firsts == sorted(firsts) and r["day_page"]["song"].startswith(
+        f"first song {firsts[0]}"
+    )
     # just after sunset: the evening page, the last songs latest first (a fixed clock, so the
     # window never wraps midnight whatever the hour this runs)
     rows = [dict(s) for s in r["species"]]
     sky = sky_with(6 * 60, 18 * 60 + 10)(None, None)
     page = server._day_page(rows, sky, datetime(2026, 10, 17, 18, 30))
-    assert page["kind"] == "dusk" and page["sun"] == "sunset 18:10" and page["song"] == "last song 17:40 Australian Magpie"
+    assert (
+        page["kind"] == "dusk"
+        and page["sun"] == "sunset 18:10"
+        and page["song"] == "last song 17:40 Australian Magpie"
+    )
     lasts = [s["last"] for s in rows]
     assert lasts == sorted(lasts, reverse=True)
     # midday: no page; and none without the option
@@ -1888,14 +2113,29 @@ def test_dawn_and_dusk_pages(tmp_path, offline, monkeypatch):
 
 def test_render_now_paints_only_what_the_panels_ask_for(tmp_path, offline_paint):
     settings = {"fal_api_key": "k", "gen_daily_cap": "24"}
-    kitchen = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen", "count": "3", "style": "gould"}
+    kitchen = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "count": "3",
+        "style": "gould",
+    }
     study = {**kitchen, "style": "woodblock", "count": "2"}
-    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480, "page_name": "Kitchen"}
+    ctx = {
+        "data_dir": str(tmp_path),
+        "cell_w": 800,
+        "cell_h": 480,
+        "page_name": "Kitchen",
+    }
     server.fetch(kitchen, settings, ctx=ctx)
     server.fetch(study, settings, ctx={**ctx, "page_name": "Study"})
     _settle_paint()
     # an editor-only look paints nothing and asks for nothing
-    server.fetch({**kitchen, "style": "linocut", "count": "4"}, settings, ctx={**ctx, "preview": True})
+    server.fetch(
+        {**kitchen, "style": "linocut", "count": "4"},
+        settings,
+        ctx={**ctx, "preview": True},
+    )
     assert len(offline_paint) == 5
     gen = tmp_path / "gen"
     gone = sorted(gen.glob("*--gould*.jpg"))[0]
@@ -1903,7 +2143,9 @@ def test_render_now_paints_only_what_the_panels_ask_for(tmp_path, offline_paint)
     (gen / gone.name.replace(".jpg", ".json")).unlink()
     started, found = server.render_now(tmp_path, "k", 24)
     _settle_paint()
-    assert (started, found) == (1, 1), "one painting missing from one panel: one painted, not every species in every style"
+    assert (started, found) == (1, 1), (
+        "one painting missing from one panel: one painted, not every species in every style"
+    )
     assert len(offline_paint) == 6 and gone.exists()
     assert not list(gen.glob("*--linocut*")), "the editor's look is not a panel's"
     # nothing missing: nothing painted
@@ -1912,7 +2154,9 @@ def test_render_now_paints_only_what_the_panels_ask_for(tmp_path, offline_paint)
     gone2 = sorted(gen.glob("*--woodblock*.jpg"))[0]
     gone2.unlink()
     who = next(d["id"] for d in server.dashboards(tmp_path) if d["name"] == "Kitchen")
-    assert server.render_now(tmp_path, "k", 24, who) == (0, 0), "the kitchen is whole; the study's gap is not its"
+    assert server.render_now(tmp_path, "k", 24, who) == (0, 0), (
+        "the kitchen is whole; the study's gap is not its"
+    )
     who = next(d["id"] for d in server.dashboards(tmp_path) if d["name"] == "Study")
     assert server.render_now(tmp_path, "k", 24, who) == (1, 1)
     _settle_paint()
@@ -1923,9 +2167,18 @@ def test_a_pale_bird_gets_a_contour_line(tmp_path, offline_paint):
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     server.fetch(options, {"fal_api_key": "k"}, ctx=ctx)
     _settle_paint()
-    assert offline_paint and all("very pale bird is drawn with a fine, clear dark contour line" in pr["prompt"] for pr in offline_paint)
+    assert offline_paint and all(
+        "very pale bird is drawn with a fine, clear dark contour line" in pr["prompt"]
+        for pr in offline_paint
+    )
     # the whole plate (a hero on its backdrop) keeps the paper out of it: no contour clause
-    server.fetch({**options, "layout": "hero", "hero_frame": "painted", "count": "1"}, {"fal_api_key": "k"}, ctx=ctx)
+    server.fetch(
+        {**options, "layout": "hero", "hero_frame": "painted", "count": "1"},
+        {"fal_api_key": "k"},
+        ctx=ctx,
+    )
     _settle_paint()
-    assert "contour line" not in offline_paint[-1]["prompt"] and "ornate" in offline_paint[-1]["prompt"]
-
+    assert (
+        "contour line" not in offline_paint[-1]["prompt"]
+        and "ornate" in offline_paint[-1]["prompt"]
+    )

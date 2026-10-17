@@ -103,7 +103,21 @@ SHEET_MAX = 32
 # and the order of a numbered key.
 ORDERS = ("most", "rarest", "latest", "mix")
 ARRANGEMENTS = ("sheet", "scene")
-SCENE_WORDS_GROUNDED = ("floor", "log", "bank", "bed", "meadow", "wetland", "garden", "bath", "ground", "grass", "path", "pond", "lawn")
+SCENE_WORDS_GROUNDED = (
+    "floor",
+    "log",
+    "bank",
+    "bed",
+    "meadow",
+    "wetland",
+    "garden",
+    "bath",
+    "ground",
+    "grass",
+    "path",
+    "pond",
+    "lawn",
+)
 RETURN_AFTER_DAYS = 45
 QUIET_MIN = 90
 ERR_NOWHERE = "Set a place in this cell (or the app's location)."
@@ -296,10 +310,14 @@ def _log_seen(data_dir: Path) -> tuple[list[str], dict[str, list[str]]]:
         return [], {}
     days = log.get("days") if isinstance(log.get("days"), list) else []
     seen = log.get("seen") if isinstance(log.get("seen"), dict) else {}
-    return [str(d) for d in days], {k: [str(d) for d in v] for k, v in seen.items() if isinstance(v, list)}
+    return [str(d) for d in days], {
+        k: [str(d) for d in v] for k, v in seen.items() if isinstance(v, list)
+    }
 
 
-def _mark_rows(rows: list[dict[str, Any]], data_dir: Path, marks: str, today: str) -> None:
+def _mark_rows(
+    rows: list[dict[str, Any]], data_dir: Path, marks: str, today: str
+) -> None:
     """Give each row its mark for the page: ``new`` for a species new here or
     back after an absence (the flag), ``rare`` for one on the sheet on few of
     the logged days (one in twenty at most), once the log holds LOG_MIN_DAYS days. Nothing marks a
@@ -312,7 +330,9 @@ def _mark_rows(rows: list[dict[str, Any]], data_dir: Path, marks: str, today: st
     for r in rows:
         key = str(r.get("sci") or r.get("name") or "")
         hits = seen.get(key, [])
-        fresh = r.get("flag") in ("new", "back") or (enough and hits and all(d >= today for d in hits))
+        fresh = r.get("flag") in ("new", "back") or (
+            enough and hits and all(d >= today for d in hits)
+        )
         # rare: on the sheet on few days, and not merely new (seen before to-day)
         rare = enough and any(d < today for d in hits) and len(hits) <= rare_max
         mark = ""
@@ -348,7 +368,14 @@ def _year_rows(
         r = by_key.get(key)
         if r is None:
             name, kind = known.get(key, (key, "Aves"))
-            r = {"sci": key if key in known else "", "name": name, "kind": kind, "count": 0, "factor": 1.0, "flag": ""}
+            r = {
+                "sci": key if key in known else "",
+                "name": name,
+                "kind": kind,
+                "count": 0,
+                "factor": 1.0,
+                "flag": "",
+            }
         r = dict(r)
         r["year_days"] = len(this_year)
         r["first_day"] = this_year[0]
@@ -359,7 +386,9 @@ def _year_rows(
     since = ""
     if out:
         with contextlib.suppress(ValueError):
-            since = datetime.strptime(out[0]["first_day"], "%Y-%m-%d").strftime("%-d %b" if sys.platform != "win32" else "%d %b")
+            since = datetime.strptime(out[0]["first_day"], "%Y-%m-%d").strftime(
+                "%-d %b" if sys.platform != "win32" else "%d %b"
+            )
     summary = {
         "n": len(out),
         "today": len([r for r in out if r["today"]]),
@@ -398,7 +427,9 @@ def _day_page(
         sung = [r for r in rows if _minutes(r.get("last") or "") is not None]
         if not sung:
             return None
-        sung.sort(key=lambda r: (-(_minutes(r["last"]) or 0), -int(r.get("count") or 0)))
+        sung.sort(
+            key=lambda r: (-(_minutes(r["last"]) or 0), -int(r.get("count") or 0))
+        )
         rows[:] = sung + [r for r in rows if r not in sung]
         return {
             "kind": "dusk",
@@ -671,7 +702,9 @@ def _photo(
     }
 
 
-def _painting(key: str, data_dir: Path, levels: str, px: int = PICTURE_PX) -> dict[str, Any] | None:
+def _painting(
+    key: str, data_dir: Path, levels: str, px: int = PICTURE_PX
+) -> dict[str, Any] | None:
     """A kept painting, resized for the sheet, or None."""
     folder = P.gen_dir(data_dir)
     img = folder / f"{key}.jpg"
@@ -731,11 +764,39 @@ SEEN_S = 86400
 # previews held or queued for the old look are no longer wanted.
 LOOK_OPTIONS = frozenset(
     (
-        "token", "pictures", "style", "build_medium", "build_period", "build_palette",
-        "build_line", "build_texture", "build_mood", "build_extra", "pose", "model",
-        "unpainted", "dapper", "arrangement", "scene", "scene_fidelity", "scene_every",
-        "sizing", "scale", "hero_note", "hero_frame", "labels", "label_lines", "text_size",
-        "paper", "panel", "header", "footer", "title", "refresh_min", "names", "names_place",
+        "token",
+        "pictures",
+        "style",
+        "build_medium",
+        "build_period",
+        "build_palette",
+        "build_line",
+        "build_texture",
+        "build_mood",
+        "build_extra",
+        "pose",
+        "model",
+        "unpainted",
+        "dapper",
+        "arrangement",
+        "scene",
+        "scene_fidelity",
+        "scene_every",
+        "sizing",
+        "scale",
+        "hero_note",
+        "hero_frame",
+        "labels",
+        "label_lines",
+        "text_size",
+        "paper",
+        "panel",
+        "header",
+        "footer",
+        "title",
+        "refresh_min",
+        "names",
+        "names_place",
     )
 )
 
@@ -758,7 +819,8 @@ def cull(data_dir: Path, subject: str, keep: set[str]) -> tuple[int, int]:
     subject whose keys this look does not want. A painting under way is left
     to finish, being paid for. (queued dropped, held dropped)."""
     stale = [
-        k for k, j in held(data_dir).items()
+        k
+        for k, j in held(data_dir).items()
         if j.get("subject") == subject and k not in keep
     ]
     if stale:
@@ -781,7 +843,15 @@ def preview_settled(data_dir: Path, cell_id: str, now: float) -> bool:
     path = data_dir / "preview_seen.json"
     with _HELD_LOCK:
         got = N.read_json(path, {})
-        got = {k: float(v) for k, v in got.items() if isinstance(got, dict) and now - float(v) < SEEN_S} if isinstance(got, dict) else {}
+        got = (
+            {
+                k: float(v)
+                for k, v in got.items()
+                if isinstance(got, dict) and now - float(v) < SEEN_S
+            }
+            if isinstance(got, dict)
+            else {}
+        )
         first = got.get(cell_id)
         if first is None:
             got[cell_id] = now
@@ -850,9 +920,16 @@ def start_held(data_dir: Path, fal_key: str, cap: int, subject: str = "") -> int
     dashboard whose card was pressed, not every dashboard ever previewed),
     within the daily limit. The number started."""
     folder = P.gen_dir(data_dir)
-    jobs = [j for j in held(data_dir).values() if not subject or j.get("subject") == subject]
+    jobs = [
+        j for j in held(data_dir).values() if not subject or j.get("subject") == subject
+    ]
     _unhold(data_dir, [j["key"] for j in jobs])
-    ready = [j for j in jobs if not (folder / f"{j['key']}.jpg").exists() and P.state(j["key"], folder) == "none"]
+    ready = [
+        j
+        for j in jobs
+        if not (folder / f"{j['key']}.jpg").exists()
+        and P.state(j["key"], folder) == "none"
+    ]
     room = max(0, cap - P.budget_used(folder))
     begin = ready[:room]
     P.start_batch(begin, data_dir, fal_key, cap)
@@ -864,7 +941,11 @@ WANTED_S = 30 * 86400
 
 
 def _note_dashboard(
-    data_dir: Path, ctx: dict[str, Any], subject: str, gen: dict[str, Any], shown: list[dict[str, Any]]
+    data_dir: Path,
+    ctx: dict[str, Any],
+    subject: str,
+    gen: dict[str, Any],
+    shown: list[dict[str, Any]],
 ) -> None:
     """Which dashboard a panel's sheet is on and the paintings it wants, so the
     paintings page can group them by dashboard. Kept for WANTED_S. A dashboard
@@ -900,7 +981,11 @@ def _note_dashboard(
         "style_label": P.style_of(gen["style"])[0],
         "keys": list(dict.fromkeys(gen.get("keys") or [])),
         # the painting each key asks for, so Render now can paint exactly what this sheet wants
-        "jobs": {k: j for k, j in (gen.get("jobs") or {}).items() if k in set(gen.get("keys") or [])},
+        "jobs": {
+            k: j
+            for k, j in (gen.get("jobs") or {}).items()
+            if k in set(gen.get("keys") or [])
+        },
         "species": [r["name"] for r in shown if r.get("sci")][:60],
         "at": now,
     }
@@ -916,12 +1001,16 @@ def dashboards(data_dir: Path) -> list[dict[str, Any]]:
     out = [
         {**v, "id": k}
         for k, v in got.items()
-        if isinstance(v, dict) and now - float(v.get("at") or 0) < WANTED_S and isinstance(v.get("keys"), list)
+        if isinstance(v, dict)
+        and now - float(v.get("at") or 0) < WANTED_S
+        and isinstance(v.get("keys"), list)
     ]
     return sorted(out, key=lambda v: -float(v.get("at") or 0))
 
 
-def render_now(data_dir: Path, fal_key: str, cap: int, who: str = "") -> tuple[int, int]:
+def render_now(
+    data_dir: Path, fal_key: str, cap: int, who: str = ""
+) -> tuple[int, int]:
     """Paint what the panels are missing: the paintings the sheets rendered to
     a panel in the last ON_FRAME_S asked for and do not have, nothing more;
     one dashboard's when ``who`` names it. (started, found)."""
@@ -953,6 +1042,16 @@ def _live_refresh(states: dict[str, int]) -> int:
     # same settings SETTLE_S later is what starts them
     busy = ("running", "paint_running", "paint_waiting", "deferred", "paint_held")
     return LIVE_S if any(states.get(k) for k in busy) else 0
+
+
+def _live_pending(states: dict[str, int]) -> int:
+    """How many paintings and cut-outs are still on the way for this page: what
+    a Tesserae warm-ahead learns its seconds per painting from. A held painting
+    is not counted, since nothing is working on it."""
+    return sum(
+        states.get(k, 0)
+        for k in ("running", "paint_running", "paint_waiting", "deferred")
+    )
 
 
 def _unpainted_hint(n: int, states: dict[str, int], has_key: bool) -> str:
@@ -1214,7 +1313,12 @@ def _label_lines(
             out.append(r["sci"])
         elif line == "count":
             bit = _count_text(r, source, window)
-            if source == "birdnet_go" and window == "today" and r.get("last") and not r.get("year_days"):
+            if (
+                source == "birdnet_go"
+                and window == "today"
+                and r.get("last")
+                and not r.get("year_days")
+            ):
                 bit += f" · last {r['last']}"
             out.append(bit)
         elif line == "last" and source != "birdnet_go" and r.get("last"):
@@ -1313,20 +1417,33 @@ def fetch(
     only_painted = options.get("unpainted") == "hide"
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
     pose = _choice(options.get("pose"), ("mixed", "perched", "flight"))
-    hero_note = options.get("hero_note", True) not in (False, "false", "False", 0, "0", "off")
+    hero_note = options.get("hero_note", True) not in (
+        False,
+        "false",
+        "False",
+        0,
+        "0",
+        "off",
+    )
     hero_frame = _choice(options.get("hero_frame"), ("plain", "ornate", "painted"))
     if hero_frame == "painted" and pictures != "gen":
         hero_frame = "plain"
     model = P.model_of(options.get("model"))
     arrangement = (
-        _choice(options.get("arrangement"), ARRANGEMENTS) if pictures == "gen" else "sheet"
+        _choice(options.get("arrangement"), ARRANGEMENTS)
+        if pictures == "gen"
+        else "sheet"
     )
     scene_text = " ".join(str(options.get("scene") or "").split())[:600]
     fidelity = _choice(options.get("scene_fidelity"), ("free", "exact"))
     scene_every = int(_choice(options.get("scene_every"), ("3", "1", "6", "24")))
     # the sheet this cell last sent back, inlined when it is still the one these inputs make
     cell_id = hashlib.sha1(
-        json.dumps({k: v for k, v in sorted(options.items()) if k != "token"}, sort_keys=True, default=str).encode()
+        json.dumps(
+            {k: v for k, v in sorted(options.items()) if k != "token"},
+            sort_keys=True,
+            default=str,
+        ).encode()
     ).hexdigest()[:16]
     subject = subject_id(options)
     rules = exclude_rules(
@@ -1373,6 +1490,7 @@ def fetch(
             "marks": marks,
             "tally": tally,
             "live_refresh_s": 0,
+            "live_pending": 0,
             "state": "ok",
             "error": "",
             "hint": "",
@@ -1574,7 +1692,8 @@ def fetch(
             "plants": P.plants_for(*place[:2]) if place else [],
             # a preview looks: a painting it would start is held for Paint now in the job tray,
             # so an option tried in the editor costs nothing; one that stands SETTLE_S is kept
-            "hold": bool(ctx.get("preview")) and not preview_settled(data_dir, cell_id, time.time()),
+            "hold": bool(ctx.get("preview"))
+            and not preview_settled(data_dir, cell_id, time.time()),
             "cell": cell_id,
             "subject": subject,
             "origin": "preview" if ctx.get("preview") else "panel",
@@ -1582,8 +1701,12 @@ def fetch(
             # a panel paints everything its sheet needs at once, within the daily limit; a
             # preview a few at a time
             "per_fetch": P.per_fetch() if ctx.get("preview") else SHEET_MAX,
-            "hero_sci": (shown[0].get("sci") or "") if layout == "hero" and hero_frame == "painted" else "",
-            "hero_aspect": "4:3" if int(ctx.get("cell_w") or 800) >= int(ctx.get("cell_h") or 480) else "3:4",
+            "hero_sci": (shown[0].get("sci") or "")
+            if layout == "hero" and hero_frame == "painted"
+            else "",
+            "hero_aspect": "4:3"
+            if int(ctx.get("cell_w") or 800) >= int(ctx.get("cell_h") or 480)
+            else "3:4",
             "dapper_sci": P.dapper_pick(
                 [r["sci"] for r in shown if r.get("sci")], now.strftime("%Y-%m-%d")
             )
@@ -1623,6 +1746,7 @@ def fetch(
                 sky=sky,
                 demo=demo,
                 live_refresh_s=_live_refresh(mask_states),
+                live_pending=_live_pending(mask_states),
             )
     _size(shown, sizing)
     if layout == "hero" and hero_note and shown and shown[0].get("sci"):
@@ -1673,8 +1797,12 @@ def fetch(
             )
         if mask_states.get("paint_held"):
             n = len([j for j in held(data_dir).values() if j.get("subject") == subject])
-            status.append(f"{n} painting{'' if n == 1 else 's'} waiting for Paint now in the job tray")
-            T.waiting(n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings), subject))
+            status.append(
+                f"{n} painting{'' if n == 1 else 's'} waiting for Paint now in the job tray"
+            )
+            T.waiting(
+                n, lambda: start_held(data_dir, fal_key, P.daily_cap(settings), subject)
+            )
         if mask_states.get("paint_no_key"):
             notices.append(P.NOTE_NO_KEY)
         if mask_states.get("paint_capped"):
@@ -1687,7 +1815,15 @@ def fetch(
     scene_out = None
     if gen and arrangement == "scene":
         scene_out, more = _scene(
-            shown, gen, scene_text, fidelity, scene_every, fal_key, data_dir, levels, ctx
+            shown,
+            gen,
+            scene_text,
+            fidelity,
+            scene_every,
+            fal_key,
+            data_dir,
+            levels,
+            ctx,
         )
         status += [m_ for m_ in more if m_ not in status]
     # a preview in a new look drops what the previews of this cell held or queued for the old one
@@ -1709,6 +1845,7 @@ def fetch(
         year=year,
         state="asleep" if asleep else "ok",
         live_refresh_s=_live_refresh(mask_states),
+        live_pending=_live_pending(mask_states),
         credits=([scene_out["pic"]["credit"]] if scene_out else credits),
         notices=notices,
         status=status,
@@ -1757,7 +1894,9 @@ def _scene(
     if not made:
         return None, ["composing the scene"]
     scene_id = hashlib.sha1(text.encode()).hexdigest()[:12]
-    skey = P.scene_key(gen["style"], scene_id, fidelity, gen.get("model", P.DEFAULT_MODEL))
+    skey = P.scene_key(
+        gen["style"], scene_id, fidelity, gen.get("model", P.DEFAULT_MODEL)
+    )
     gen.setdefault("keys", []).append(skey)
     meta = N.read_json(folder / f"{skey}.json", {})
     meta = meta if isinstance(meta, dict) else {}
@@ -1780,7 +1919,11 @@ def _scene(
                 "collage": made["path"],
                 "tag": made["tag"],
                 "boxes": [
-                    {**b, "name": by_key[b["key"]]["name"], "sci": by_key[b["key"]]["sci"]}
+                    {
+                        **b,
+                        "name": by_key[b["key"]]["name"],
+                        "sci": by_key[b["key"]]["sci"],
+                    }
                     for b in boxes
                 ],
                 "names": [
@@ -1876,7 +2019,9 @@ def stored_sheet(data_dir: Path, cell_id: str) -> dict[str, Any] | None:
         got = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not (isinstance(got, dict) and got.get("key") and isinstance(got.get("sheet"), dict)):
+    if not (
+        isinstance(got, dict) and got.get("key") and isinstance(got.get("sheet"), dict)
+    ):
         return None
     # a sheet kept before the ink check, by a browser that drew nothing into it, goes
     if not _decodes(str(got["sheet"].get("src") or "")):
@@ -2023,7 +2168,9 @@ def _gallery(data_dir: Path, cap: int) -> dict[str, Any]:
     now = time.time()
     for d in dashboards(data_dir):
         have = [entries[k] for k in d["keys"] if k in entries]
-        missing = len([k for k in d["keys"] if k not in entries or not entries[k]["active"]])
+        missing = len(
+            [k for k in d["keys"] if k not in entries or not entries[k]["active"]]
+        )
         if not have and not missing:
             continue
         placed.update(e["slug"] for e in have)
@@ -2206,7 +2353,12 @@ def blueprint() -> Any:
             flash("Add a fal.ai key in this widget's settings first.", "warn")
             return back()
         n = start_held(data_dir(), key, cap())
-        flash(f"Painting {n} held painting{'' if n == 1 else 's'}." if n else "Nothing is waiting, or to-day's limit is used up.", "success" if n else "info")
+        flash(
+            f"Painting {n} held painting{'' if n == 1 else 's'}."
+            if n
+            else "Nothing is waiting, or to-day's limit is used up.",
+            "success" if n else "info",
+        )
         return back()
 
     @bp.post("/purge")
@@ -2224,7 +2376,11 @@ def blueprint() -> Any:
         renderer's own browser can say it too, since a GET is allowed through."""
         what = re.sub(r"[^a-z_]", "", str(request.args.get("what") or ""))[:20]
         bits = {k: str(v)[:120] for k, v in request.args.items() if k != "what"}
-        logger.info("specimen_sheet: page %s %s", what or "?", " ".join(f"{k}={v}" for k, v in sorted(bits.items())))
+        logger.info(
+            "specimen_sheet: page %s %s",
+            what or "?",
+            " ".join(f"{k}={v}" for k, v in sorted(bits.items())),
+        )
         return ("", 204)
 
     @bp.post("/sheet")
@@ -2234,7 +2390,12 @@ def blueprint() -> Any:
         cell = str(body.get("cell") or "")
         key = str(body.get("key") or "")
         sheet = body.get("sheet")
-        if not re.fullmatch(r"[0-9a-f]{16}", cell) or not key or not isinstance(sheet, dict) or not isinstance(sheet.get("src"), str):
+        if (
+            not re.fullmatch(r"[0-9a-f]{16}", cell)
+            or not key
+            or not isinstance(sheet, dict)
+            or not isinstance(sheet.get("src"), str)
+        ):
             abort(400)
         if len(sheet["src"]) > 4_000_000:
             abort(413)
