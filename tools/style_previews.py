@@ -7,8 +7,9 @@ small JPEGs in static/styles/ that the cell's Style option points at
     python3 tools/style_previews.py --key-file ~/fal_key --only gould,sumie --force
 
 Each painting is asked for the way a cluster cell asks for one: the payload
-server.py's _paint_payload builds (photo reference, default model, no custom
-words, no native perch, not dapper, not the hero), its key from paint.key_for
+server.py's _paint_payload builds (photo reference, default model or the
+style's own from paint.model_for, no custom words, no native perch, not
+dapper, not the hero), its key from paint.key_for
 and its prompt from paint.prompt_for, in the cell's 3:4. The reference and its
 credit are in REFERENCE below and in ATTRIBUTION.md; the full-size paintings
 go to tools/out/styles/ (not shipped). Needs a Tesserae checkout beside this
@@ -231,7 +232,7 @@ def main() -> int:
             "sci": REFERENCE["sci"],
             "kind": REFERENCE["kind"],
             "how": "",
-            "model": P.DEFAULT_MODEL,
+            "model": P.model_for(style, P.DEFAULT_MODEL),
             "ref_mode": "photo",
             "ref": ref,
             "ref_credit": credit,
@@ -251,7 +252,7 @@ def main() -> int:
         prompt = P.prompt_for({**job, "how": how, "ref_used": used}, data_dir)
         try:
             raw = client.generate(
-                P.DEFAULT_MODEL, prompt, refs=refs, aspect=ASPECT, retries=1
+                job["model"], prompt, refs=refs, aspect=ASPECT, retries=1
             )
         except Exception as exc:  # noqa: BLE001 - one style failing leaves the rest
             return f"{style}: failed ({exc})"

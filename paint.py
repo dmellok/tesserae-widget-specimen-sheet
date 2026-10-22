@@ -207,6 +207,23 @@ def model_of(model: str | None) -> str:
     return model if model in MODELS else DEFAULT_MODEL
 
 
+# Styles Nano Banana keeps too close to the photograph (a watercolour for sumi-e, an
+# outlined drawing for stained glass): a cell left on Nano Banana paints these with
+# GPT Image 2. Only the painting's payload carries it; its key keeps the cell's
+# model, so a style moving model keeps the paintings it has.
+STYLE_MODEL = {
+    "sumie": "gpt_image",
+    "stainedglass": "gpt_image",
+}
+
+
+def model_for(style: str | None, model: str | None) -> str:
+    """The model a painting in ``style`` is made with: the cell's own, or for a
+    style Nano Banana cannot make, GPT Image 2 in its place."""
+    model = model_of(model)
+    return STYLE_MODEL.get(str(style or ""), model) if model == DEFAULT_MODEL else model
+
+
 def request_body(
     model: str, prompt: str, image_url: str | list[str], aspect: str
 ) -> dict[str, Any]:
@@ -416,7 +433,7 @@ STYLES.update(
         ),
         "stainedglass": (
             "Stained glass",
-            "the {kind} rendered in stained glass: thick black lead lines round pieces of jewel-coloured glass in the species' colours, with no window frame or panel edge, the {kind} alone on plain pure white paper",
+            "a leaded stained-glass picture of the {kind}: built entirely of many small cut pieces of translucent coloured glass in the species' colours, two dozen or more pieces in the {kind} alone, joined by thick dark lead came of one even width, each feather group, the cap, the cheek, the eye, the bill, each leg, each leaf and each length of branch its own flat piece, every piece a single colour of mottled, streaky, rippled antique glass with light glowing through it and nothing painted or drawn inside it, the lead lines tracing every piece's edge like a jigsaw, the leaf stalks and twigs glass pieces too and no bare lead line anywhere, the glass pieces of the {kind} and its perch only, with no window frame, panel edge or background glass round them, the {kind} alone on plain pure white paper",
         ),
         "risograph": (
             "Risograph print",
@@ -509,7 +526,7 @@ STYLES.update(
         ),
         "sumie": (
             "Ink and wash",
-            "a Japanese sumi-e ink and wash painting: a few confident brushstrokes of black ink with soft grey washes and a touch of colour, on plain pure white paper",
+            "a Japanese sumi-e brush painting in black sumi ink, in the spirit of a Zen master's freehand brushwork: the {kind} suggested, not described, in perhaps a dozen bold, wet strokes of a large soft brush, each stroke made once and left, its bristle marks and tapering end showing, the body one or two broad pools of grey ink bleeding softly into the paper, the dark markings a few strokes of solid black, no feather drawn on its own and no fine detail beyond the eye, the branch in fast dry-brush strokes with ragged edges, a monochrome painting in black and grey ink, the species' colours given only as a pale tint dropped into one wash; the whole {kind} large on the page, about two thirds of its width, its bill, tail tip and the branch's ends all well clear of the edges, on plain pure white paper",
         ),
         "cigarette": (
             "Edwardian cigarette card",

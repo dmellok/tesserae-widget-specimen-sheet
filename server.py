@@ -750,7 +750,8 @@ def _paint_payload(
         "sci": row["sci"],
         "kind": row.get("kind") or "Aves",
         "how": gen.get("how") or "",
-        "model": gen.get("model", P.DEFAULT_MODEL),
+        # the painting's key keeps the cell's model; the style may paint with another
+        "model": P.model_for(gen["style"], gen.get("model", P.DEFAULT_MODEL)),
         "ref_mode": gen.get("ref_mode", "photo"),
     }
     if gen.get("plants"):
@@ -2201,14 +2202,15 @@ def blueprint() -> Any:
             )
             payload["style"] = P.register_custom(how)
             payload["how"] = how
-        payload["model"] = P.model_of(request.form.get("model"))
+        model = P.model_of(request.form.get("model"))
         key = P.key_for(
             sci,
             payload["style"],
             kind,
             request.form.get("dapper") == "1",
-            payload["model"],
+            model,
         )
+        payload["model"] = P.model_for(payload["style"], model)
         start(key, payload, f"the {name[:80]}")
         return back()
 
@@ -2223,7 +2225,7 @@ def blueprint() -> Any:
             "name": name,
             "sci": sci,
             "kind": kind,
-            "model": P.DEFAULT_MODEL,
+            "model": P.model_for(style, P.DEFAULT_MODEL),
         }
         start(
             P.key_for(sci, style, kind, False, P.DEFAULT_MODEL),

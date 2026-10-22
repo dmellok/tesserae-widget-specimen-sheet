@@ -2,7 +2,7 @@
   "tesserae_compat": "1.x",
   "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1407,7 +1407,7 @@
       "show_if": {
         "pictures": "gen"
       },
-      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away.",
+      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away. Left on Nano Banana, the ink-and-wash and stained-glass styles are painted with GPT Image 2 (about US$0.05), since Nano Banana keeps them too close to the photo.",
       "choices": [
         {
           "value": "nano_banana",
