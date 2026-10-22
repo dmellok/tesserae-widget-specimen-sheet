@@ -144,10 +144,35 @@ def kind_of(taxon: dict[str, Any] | None) -> tuple[str, str, float]:
     return group, noun.capitalize(), factor
 
 
-def noun_of(iconic: str | None) -> tuple[str, str]:
-    """(noun, pose) a painter uses for an iconic taxon."""
+# A finer kind the iconic taxon's pose would paint wrongly: (pose, the tag its
+# paintings' keys carry, so a pose reworded here is painted again). An insect
+# "with its wings open" came out as a beetle with its wing covers raised and a
+# second closed pair still over its back, and asked for in flight the models
+# still gave about one beetle in three a second shell, so a beetle is painted
+# as a set specimen with its wing covers closed.
+FINE_POSES: dict[str, tuple[str, str]] = {
+    "Beetle": (
+        "the whole beetle alone, seen from directly above as a set specimen in an "
+        "entomological plate: its wing covers (elytra) closed and meeting in one straight "
+        "line down the middle of its back, no wings showing, its six legs and both "
+        "antennae spread evenly to either side, on nothing",
+        "b3",
+    ),
+}
+
+
+def noun_of(iconic: str | None, fine: str | None = None) -> tuple[str, str]:
+    """(noun, pose) a painter uses for an iconic taxon, or for the finer kind
+    when it has a pose of its own."""
     _g, noun, pose, _f = KINDS.get(str(iconic or ""), KINDS["Animalia"])
-    return noun, pose
+    own = FINE_POSES.get(str(fine or ""))
+    return noun, own[0] if own else pose
+
+
+def fine_tag(fine: str | None) -> str:
+    """The key tag of a finer kind with a pose of its own, else ''."""
+    own = FINE_POSES.get(str(fine or ""))
+    return own[1] if own else ""
 
 
 # ----------------------------------------------------------------------

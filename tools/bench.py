@@ -48,7 +48,7 @@ def _specimens(server: Any, rows: list[dict[str, Any]], source: str, lines: tupl
         if not p.get("src"):
             continue
         out.append({
-            "name": r["name"], "sci": r.get("sci", ""), "src": p.get("src"), "cut": p.get("cut"),
+            "name": r["name"], "sci": r.get("sci", ""), "src": p.get("src"), "cut": p.get("cut"), "cut_box": p.get("cut_box"),
             "on_paper": bool(p.get("on_paper")), "classic": bool(p.get("classic")), "whole": False,
             "factor": r["factor"], "aspect": p.get("aspect") or 0.8, "paper": None, "neutral": False,
             "lines": server._label_lines(r, lines, source, "today"),

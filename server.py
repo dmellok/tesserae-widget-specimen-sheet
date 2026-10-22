@@ -755,6 +755,8 @@ def _paint_payload(
         "model": P.model_for(gen["style"], gen.get("model", P.DEFAULT_MODEL)),
         "ref_mode": gen.get("ref_mode", "photo"),
     }
+    if K.fine_tag(row.get("fine")):
+        payload["fine"] = str(row["fine"])
     if gen.get("plants"):
         payload["perch"] = P.perch_for(row["sci"], gen["plants"])
         payload["plants"] = ", ".join(gen["plants"])
@@ -925,6 +927,7 @@ def _attach_pictures(
             gen.get("pose", "mixed"),
             P.perch_for(row["sci"], gen.get("plants") or []),
             hero,
+            str(row.get("fine") or ""),
         )
         gen.setdefault("keys", []).append(key)
         payload, title = _paint_payload(row, gen)
@@ -996,6 +999,12 @@ def _cut(
         # rectangle. A painting is on plain white paper by construction, so
         # its edges cut it cleanly even when the subject is tiny.
         pic["on_paper"] = False
+    if pic.get("cut") and pic.get("on_paper") and not pic.get("classic"):
+        # the cut-out is cropped to the specimen; the page lays its mask over the
+        # picture's own edge cut, so it needs to know where in the picture it sits
+        box = M.box_of(pic["key"], data_dir, str(pic.get("file") or ""))
+        if box:
+            pic["cut_box"] = box
     pic["cut_state"] = st
     pic.pop("file", None)
     return st

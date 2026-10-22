@@ -2142,3 +2142,231 @@ def test_packing_option_reaches_the_page(tmp_path):
         server.fetch({**MELBOURNE, "packing": "nonsense"}, {}, ctx=ctx)["packing"]
         == "balanced"
     )
+
+
+def _painting_and_mask(w=360, h=480):
+    """A painting on paper (a textured bird on a branch) and the model's alpha for
+    the bird alone, both the picture's size."""
+    im = Image.new("RGB", (w, h), (246, 241, 230))
+    d = ImageDraw.Draw(im)
+    for i in range(0, w, 7):  # paper grain the correlation can lock onto
+        d.line((i, 0, i + 30, h), fill=(240 - i % 9, 236, 226))
+    d.line((40, 330, 320, 300), fill=(110, 80, 50), width=6)
+    d.ellipse((120, 170, 250, 320), fill=(90, 70, 160), outline=(20, 20, 20), width=3)
+    alpha = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(alpha).ellipse((120, 170, 250, 320), fill=255)
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue(), alpha
+
+
+def test_a_cut_out_knows_where_it_sits_in_its_picture(tmp_path):
+    picture, alpha = _painting_and_mask()
+    box = M.crop_box((360, 480), alpha)
+    assert box[0] > 100 and box[2] < 270, "the cut-out is cropped to the specimen"
+    cut = M.cut_png(picture, alpha)
+    assert Image.open(io.BytesIO(cut)).size == (box[2] - box[0], box[3] - box[1])
+    want = M.box_fractions(box, (360, 480))
+    assert M.find_box(cut, picture) == want
+    other = Image.new("RGB", (360, 480), (10, 200, 10))
+    buf = io.BytesIO()
+    other.save(buf, "PNG")
+    assert M.find_box(cut, buf.getvalue()) is None, "not found in another picture"
+    # a cut-out kept before its box was: found once in its picture and kept beside it
+    src = tmp_path / "painting.png"
+    src.write_bytes(picture)
+    folder = M.folder(tmp_path)
+    folder.mkdir(parents=True)
+    (folder / "k1.png").write_bytes(cut)
+    (folder / "k1.json").write_text(
+        json.dumps({"title": "t", "payload": {"source": str(src)}}), encoding="utf-8"
+    )
+    assert M.box_of("k1", tmp_path) == want
+    kept = json.loads((folder / "k1.json").read_text(encoding="utf-8"))
+    assert kept["box"] == want and kept["title"] == "t"
+    src.unlink()
+    assert M.box_of("k1", tmp_path) == want, "read back, not found again"
+
+
+def test_a_new_cut_out_keeps_its_box(tmp_path):
+    picture, alpha = _painting_and_mask()
+    src = tmp_path / "painting.png"
+    src.write_bytes(picture)
+    rgba = Image.new("RGBA", alpha.size, (0, 0, 0, 0))
+    rgba.putalpha(alpha)
+    buf = io.BytesIO()
+    rgba.save(buf, "PNG")
+
+    class _Fal:
+        def generate(self, *a, **k):
+            return buf.getvalue()
+
+    class _Job:
+        payload = {"source": str(src)}
+        title = "a bird"
+        fal = _Fal()
+
+    raw, meta = M.make(_Job())
+    assert meta["box"] == M.find_box(raw, picture)
+    x0, y0, x1, y1 = meta["box"]
+    assert 0.25 < x0 < x1 < 0.8 and 0.3 < y0 < y1 < 0.72
+
+
+def test_the_model_mask_lands_where_the_specimen_is():
+    # a cut-out cropped to a bird in the lower right quarter of its picture, laid on the
+    # picture's grid at its box: it lands there, not stretched over the whole frame
+    script = (
+        f"import('file://{ROOT}/static/cut.js').then((m) => {{"
+        " const mw = 50, mh = 40, a = new Uint8ClampedArray(mw * mh * 4);"
+        " for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) a[(y * mw + x) * 4 + 3] = 255;"
+        " const sw = 200, sh = 160, k = m.modelMask(a, mw, mh, [0.5, 0.5, 0.75, 0.75], sw, sh);"
+        " let n = 0, x0 = sw, y0 = sh, x1 = -1, y1 = -1;"
+        " for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) if (k[y * sw + x]) { n++;"
+        "   x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }"
+        " const box = [x0, y0, x1 + 1, y1 + 1].join(',');"
+        " if (box !== '100,80,150,120' || n !== 50 * 40) throw new Error(box + ' ' + n);"
+        " const none = m.modelMask(a, mw, mh, [0.5, 0.5, 0.5, 0.75], sw, sh);"
+        " if (none.some((v) => v)) throw new Error('an empty box drew something');"
+        " console.log('ok'); })"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
+
+
+def test_the_cut_box_rides_to_the_page():
+    script = (
+        f"import('file://{ROOT}/client.js').then(async (m) => {{ const s = {{innerHTML: ''}};"
+        " const pic = (b) => ({ src: 'data:image/png;base64,AA', cut: 'data:image/png;base64,AA', on_paper: true, cut_box: b });"
+        " const data = { source: 'inaturalist', state: 'ok', layout: 'cluster', area: 'x', period: 'y',"
+        "   species: [{ name: 'A', sci: 'A a', pic: pic([0.1, 0.2, 0.6, 0.9]) }, { name: 'B', sci: 'B b', pic: pic([0.5, 0.5, 0.2, 0.9]) }] };"
+        " await m.default(s, { data, cell: { size: 'md', w: 800, h: 480 } });"
+        " console.log('ok'); })"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert out.returncode == 0, out.stderr
+    src = (ROOT / "client.js").read_text(encoding="utf-8")
+    assert "cut_box: cutBox(s.pic)" in src and "x.cut_box" in src
+
+
+def test_a_beetle_is_painted_with_its_wing_covers_closed(tmp_path):
+    assert K.noun_of("Insecta", "Beetle")[1] != K.noun_of("Insecta")[1]
+    assert "closed" in K.noun_of("Insecta", "Beetle")[1]
+    assert K.noun_of("Insecta", "Moth") == K.noun_of("Insecta")
+    beetle = P.key_for("Coccinella transversalis", "gould", "Insecta", fine="Beetle")
+    assert beetle.endswith("--b3") and beetle != P.key_for(
+        "Coccinella transversalis", "gould", "Insecta"
+    )
+    job = {
+        "key": beetle,
+        "style": "gould",
+        "name": "Transverse Ladybird",
+        "sci": "Coccinella transversalis",
+        "kind": "Insecta",
+        "fine": "Beetle",
+    }
+    prompt = P.prompt_for(job, tmp_path)
+    assert "wing covers (elytra) closed" in prompt and "wings open" not in prompt
+    payload, _t = server._paint_payload(
+        {
+            "name": "x",
+            "sci": "Coccinella transversalis",
+            "kind": "Insecta",
+            "fine": "Beetle",
+        },
+        {"style": "gould"},
+    )
+    assert payload["fine"] == "Beetle"
+
+
+def test_a_long_hero_note_shows_whole_lines_above_the_also_line(tmp_path):
+    sync_api = pytest.importorskip("playwright.sync_api")
+    import functools
+    import http.server
+    import threading
+
+    note = (
+        "The Australian wood duck, maned duck or maned goose is a dabbling duck found "
+        "throughout much of Australia. It is the only living species in the genus "
+        "Chenonetta. It grazes on grasses, clover and other herbs, and occasionally on "
+        "insects, and is often seen in flocks of up to several hundred birds around farm "
+        "dams, wetlands, parks and golf courses, nesting in tree hollows near water."
+    )
+    species = [
+        {
+            "name": "Australian Wood Duck",
+            "sci": "Chenonetta jubata",
+            "about": note,
+            "count": 3,
+            "lines": ["Australian Wood Duck"],
+        },
+        *(
+            {
+                "name": f"Bird {i}",
+                "sci": f"Avis {i}",
+                "count": i,
+                "lines": [f"Bird {i}"],
+            }
+            for i in range(5)
+        ),
+    ]
+    data = {
+        "source": "inaturalist",
+        "state": "ok",
+        "layout": "hero",
+        "hero_note": True,
+        "hero_frame": "ornate",
+        "area": "Melbourne",
+        "period": "this month",
+        "text_scale": 1,
+        "species": species,
+    }
+    (tmp_path / "data.json").write_text(json.dumps(data), encoding="utf-8")
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(ROOT)
+    )
+    handler.log_message = lambda *a: None  # type: ignore[method-assign]
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with sync_api.sync_playwright() as p:
+            try:
+                b = p.chromium.launch()
+            except Exception as exc:  # noqa: BLE001
+                pytest.skip(f"no browser: {exc}")
+            for w, h in ((1200, 800), (800, 480), (480, 800)):
+                pg = b.new_page(viewport={"width": w, "height": h})
+                pg.goto(f"http://127.0.0.1:{srv.server_address[1]}/README.md")
+                got = pg.evaluate(
+                    """async ([data, w, h]) => {
+                      const host = document.createElement('div'); host.style.cssText = `width:${w}px;height:${h}px`;
+                      document.body.style.margin = '0'; document.body.appendChild(host);
+                      const shadow = host.attachShadow({ mode: 'open' });
+                      const m = await import('/client.js');
+                      await m.default(shadow, { data: { ...data, cell_w: w, cell_h: h }, cell: { w, h, size: 'lg' } });
+                      const n = shadow.querySelector('.hero-note'), a = shadow.querySelector('.hero-also');
+                      const lh = parseFloat(getComputedStyle(n).lineHeight);
+                      return { bottom: n.getBoundingClientRect().bottom, top: a.getBoundingClientRect().top, ch: n.clientHeight, lh };
+                    }""",
+                    [data, w, h],
+                )
+                pg.close()
+                assert got["bottom"] <= got["top"] + 0.5, (w, h, got)
+                lines = got["ch"] / got["lh"]
+                assert abs(lines - round(lines)) < 0.05 and 1 <= round(lines) <= 3, (
+                    w,
+                    h,
+                    got,
+                )
+            b.close()
+    finally:
+        srv.shutdown()

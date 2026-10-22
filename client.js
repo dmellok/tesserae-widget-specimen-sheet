@@ -75,8 +75,8 @@ function packOffThread(args, onCut) {
    lines, page shape and look. The same key means the same sheet. */
 const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 function keyOf(a) {
-  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.factor}|${x.on_paper ? 1 : 0}${x.classic ? 'c' : ''}|${(x.lines || []).join('/')}`);
-  return `ss2:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.layout}:${a.zoom}:${fnv(parts.join(';'))}`;
+  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.cut_box ? x.cut_box.join(',') : ''}|${x.factor}|${x.on_paper ? 1 : 0}${x.classic ? 'c' : ''}|${(x.lines || []).join('/')}`);
+  return `ss3:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.layout}:${a.zoom}:${fnv(parts.join(';'))}`;
 }
 const SHEETS = new Map();
 
@@ -122,10 +122,18 @@ function decodes(src) {
   });
 }
 
+/* Where a cut-out sits in its picture, as fractions (x0, y0, x1, y1), when the server knows. */
+function cutBox(pic) {
+  const b = pic && pic.cut_box;
+  if (!Array.isArray(b) || b.length !== 4 || !b.every((v) => Number.isFinite(Number(v)))) return null;
+  const [x0, y0, x1, y1] = b.map(Number);
+  return x0 >= 0 && y0 >= 0 && x1 <= 1 && y1 <= 1 && x1 > x0 && y1 > y0 ? [x0, y0, x1, y1] : null;
+}
+
 function buildArgs(d) {
   const w = d.cell_w || 800, h = d.cell_h || 480;
   let specimens = d.species.map((s) => ({
-    name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null,
+    name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null, cut_box: cutBox(s.pic),
     on_paper: !!(s.pic && s.pic.on_paper), classic: !!(s.pic && s.pic.classic), whole: false, factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
     paper: hexRgb(s.pic && s.pic.paper), neutral: false,
     lines: d.labels === 'none' ? [] : (s.lines || [s.name]),
@@ -354,7 +362,8 @@ function paint(shadow, d, size, body) {
       .hero-title { flex: 0 0 auto; text-align: center; font-family: var(--sc); font-size: 3.4cqmin; letter-spacing: .08em; padding: .6cqmin 2.4cqmin 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .hero-title i { font-family: var(--serif); font-style: italic; letter-spacing: 0; opacity: .8; }
       .hero-title b { font-weight: 400; font-family: var(--serif); letter-spacing: 0; opacity: .75; margin-left: .6em; }
-      .hero-note { flex: 0 0 auto; text-align: center; font-size: calc(2.5cqmin * var(--ts)); line-height: 1.35; font-style: italic; padding: .5cqmin 5cqmin .3cqmin; max-height: 12cqmin; overflow: hidden; }
+      /* whole lines only: at most three, ended with an ellipsis, so the last is never cut through and never runs into the line below */
+      .hero-note { flex: 0 0 auto; text-align: center; font-size: calc(2.5cqmin * var(--ts) * var(--nf, 1)); line-height: 1.35; font-style: italic; margin: .5cqmin 5cqmin .3cqmin; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
       .hero-also { flex: 0 0 auto; padding: .4cqmin 2.4cqmin .6cqmin; font-family: var(--sc); font-size: 2.6cqmin; letter-spacing: .08em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
       .hero-also i { font-family: var(--serif); font-style: italic; opacity: .7; margin-right: .4em; }
       .hero-also em { font-style: normal; opacity: .5; margin: 0 .5em; }
@@ -403,4 +412,18 @@ function paint(shadow, d, size, body) {
       .nt-s { font-size: 3.2cqmin; font-style: italic; }
       .nt-f { font-family: var(--sc); font-size: 2.3cqmin; letter-spacing: .12em; opacity: .8; }
     </style>`;
+  fitNote(shadow);
+}
+
+/* A hero's note too long for its three lines is set a little smaller, down to four fifths,
+   before the clamp ends it with an ellipsis. */
+export function fitNote(root) {
+  try {
+    const el = root && root.querySelector && root.querySelector('.hero-note');
+    if (!el || !el.clientHeight) return;
+    for (const f of [1, 0.92, 0.86, 0.8]) {
+      el.style.setProperty('--nf', String(f));
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+    }
+  } catch { /* nothing to measure here */ }
 }

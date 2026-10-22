@@ -267,14 +267,12 @@ def paper_cut(picture: bytes) -> Any:
     return out
 
 
-def cut_png(picture: bytes, alpha: Any) -> bytes:
-    """The picture with ``alpha`` (a PIL L image, the picture's size) as its
-    alpha, cropped to the specimen with a little room, as PNG bytes."""
-    from PIL import Image, ImageFilter
+def crop_box(size: tuple[int, int], alpha: Any) -> tuple[int, int, int, int]:
+    """Where the cut-out is cropped from its picture: the specimen in ``alpha``
+    (a PIL L image, the picture's size) with a little room, in pixels."""
+    from PIL import ImageFilter
 
-    im = Image.open(io.BytesIO(picture)).convert("RGB")
-    if alpha.size != im.size:
-        alpha = alpha.resize(im.size, Image.Resampling.BILINEAR)
+    w, h = size
     box = (
         alpha.point(lambda v: 255 if v > 64 else 0)
         .filter(ImageFilter.MinFilter(3))
@@ -282,19 +280,121 @@ def cut_png(picture: bytes, alpha: Any) -> bytes:
         or alpha.getbbox()
     )
     if not box:
-        box = (0, 0, im.width, im.height)
-    pad = max(im.size) // 60
-    box = (
+        return (0, 0, w, h)
+    pad = max(w, h) // 60
+    return (
         max(0, box[0] - pad),
         max(0, box[1] - pad),
-        min(im.width, box[2] + pad),
-        min(im.height, box[3] + pad),
+        min(w, box[2] + pad),
+        min(h, box[3] + pad),
     )
+
+
+def box_fractions(box: tuple[int, int, int, int], size: tuple[int, int]) -> list[float]:
+    w, h = size
+    return [
+        round(box[0] / w, 5),
+        round(box[1] / h, 5),
+        round(box[2] / w, 5),
+        round(box[3] / h, 5),
+    ]
+
+
+def cut_png(picture: bytes, alpha: Any) -> bytes:
+    """The picture with ``alpha`` (a PIL L image, the picture's size) as its
+    alpha, cropped to the specimen with a little room (``crop_box``), as PNG
+    bytes."""
+    from PIL import Image
+
+    im = Image.open(io.BytesIO(picture)).convert("RGB")
+    if alpha.size != im.size:
+        alpha = alpha.resize(im.size, Image.Resampling.BILINEAR)
+    box = crop_box(im.size, alpha)
     out = im.crop(box).convert("RGBA")
     out.putalpha(alpha.crop(box))
     buf = io.BytesIO()
     out.save(buf, "PNG", optimize=True)
     return buf.getvalue()
+
+
+def find_box(cut: bytes, picture: bytes) -> list[float] | None:
+    """Where a kept cut-out sits in its picture, as fractions of the picture
+    (x0, y0, x1, y1), for a cut-out kept before its box was: it is a crop of
+    the picture at the picture's own size, so its colours are found in the
+    picture by correlation (on the grey levels, through the FFT) and the
+    match is checked on the colours. None when it is not there."""
+    import numpy as np
+    from PIL import Image
+
+    try:
+        c = Image.open(io.BytesIO(cut)).convert("RGB")
+        p = Image.open(io.BytesIO(picture)).convert("RGB")
+    except Exception:  # noqa: BLE001
+        return None
+    w, h = c.size
+    pw, ph = p.size
+    if w > pw or h > ph or w < 2 or h < 2:
+        return None
+    if (w, h) == (pw, ph):
+        return [0.0, 0.0, 1.0, 1.0]
+    big = np.asarray(p.convert("L"), dtype=np.float64)
+    small = np.asarray(c.convert("L"), dtype=np.float64)
+    # one offset for both, so the sum of squared differences is exact (and the FFT's
+    # numbers stay small)
+    mid = float(big.mean())
+    big = big - mid
+    small = small - mid
+    fh, fw = ph + h, pw + w
+    corr = np.fft.irfft2(
+        np.fft.rfft2(big, (fh, fw)) * np.conj(np.fft.rfft2(small, (fh, fw))),
+        (fh, fw),
+    )[: ph - h + 1, : pw - w + 1]
+    # the sum of squares under each window, from an integral image
+    sq = np.pad(big * big, ((1, 0), (1, 0))).cumsum(0).cumsum(1)
+    win = sq[h:, w:] - sq[:-h, w:] - sq[h:, :-w] + sq[:-h, :-w]
+    ssd = win - 2 * corr + float((small * small).sum())
+    y, x = np.unravel_index(int(np.argmin(ssd)), ssd.shape)
+    a = np.asarray(p, dtype=np.int16)[y : y + h, x : x + w]
+    b = np.asarray(c, dtype=np.int16)
+    if float(np.abs(a - b).mean()) > 6:
+        return None
+    return box_fractions((int(x), int(y), int(x) + w, int(y) + h), (pw, ph))
+
+
+def box_of(key: str, data_dir: Path, source: str = "") -> list[float] | None:
+    """The kept cut-out's box in its picture, as fractions (x0, y0, x1, y1):
+    kept with the cut-out since 0.13.0, else found once in ``source`` (or the
+    picture the cut-out was made from) and kept beside it. None when it
+    cannot be told."""
+    import json
+
+    data_dir = Path(data_dir)
+    meta = CUTS.meta(key, data_dir)
+    got = meta.get("box")
+    if isinstance(got, list) and len(got) == 4:
+        try:
+            box = [float(v) for v in got]
+        except (TypeError, ValueError):
+            box = []
+        if len(box) == 4 and 0 <= box[0] < box[2] <= 1 and 0 <= box[1] < box[3] <= 1:
+            return box
+    if got == "none":
+        return None
+    path = CUTS.path(key, data_dir)
+    payload = meta.get("payload") if isinstance(meta.get("payload"), dict) else {}
+    source = source or str(meta.get("source") or payload.get("source") or "")
+    if path is None or not source:
+        return None
+    try:
+        box = find_box(path.read_bytes(), Path(source).read_bytes())
+    except OSError:
+        return None
+    with contextlib.suppress(OSError):
+        N.write(
+            CUTS.folder(data_dir) / f"{key}.json",
+            json.dumps({**meta, "box": box or "none"}, ensure_ascii=False).encode(),
+        )
+    return box
 
 
 # ----------------------------------------------------------------------
@@ -362,7 +462,11 @@ def make(job: Any) -> tuple[bytes, dict[str, Any]]:
     cleaned, why = check(alpha)
     if cleaned is None:
         raise P._art_error(BAD + why)
-    return cut_png(picture, cleaned), {"title": job.title, "source": source}
+    size = Image.open(io.BytesIO(picture)).size
+    if cleaned.size != size:
+        cleaned = cleaned.resize(size, Image.Resampling.BILINEAR)
+    box = box_fractions(crop_box(size, cleaned), size)
+    return cut_png(picture, cleaned), {"title": job.title, "source": source, "box": box}
 
 
 def stop(key: str, data_dir: Path) -> bool:

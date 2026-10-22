@@ -2,7 +2,7 @@
    cut out (cut.js), the cut-outs are packed onto one page (pack.js), and the page comes back as
    one JPEG with each specimen's box, caption anchor and caption lines as fractions of the page.
    A specimen with no picture yet is packed as an empty mount of about the size it will take. */
-import { IN_WORKER, canvas, cutout, faceOf, fromAlpha, inkOf, loadImage, maskCanvas, mount, perchKept, toJpeg, vignette, whole } from './cut.js';
+import { IN_WORKER, canvas, cutout, faceOf, fromAlpha, inkOf, loadImage, maskCanvas, mount, perchKept, sane, toJpeg, vignette, whole } from './cut.js';
 import { packSheet } from './pack.js';
 export { captionPlan, wrapLabel } from './pack.js';
 
@@ -121,8 +121,16 @@ export async function buildSheet({ specimens, ratio, size, label, paper = 'cream
       }
       if (!b.whole && b.src && b.on_paper) {
         // a plate or painting on plain paper is cut by its edges when that keeps the perch
-        const edge = cutout(await loadImage(b.src), model);
+        const img = await loadImage(b.src);
+        const box = model ? b.cut_box || null : null;
+        const edge = cutout(img, model, box);
         if (perchKept(edge)) { got = edge; byEdges = true; }
+        else if (model && box) {
+          // the edge cut took in a painted ground: the model's bird with what is drawn
+          // touching it (its branch, its leaves), so the perch is never painted out
+          const held = cutout(img, model, box, true);
+          if (sane(held)) got = held;
+        }
       }
       if (!got && b.src) got = vignette(await loadImage(b.src));
       if (!got) got = mount(0.8);

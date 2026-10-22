@@ -89,21 +89,9 @@ export function dilate(m, w, h, r) {
   }
   return out;
 }
-function erode(m, w, h, r) {
-  const inv = new Uint8Array(w * h);
-  for (let i = 0; i < inv.length; i++) inv[i] = m[i] ? 0 : 1;
-  const d = dilate(inv, w, h, r);
-  const out = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const edge = x < r || y < r || x >= w - r || y >= h - r;
-    out[y * w + x] = d[y * w + x] || edge ? 0 : 1;
-  }
-  return out;
-}
-
 /* The paper, found by spreading in from the edges over anything that looks
    like paper; what the spread cannot reach is the specimen. */
-function paperMask(data, sw, sh, paper) {
+function features(data, sw, sh, paper) {
   const n = sw * sh;
   const L = new Float32Array(n), diff = new Uint8Array(n), sat = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
@@ -117,9 +105,58 @@ function paperMask(data, sw, sh, paper) {
   for (let i = 0; i < n; i++) hp[i] = Math.min(255, Math.abs(L[i] - blur[i]) * 8);
   const texture = boxBlur(hp, sw, sh, 2, 1);
   const paperL = 0.299 * paper[0] + 0.587 * paper[1] + 0.114 * paper[2];
+  return { L, diff, sat, texture, paperL };
+}
+
+/* Pieces of a mask smaller than ``min`` pixels (specks of paper grain) dropped, in place.
+   Thin parts (a twig, a leg) are kept, which an erosion would take. */
+function dropSpecks(m, w, h, min, rules = false) {
+  const seen = new Uint8Array(w * h);
+  const stack = [], piece = [];
+  for (let s0 = 0; s0 < m.length; s0++) {
+    if (!m[s0] || seen[s0]) continue;
+    piece.length = 0;
+    seen[s0] = 1; stack.push(s0);
+    while (stack.length) {
+      const i = stack.pop();
+      piece.push(i);
+      const x = i % w, y = (i - x) / w;
+      if (x > 0 && m[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; stack.push(i - 1); }
+      if (x < w - 1 && m[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; stack.push(i + 1); }
+      if (y > 0 && m[i - w] && !seen[i - w]) { seen[i - w] = 1; stack.push(i - w); }
+      if (y < h - 1 && m[i + w] && !seen[i + w]) { seen[i + w] = 1; stack.push(i + w); }
+    }
+    let drop = piece.length < min;
+    if (!drop && rules) {
+      // a ruled border line inside the frame: thin, long, straight along an edge, near it
+      let x0 = w, y0 = h, x1 = 0, y1 = 0;
+      for (const i of piece) { const x = i % w, y = (i - x) / w; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      const bw = x1 - x0 + 1, bh = y1 - y0 + 1, band = 0.15;
+      drop = (bw <= 5 && bh > 0.25 * h && (x1 < band * w || x0 > (1 - band) * w))
+        || (bh <= 5 && bw > 0.25 * w && (y1 < band * h || y0 > (1 - band) * h));
+      if (!drop && bw > 0.5 * w && bh > 0.5 * h) {
+        // the whole ruled frame, its sides joined at the corners: a sparse piece that lies
+        // almost entirely along the edges
+        let near = 0;
+        for (const i of piece) { const x = i % w, y = (i - x) / w; if (x < band * w || x > (1 - band) * w || y < band * h || y > (1 - band) * h) near++; }
+        drop = near > 0.9 * piece.length && piece.length < 0.15 * bw * bh;
+      }
+    }
+    if (drop) for (const i of piece) m[i] = 0;
+  }
+  return m;
+}
+
+/* ``inset`` pixels round the frame count as paper: a painting drawn inside a ruled
+   border (an Art Nouveau panel, a framed print) is reached past its border line. */
+function paperMask(data, sw, sh, paper, inset = 0, f = null) {
+  const n = sw * sh;
+  const { L, diff, sat, texture, paperL } = f || features(data, sw, sh, paper);
   const paperlike = new Uint8Array(n), washlike = new Uint8Array(n), cand = new Uint8Array(n), edge = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
-    paperlike[i] = diff[i] < 24 ? 1 : 0;
+    const x = i % sw, y = (i - x) / sw;
+    const band = inset > 0 && (x < inset || y < inset || x >= sw - inset || y >= sh - inset);
+    paperlike[i] = band || diff[i] < 24 ? 1 : 0;
     washlike[i] = texture[i] < 24 && sat[i] < 26 && L[i] > paperL - 95 ? 1 : 0;
     cand[i] = paperlike[i] | washlike[i];
     edge[i] = sat[i] < 26 && L[i] > paperL - 95 ? 1 : 0;
@@ -137,6 +174,37 @@ function paperMask(data, sw, sh, paper) {
     if (y > 0) seed(i - sw);
     if (y < sh - 1) seed(i + sw);
   }
+  // a light tinted wash round the specimen (a woodblock's ground, a watercolour's halo) is
+  // neither paper-coloured nor grey: it is followed from the paper while it stays smooth and
+  // changes only gradually, which the drawing's own edge (a line, or a quick change of
+  // colour) never does
+  for (let i = 0; i < n; i++) if (bg[i]) stack.push(i);
+  const step = (i, j) => Math.max(Math.abs(data[i * 4] - data[j * 4]), Math.abs(data[i * 4 + 1] - data[j * 4 + 1]), Math.abs(data[i * 4 + 2] - data[j * 4 + 2]));
+  const wash = (i, j) => !bg[j] && texture[j] < 18 && sat[j] < 90 && L[j] > paperL - 80 && step(i, j) <= 5;
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % sw, y = (i - x) / sw;
+    if (x > 0 && wash(i, i - 1)) { bg[i - 1] = 1; stack.push(i - 1); }
+    if (x < sw - 1 && wash(i, i + 1)) { bg[i + 1] = 1; stack.push(i + 1); }
+    if (y > 0 && wash(i, i - sw)) { bg[i - sw] = 1; stack.push(i - sw); }
+    if (y < sh - 1 && wash(i, i + sw)) { bg[i + sw] = 1; stack.push(i + sw); }
+  }
+  // the last few pixels before the drawing's edge, where the texture measure already feels
+  // the line, taken back while they still match the wash beside them
+  const fringe = (i, j) => !bg[j] && sat[j] < 90 && L[j] > paperL - 80 && step(i, j) <= 8;
+  for (let pass = 0; pass < 4; pass++) {
+    const add = [];
+    for (let i = 0; i < n; i++) {
+      if (!bg[i]) continue;
+      const x = i % sw, y = (i - x) / sw;
+      if (x > 0 && fringe(i, i - 1)) add.push(i - 1);
+      if (x < sw - 1 && fringe(i, i + 1)) add.push(i + 1);
+      if (y > 0 && fringe(i, i - sw)) add.push(i - sw);
+      if (y < sh - 1 && fringe(i, i + sw)) add.push(i + sw);
+    }
+    if (!add.length) break;
+    for (const j of add) bg[j] = 1;
+  }
   let reach = new Uint8Array(n);
   for (let i = 0; i < n; i++) reach[i] = bg[i] && washlike[i] && !paperlike[i] ? 1 : 0;
   for (let k = 0; k < 8; k++) {
@@ -146,8 +214,9 @@ function paperMask(data, sw, sh, paper) {
   }
   let obj = new Uint8Array(n);
   for (let i = 0; i < n; i++) obj[i] = bg[i] || reach[i] ? 0 : 1;
-  obj = dilate(erode(obj, sw, sh, 1), sw, sh, 2);
-  return obj;
+  // specks of grain go by size, not by an erosion, so a thin twig or a leg is kept whole
+  dropSpecks(obj, sw, sh, Math.max(6, Math.round(n * 0.0001)), true);
+  return dilate(obj, sw, sh, 1);
 }
 
 export function bbox(m, w, h) {
@@ -158,9 +227,29 @@ export function bbox(m, w, h) {
   return x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
 }
 
+/* The model's cut-out (RGBA ``alpha`` data, mw x mh, cropped to the specimen) as a 0/1 mask
+   on the picture's sw x sh grid, laid at ``box`` (x0, y0, x1, y1 as fractions of the picture):
+   each grid cell inside the box takes the cut-out's alpha at the same place. */
+export function modelMask(alpha, mw, mh, box, sw, sh) {
+  const out = new Uint8Array(sw * sh);
+  const [bx0, by0, bx1, by1] = box;
+  const X0 = bx0 * sw, Y0 = by0 * sh, BW = (bx1 - bx0) * sw, BH = (by1 - by0) * sh;
+  if (!(BW > 0 && BH > 0)) return out;
+  for (let y = Math.max(0, Math.floor(Y0)); y < Math.min(sh, Math.ceil(Y0 + BH)); y++) {
+    const my = Math.floor(((y + 0.5 - Y0) / BH) * mh);
+    if (my < 0 || my >= mh) continue;
+    for (let x = Math.max(0, Math.floor(X0)); x < Math.min(sw, Math.ceil(X0 + BW)); x++) {
+      const mx = Math.floor(((x + 0.5 - X0) / BW) * mw);
+      if (mx < 0 || mx >= mw) continue;
+      out[y * sw + x] = alpha[(my * mw + mx) * 4 + 3] > 127 ? 1 : 0;
+    }
+  }
+  return out;
+}
+
 /* A picture on plain paper, cut out: the specimen cropped with the paper
    turned white; its hard mask; the paper colour. Printed by multiply. */
-export function cutout(img, model = null) {
+export function cutout(img, model = null, modelBox = null, anchored = false) {
   const k0 = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
   const cw = Math.max(1, Math.round(img.naturalWidth * k0)), ch = Math.max(1, Math.round(img.naturalHeight * k0));
   const full = canvas(cw, ch);
@@ -175,28 +264,64 @@ export function cutout(img, model = null) {
     for (let x = 0; x < cw; x += step) { const i = (y * cw + x) * 4; samples[0].push(px[i]); samples[1].push(px[i + 1]); samples[2].push(px[i + 2]); }
   }
   const paper = samples.map((s) => Math.round(median(s)));
-  const k = Math.min(1, 320 / Math.max(cw, ch));
+  const k = Math.min(1, 420 / Math.max(cw, ch));
   const sw = Math.max(1, Math.round(cw * k)), sh = Math.max(1, Math.round(ch * k));
   const small = canvas(sw, sh);
   const sctx = small.getContext('2d', { willReadFrequently: true });
   sctx.drawImage(full, 0, 0, sw, sh);
   const sd = sctx.getImageData(0, 0, sw, sh).data;
-  const sm = paperMask(sd, sw, sh, paper);
+  const feat = features(sd, sw, sh, paper);
+  let sm = paperMask(sd, sw, sh, paper, 0, feat);
+  // nearly the whole frame kept: a painting inside a ruled border line, which the spread
+  // from the edges cannot cross. Tried again with a band round the frame taken as paper.
+  const inkIn = (m) => { let c = 0; for (let i = 0; i < m.length; i++) c += m[i]; return c; };
+  if (inkIn(sm) > 0.6 * sw * sh) {
+    for (const t of [0.02, 0.04, 0.07]) {
+      const again = paperMask(sd, sw, sh, paper, Math.max(2, Math.round(t * Math.min(sw, sh))), feat);
+      const got = inkIn(again);
+      if (got < 0.6 * sw * sh && got > 0.005 * sw * sh) { sm = again; break; }
+    }
+  }
   // A white bird on white paper is what the spread takes for paper, so a model's mask that
   // passed its check is added: what it kept is never given up, and the edges still add the
   // perch and the foliage it left out.
-  if (model) {
-    const mc = canvas(sw, sh);
+  // The model's cut-out is cropped to the specimen: it is laid where it was cut from
+  // (``modelBox``, fractions of the picture), never stretched over the whole frame.
+  if (model && modelBox) {
+    const mw = Math.max(1, Math.min(model.naturalWidth || model.width, 1200)), mh = Math.max(1, Math.round(mw * (model.naturalHeight || model.height) / (model.naturalWidth || model.width)));
+    const mc = canvas(mw, mh);
     const mctx = mc.getContext('2d', { willReadFrequently: true });
-    mctx.drawImage(model, 0, 0, sw, sh);
-    const md = mctx.getImageData(0, 0, sw, sh).data;
-    const kept = new Uint8Array(sw * sh);
-    for (let i = 0; i < sw * sh; i++) kept[i] = md[i * 4 + 3] > 127 ? 1 : 0;
+    mctx.drawImage(model, 0, 0, mw, mh);
+    const kept = modelMask(mctx.getImageData(0, 0, mw, mh).data, mw, mh, modelBox, sw, sh);
     const grown = dilate(kept, sw, sh, 1);
     for (let i = 0; i < sw * sh; i++) if (grown[i]) sm[i] = 1;
-  }
+    // anchored: the specimen is the model's mask and whatever is drawn that touches it (its
+    // branch, its leaves, the log under it), followed through the edge cut's foreground but
+    // never through a smooth pale wash, so a painted ground round the bird is left behind
+    if (anchored) {
+      const { texture, sat, L, paperL } = feat;
+      const n = sw * sh;
+      const out = new Uint8Array(n);
+      const stack = [];
+      for (let i = 0; i < n; i++) if (grown[i]) { out[i] = 1; stack.push(i); }
+      const drawn = (i) => sm[i] && !(texture[i] < 24 && sat[i] < 70 && L[i] > paperL - 95);
+      while (stack.length) {
+        const i = stack.pop();
+        const x = i % sw, y = (i - x) / sw;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= sw || yy >= sh) continue;
+          const j = yy * sw + xx;
+          if (!out[j] && drawn(j)) { out[j] = 1; stack.push(j); }
+        }
+      }
+      sm = dilate(out, sw, sh, 1);
+    }
+  } else if (anchored) return null;
   dropShadows(sm, sd, sw, sh, paper);
-  let box = bbox(erode(sm, sw, sh, 3), sw, sh) || bbox(sm, sw, sh);
+  // the box takes in every part of the cut, a thin twig as much as the bird: a box of the
+  // eroded mask cut the ends off a slender branch and left them as pale slivers
+  let box = bbox(sm, sw, sh);
   if (!box) return null;
   const pad = Math.max(cw, ch) / 60;
   box = [Math.max(0, Math.floor(box[0] / k - pad)), Math.max(0, Math.floor(box[1] / k - pad)), Math.min(cw, Math.ceil(box[2] / k + pad)), Math.min(ch, Math.ceil(box[3] / k + pad))];
@@ -207,7 +332,9 @@ export function cutout(img, model = null) {
     const sx = Math.min(sw - 1, Math.floor((box[0] + x) * k)), sy = Math.min(sh - 1, Math.floor((box[1] + y) * k));
     hard[y * bw + x] = sm[sy * sw + sx];
   }
-  const soft = boxBlur(Float32Array.from(hard), bw, bh, 2, 2);
+  // the soft edge falls outside the mask, so a thin branch inside it keeps its full colour
+  // rather than fading to a pale sliver
+  const soft = boxBlur(Float32Array.from(dilate(hard, bw, bh, 2)), bw, bh, 2, 1);
   const cut = canvas(bw, bh);
   const cctx = cut.getContext('2d');
   const out = cctx.createImageData(bw, bh);
@@ -297,6 +424,14 @@ export function perchKept(edge) {
   let filled = 0;
   for (let i = 0; i < soft.length; i++) if (soft[i] > 0.2) filled++;
   return filled < 0.72 * w * h;
+}
+
+/* Whether a cut is a cut-out at all: more than specks, well under the whole frame. */
+export function sane(edge) {
+  if (!edge) return false;
+  const [fw, fh] = edge.frame;
+  const ink = inkOf(edge);
+  return ink > 0.01 * fw * fh && ink < 0.8 * fw * fh;
 }
 
 /* A picture that arrived already cut out (a PNG with alpha): its alpha is

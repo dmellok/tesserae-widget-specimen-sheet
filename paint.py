@@ -1345,9 +1345,11 @@ def key_for(
     pose: str = "mixed",
     perch: str = "",
     hero: bool = False,
+    fine: str = "",
 ) -> str:
     """The painting's file key: species slug, style, flight for a flying
     bird, the plant a perched bird sits on when the place has native ones,
+    a tag for a finer kind with a pose of its own (a beetle),
     dapper for the day's dapper specimen, the model when it is not the
     default (so switching models never repaints what another made)."""
     key = f"{N.slug(sci)}--{style}"
@@ -1359,6 +1361,8 @@ def key_for(
         key += "--flight"
     elif perch and kind == "Aves":
         key += f"--on_{N.slug(perch)}"
+    if K.fine_tag(fine):
+        key += f"--{K.fine_tag(fine)}"
     if dapper:
         key += "--dapper"
     if hero:
@@ -1583,7 +1587,7 @@ def references(
 
 
 def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
-    noun, pose = K.noun_of(job.get("kind"))
+    noun, pose = K.noun_of(job.get("kind"), job.get("fine"))
     flying = job.get("kind") == "Aves" and "--flight" in job["key"]
     if job.get("kind") == "Aves":
         pose = POSES["flight" if flying else "perched"]
