@@ -2,7 +2,7 @@
   "tesserae_compat": "1.x",
   "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1009,55 +1009,81 @@
       "choices": [
         {
           "value": "gould",
-          "label": "Hand-coloured lithograph (Gould)"
+          "label": "Hand-coloured lithograph (Gould)",
+          "image": "/plugins/specimen_sheet/static/styles/gould.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/gould.jpg"
         },
         {
           "value": "audubon",
-          "label": "Watercolour after Audubon"
+          "label": "Watercolour after Audubon",
+          "image": "/plugins/specimen_sheet/static/styles/audubon.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/audubon.jpg"
         },
         {
           "value": "watercolour",
-          "label": "Modern watercolour"
+          "label": "Modern watercolour",
+          "image": "/plugins/specimen_sheet/static/styles/watercolour.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/watercolour.jpg"
         },
         {
           "value": "engraving",
-          "label": "Black-ink engraving"
+          "label": "Black-ink engraving",
+          "image": "/plugins/specimen_sheet/static/styles/engraving.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/engraving.jpg"
         },
         {
           "value": "sketch",
-          "label": "Field sketch"
+          "label": "Field sketch",
+          "image": "/plugins/specimen_sheet/static/styles/sketch.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/sketch.jpg"
         },
         {
           "value": "pencil",
-          "label": "Pencil study"
+          "label": "Pencil study",
+          "image": "/plugins/specimen_sheet/static/styles/pencil.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/pencil.jpg"
         },
         {
           "value": "woodblock",
-          "label": "Japanese woodblock print"
+          "label": "Japanese woodblock print",
+          "image": "/plugins/specimen_sheet/static/styles/woodblock.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/woodblock.jpg"
         },
         {
           "value": "linocut",
-          "label": "Linocut"
+          "label": "Linocut",
+          "image": "/plugins/specimen_sheet/static/styles/linocut.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/linocut.jpg"
         },
         {
           "value": "mucha",
-          "label": "Art Nouveau (Mucha)"
+          "label": "Art Nouveau (Mucha)",
+          "image": "/plugins/specimen_sheet/static/styles/mucha.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/mucha.jpg"
         },
         {
           "value": "folkart",
-          "label": "Folk art"
+          "label": "Folk art",
+          "image": "/plugins/specimen_sheet/static/styles/folkart.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/folkart.jpg"
         },
         {
           "value": "sumie",
-          "label": "Ink and wash"
+          "label": "Ink and wash",
+          "image": "/plugins/specimen_sheet/static/styles/sumie.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/sumie.jpg"
         },
         {
           "value": "stainedglass",
-          "label": "Stained glass"
+          "label": "Stained glass",
+          "image": "/plugins/specimen_sheet/static/styles/stainedglass.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/stainedglass.jpg"
         },
         {
           "value": "pointillism",
-          "label": "Pointillism"
+          "label": "Pointillism",
+          "image": "/plugins/specimen_sheet/static/styles/pointillism.jpg",
+          "image_large": "/plugins/specimen_sheet/static/styles/large/pointillism.jpg"
         },
         {
           "value": "builder",
@@ -1410,6 +1436,30 @@
         {
           "value": "hide",
           "label": "Leave it off the sheet"
+        }
+      ]
+    },
+    {
+      "name": "when_spent",
+      "type": "select",
+      "label": "When the day's budget is spent",
+      "default": "keep",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "Once to-day's painting budget is spent, the species that could not be painted give way to paintings this widget already kept in the same style, cut out like the rest: a different handful each hour, or those on the sheet on the fewest days first. Their labels say when each was last on the sheet, the title line says how many are from the collection, and they are never counted as seen to-day. Nothing is painted for them; one never cut out before is cut once, from the cut-out budget. The cluster and the grid only: a hero and the year list stay as they are.",
+      "choices": [
+        {
+          "value": "keep",
+          "label": "Keep to-day's species only"
+        },
+        {
+          "value": "random",
+          "label": "Fill the gaps from the collection, at random"
+        },
+        {
+          "value": "rare",
+          "label": "Fill the gaps from the collection, the rarest first"
         }
       ]
     },

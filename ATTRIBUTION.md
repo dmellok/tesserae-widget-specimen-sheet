@@ -25,3 +25,16 @@ picture is a derivative of it and carries the same licence.
 ## Bundled plates
 
 The public-domain plates in `plates.json` are credited to their sources on the sheet.
+
+## Style samples
+
+The pictures in `static/styles/`, one per painting style, shown in the Style picker, are AI
+paintings (Nano Banana on fal.ai) of a great tit, made by `tools/style_previews.py` from one
+photograph, used as the reference picture:
+
+- "Great tit side-on" by Francis C. Franklin, Wikimedia Commons,
+  <https://commons.wikimedia.org/wiki/File:Great_tit_side-on.jpg>, CC BY-SA 3.0
+  (<https://creativecommons.org/licenses/by-sa/3.0/>).
+
+The samples are adaptations of that photograph and carry the same licence, CC BY-SA 3.0, with
+the same credit.

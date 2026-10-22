@@ -110,6 +110,11 @@ SHEET_MAX = 32
 # and the order of a numbered key.
 ORDERS = ("most", "rarest", "latest", "mix")
 ARRANGEMENTS = ("sheet", "scene")
+# when the day's painting budget is spent: the species that could not be painted
+# give way to paintings already kept in the style, at random or the rarest first
+SPENT = ("keep", "random", "rare")
+SPENT_LAYOUTS = ("cluster", "grid")
+KEPT_BY_S = 4.5  # past this far into a fetch, a kept painting never cut out waits
 SCENE_WORDS_GROUNDED = (
     "floor",
     "log",
@@ -777,6 +782,7 @@ LOOK_OPTIONS = frozenset(
         "pose",
         "model",
         "unpainted",
+        "when_spent",
         "dapper",
         "arrangement",
         "scene",
@@ -921,6 +927,8 @@ def _attach_pictures(
         gen.setdefault("keys", []).append(key)
         payload, title = _paint_payload(row, gen)
         got = art.request(key, payload, title=title)
+        # the state rides on the row a moment, so a spent budget's gaps can be told apart
+        row["_paint"] = got.state
         if got.ready:
             pic = _painting(key, data_dir, levels, HERO_PX if hero else PICTURE_PX)
             if pic:
@@ -959,31 +967,151 @@ def _attach_pictures(
         row["pic"] = pic
         if not pic or not pic.get("key"):
             continue
-        st = M.state(pic["key"], data_dir)
-        if st == "ready":
-            pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
-            st = "ready" if pic["cut"] else "failed"
-        elif st == "none":
-            if cuts is not None and pic.get("file"):
-                got = cuts.request(
-                    pic["key"],
-                    {"source": pic["file"]},
-                    title=str(row.get("name") or pic["key"]),
-                )
-                st = {"painting": "running", "ready": "ready"}.get(got.state, got.state)
-                if st == "ready":
-                    pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
-            else:
-                st = "no_key"
-        if st == "bad" and pic.get("kind") != "painting":
-            # the model could not find one specimen in it: a soft oval, never a
-            # rectangle. A painting is on plain white paper by construction, so
-            # its edges cut it cleanly even when the subject is tiny.
-            pic["on_paper"] = False
-        pic["cut_state"] = st
-        pic.pop("file", None)
+        st = _cut(pic, str(row.get("name") or pic["key"]), data_dir, levels, cuts)
         states[st] = states.get(st, 0) + 1
     return states
+
+
+def _cut(
+    pic: dict[str, Any], title: str, data_dir: Path, levels: str, cuts: Any
+) -> str:
+    """The picture's cut-out: a kept one rides along as ``cut``; a picture
+    without one is asked of the ``cuts`` collection. Returns its state."""
+    st = M.state(pic["key"], data_dir)
+    if st == "ready":
+        pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
+        st = "ready" if pic["cut"] else "failed"
+    elif st == "none":
+        if cuts is not None and pic.get("file"):
+            got = cuts.request(pic["key"], {"source": pic["file"]}, title=title)
+            st = {"painting": "running", "ready": "ready"}.get(got.state, got.state)
+            if st == "ready":
+                pic["cut"] = M.cut_url(pic["key"], data_dir, levels)
+        else:
+            st = "no_key"
+    if st == "bad" and pic.get("kind") != "painting":
+        # the model could not find one specimen in it: a soft oval, never a
+        # rectangle. A painting is on plain white paper by construction, so
+        # its edges cut it cleanly even when the subject is tiny.
+        pic["on_paper"] = False
+    pic["cut_state"] = st
+    pic.pop("file", None)
+    return st
+
+
+def _day_text(day: str, today: str) -> str:
+    if day == today:
+        return "to-day"
+    try:
+        d = datetime.strptime(day, "%Y-%m-%d")
+    except ValueError:
+        return day
+    return d.strftime("%-d %b" if sys.platform != "win32" else "%d %b")
+
+
+def _kept_line(hits: list[str], today: str) -> str:
+    """The caption line of a specimen from the collection: when the widget's
+    log last had it on the sheet, so no reader takes it for one heard or
+    found to-day."""
+    if not hits:
+        return "from the collection"
+    last = _day_text(sorted(hits)[-1], today)
+    if len(hits) == 1:
+        return f"on the sheet once, {last}"
+    return f"on the sheet {len(hits)} days, last {last}"
+
+
+def _from_collection(
+    data_dir: Path,
+    *,
+    style: str,
+    exclude: set[str],
+    kinds: set[str],
+    rules: list[str],
+    n: int,
+    mode: str,
+    seed: str,
+    now: datetime,
+    levels: str,
+    cuts: Any,
+    deadline: float,
+    states: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Up to ``n`` paintings already kept in this style, for the gaps a spent
+    budget leaves on the sheet: in an order of their own that holds for the
+    hour (random), or the fewest days on the sheet first by the widget's log
+    (rare; a species the log never had comes last). One per species, none
+    already on the sheet, none excluded, only the kinds this cell shows; never
+    a hero's whole plate or a scene. Each comes with its cut-out; past the
+    deadline a painting never cut out is passed over, so a full collection
+    cannot hold the page. Nothing is painted or logged."""
+    c = P.ART
+    if n <= 0:
+        return []
+    folder = c.folder(data_dir)
+    found: dict[str, tuple[tuple[int, int], str, dict[str, Any]]] = {}
+    with contextlib.suppress(OSError):
+        for f in folder.iterdir():
+            if f.suffix not in (".jpg", ".png") or "__" in f.stem or not f.is_file():
+                continue
+            key = f.stem
+            parts = key.split("--")
+            if parts[0] == "scene" or "hero" in parts:
+                continue
+            meta = c.meta(key, data_dir)
+            sci = str(meta.get("sci") or "")
+            kind = str(meta.get("kind") or "Aves")
+            if meta.get("style") != style or not sci or kind not in kinds:
+                continue
+            row = {"name": str(meta.get("name") or sci), "sci": sci, "kind": kind}
+            slug = N.slug(sci)
+            if slug in exclude or is_excluded(row, rules):
+                continue
+            # the plain painting before the dapper one, then the newest
+            rank = (1 if "dapper" in parts else 0, -int(meta.get("made") or 0))
+            have = found.get(slug)
+            if have is None or rank < have[0]:
+                found[slug] = (rank, key, row)
+    if not found:
+        return []
+    _days, seen = _log_seen(data_dir)
+
+    def hits(slug: str) -> list[str]:
+        row = found[slug][2]
+        return seen.get(row["sci"]) or seen.get(row["name"]) or []
+
+    order = sorted(found)
+    random.Random(f"{seed}|{now.strftime('%Y-%m-%d %H')}").shuffle(order)
+    if mode == "rare":
+        order.sort(key=lambda s: (0, len(hits(s))) if hits(s) else (1, 0))
+    today = now.strftime("%Y-%m-%d")
+    out: list[dict[str, Any]] = []
+    for slug in order:
+        if len(out) >= n:
+            break
+        _rank, key, row = found[slug]
+        if time.time() > deadline and M.state(key, data_dir) not in ("ready", "bad"):
+            continue
+        pic = _painting(key, data_dir, levels)
+        if not pic:
+            continue
+        pic["whole"] = False
+        st = _cut(pic, row["name"], data_dir, levels, cuts)
+        states[st] = states.get(st, 0) + 1
+        h = hits(slug)
+        out.append(
+            {
+                **row,
+                "count": 0,
+                "factor": 1.0,
+                "flag": "",
+                "pic": pic,
+                "kept": True,
+                "kept_line": _kept_line(h, today),
+                "kept_days": len(h),
+            }
+        )
+    return out
 
 
 def _remember(data_dir: Path, rows: list[dict[str, Any]]) -> None:
@@ -1164,6 +1292,7 @@ def _cached_rows(
 def fetch(
     options: dict[str, Any], settings: dict[str, Any], *, ctx: dict[str, Any]
 ) -> dict[str, Any]:
+    started_at = time.time()
     source = _choice(options.get("source"), SOURCES)
     window = _choice(options.get("window"), WINDOWS)
     days = DAYS.get(str(options.get("days") or ""), 30)
@@ -1214,6 +1343,9 @@ def fetch(
     else:
         art_style = _choice(style, P.STYLE_IDS)
     only_painted = options.get("unpainted") == "hide"
+    when_spent = (
+        _choice(options.get("when_spent"), SPENT) if pictures == "gen" else "keep"
+    )
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
     pose = _choice(options.get("pose"), ("mixed", "perched", "flight"))
     hero_note = options.get("hero_note", True) not in (
@@ -1527,6 +1659,39 @@ def fetch(
             art.states.get("no_key", 0),
             art.states.get("failed", 0),
         )
+    # the day's budget spent: the species that could not be painted give way to paintings
+    # already kept in the style (the hero's page and the year list are to-day's and the
+    # year's own, so they stay as they are). Kept specimens are never logged as seen.
+    kept_n = 0
+    if (
+        when_spent != "keep"
+        and gen
+        and art is not None
+        and art.states.get("capped")
+        and layout in SPENT_LAYOUTS
+    ):
+        gaps = [r for r in shown if r.get("_paint") == "capped"]
+        kept = _from_collection(
+            data_dir,
+            style=art_style,
+            exclude={N.slug(str(r.get("sci") or "")) for r in shown if r.get("sci")},
+            kinds={str(r.get("kind") or "Aves") for r in rows},
+            rules=rules,
+            n=len(gaps),
+            mode=when_spent,
+            seed=subject,
+            now=now,
+            levels=levels,
+            cuts=cuts,
+            deadline=started_at + KEPT_BY_S,
+            states=mask_states,
+        )
+        kept_n = len(kept)
+        if kept_n:
+            # the last of the gaps give way, so to-day's leading species keep their places
+            # (as plates or photos) when the collection cannot fill them all; the kept follow
+            gone = {id(r) for r in gaps[len(gaps) - kept_n :]}
+            shown = [r for r in shown if id(r) not in gone] + kept
     unpainted = 0
     if gen and only_painted:
         unpainted = len([r for r in shown if not r.get("pic")])
@@ -1552,6 +1717,17 @@ def fetch(
     if layout == "hero" and hero_note and shown and shown[0].get("sci"):
         shown[0]["about"] = P.about(shown[0]["sci"], data_dir)
     for r in shown:
+        r.pop("_paint", None)
+        if r.get("kept"):
+            # a kept specimen says when it was last on the sheet, never a count for to-day
+            r["count_text"] = r["kept_line"]
+            r["lines"] = _label_lines(
+                r,
+                tuple(x for x in lines if x in ("name", "sci", "size")),
+                source,
+                window,
+            ) + [r["kept_line"]]
+            continue
         r["count_text"] = _count_text(r, source, window)
         r["lines"] = _label_lines(r, lines, source, window)
         if tally == "strokes":
@@ -1595,17 +1771,42 @@ def fetch(
         notices.extend(n_ for n_ in art.notes() if n_ not in notices)
     scene_out = None
     if gen and art is not None and arrangement == "scene":
+        # the scene is of what is here: a kept specimen never goes into one
         scene_out, more = _scene(
-            shown, gen, scene_text, fidelity, scene_every, art, data_dir, levels, ctx
+            [r for r in shown if not r.get("kept")],
+            gen,
+            scene_text,
+            fidelity,
+            scene_every,
+            art,
+            data_dir,
+            levels,
+            ctx,
         )
         status += [m_ for m_ in more if m_ not in status]
+        if scene_out and kept_n:
+            shown = [r for r in shown if not r.get("kept")]
+            kept_n = 0
+    if kept_n:
+        status.append(
+            f"{kept_n} {'of the rarest' if when_spent == 'rare' else 'more'} from the collection while the budget is spent"
+        )
+        period = (
+            f"{period}, and {kept_n} from the collection"
+            if any(not r.get("kept") for r in shown)
+            else "from the collection"
+        )
     # a preview in a new look drops what the previews of this cell held or queued for the
     # old one; a panel records what its sheet asked for, so the paintings page groups it
     if gen and art is not None and not demo:
         art.finish(
             ctx,
             facet=gen["style"],
-            extra={"species": [r["name"] for r in shown if r.get("sci")][:60]},
+            extra={
+                "species": [
+                    r["name"] for r in shown if r.get("sci") and not r.get("kept")
+                ][:60]
+            },
         )
     if not demo:
         cuts.finish(ctx)

@@ -1964,3 +1964,135 @@ def test_an_older_tesserae_still_draws_the_sheet(tmp_path, offline_paint, monkey
         s["pic"] and s["pic"]["kind"] in ("plate", "photo") for s in r["species"]
     )
     assert r["live_refresh_s"] == 0 and r["live_pending"] == 0
+
+
+def test_a_spent_budget_fills_the_sheet_from_the_collection(
+    tmp_path, offline_paint, monkeypatch
+):
+    from datetime import timedelta
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Australia/Melbourne")).date()
+    days = [(today - timedelta(days=i)).isoformat() for i in range(20, 0, -1)]
+    kept = {
+        "Turdus merula": ("Common Blackbird", "Aves"),
+        "Corvus coronoides": ("Australian Raven", "Aves"),
+        "Anas superciliosa": ("Pacific Black Duck", "Aves"),
+        "Dacelo novaeguineae": ("Laughing Kookaburra", "Aves"),  # excluded by the cell
+        "Agrotis infusa": ("Bogong Moth", "Insecta"),  # not a kind this sheet shows
+    }
+    for sci, (name, kind) in kept.items():
+        P.ART.keep(
+            P.key_for(sci, "engraving", kind),
+            tmp_path,
+            _jpeg(),
+            {
+                "style": "engraving",
+                "name": name,
+                "sci": sci,
+                "kind": kind,
+                "credit": f"AI painting of the {name}",
+            },
+        )
+    P.ART.keep(  # another style is not this page's
+        P.key_for("Cacatua galerita", "gould"),
+        tmp_path,
+        _jpeg(),
+        {
+            "style": "gould",
+            "name": "Sulphur-crested Cockatoo",
+            "sci": "Cacatua galerita",
+        },
+    )
+    P.ART.keep(  # nor a hero's whole plate
+        P.key_for("Cacatua galerita", "engraving", hero=True),
+        tmp_path,
+        _jpeg(),
+        {
+            "style": "engraving",
+            "name": "Sulphur-crested Cockatoo",
+            "sci": "Cacatua galerita",
+        },
+    )
+    # the raven was on the sheet five days, the blackbird once; the duck never
+    _log(
+        tmp_path,
+        days,
+        {"Corvus coronoides": days[-5:], "Turdus merula": days[3:4]},
+    )
+    N.write(
+        tmp_path / "paintings" / "budget.json",
+        json.dumps({__import__("time").strftime("%Y-%m-%d"): 24}).encode(),
+    )
+    settings = {"fal_api_key": "k", "gen_daily_cap": "6"}
+    options = {
+        **MELBOURNE,
+        "url": "birdnet.local",
+        "pictures": "gen",
+        "style": "engraving",
+        "when_spent": "rare",
+        "exclude": "Laughing Kookaburra",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    # past the deadline, a painting never cut out waits: none of these is cut yet
+    monkeypatch.setattr(server, "KEPT_BY_S", -1.0)
+    r = server.fetch(options, settings, ctx=ctx)
+    assert not any(s.get("kept") for s in r["species"])
+    monkeypatch.setattr(server, "KEPT_BY_S", 4.5)
+    r = server.fetch(options, settings, ctx=ctx)
+    _settle_paint()
+    assert not [p for p in offline_paint if "prompt" in p], "nothing is painted"
+    names = [s["name"] for s in r["species"]]
+    assert names == [
+        "Australian Magpie",
+        "Common Blackbird",
+        "Australian Raven",
+        "Pacific Black Duck",
+    ], "to-day's leader keeps its place; the rarest of the kept follow"
+    lead, *rest = r["species"]
+    assert lead["pic"]["kind"] == "plate" and not lead.get("kept")
+    assert all(
+        s["kept"] and s["pic"]["kind"] == "painting" and not s["pic"]["whole"]
+        for s in rest
+    )
+    assert rest[0]["lines"][-1].startswith("on the sheet once, ")
+    assert rest[1]["lines"][-1].startswith("on the sheet 5 days, last ")
+    assert rest[2]["lines"][-1] == "from the collection"
+    assert all(not s.get("mark") and "_paint" not in s for s in r["species"])
+    assert r["period"] == "heard to-day, and 3 from the collection"
+    assert (
+        "3 of the rarest from the collection while the budget is spent" in r["status"]
+    )
+    assert "AI painting of the Common Blackbird" in r["credits"]
+    # never logged as seen to-day: the log, the year list and the frame leave them out
+    log = N.read_json(tmp_path / "rarity.json", {})
+    assert today.isoformat() in log["seen"]["Gymnorhina tibicen"]
+    assert today.isoformat() not in log["seen"]["Corvus coronoides"]
+    assert "Anas superciliosa" not in log["seen"]
+    assert "Anas superciliosa" not in N.read_json(tmp_path / "species_shown.json", {})
+    # once cut, a kept painting comes with its cut-out, even past the deadline
+    monkeypatch.setattr(server, "KEPT_BY_S", -1.0)
+    r = server.fetch(options, settings, ctx=ctx)
+    assert all(s["pic"].get("cut") for s in r["species"] if s.get("kept"))
+    assert len([s for s in r["species"] if s.get("kept")]) == 3
+    monkeypatch.setattr(server, "KEPT_BY_S", 4.5)
+    # leaving the unpainted off: the page is all from the collection
+    r = server.fetch({**options, "unpainted": "hide"}, settings, ctx=ctx)
+    assert r["period"] == "from the collection" and all(
+        s.get("kept") for s in r["species"]
+    )
+    # at random: the same three for the hour, whatever renders it
+    a = server.fetch({**options, "when_spent": "random"}, settings, ctx=ctx)
+    b = server.fetch(
+        {**options, "when_spent": "random"}, settings, ctx={**ctx, "preview": True}
+    )
+    assert [s["name"] for s in a["species"]] == [s["name"] for s in b["species"]]
+    assert sorted(s["sci"] for s in a["species"] if s.get("kept")) == sorted(
+        ["Turdus merula", "Corvus coronoides", "Anas superciliosa"]
+    )
+    assert "3 more from the collection while the budget is spent" in a["status"]
+    # left alone, and on a hero or the year list, the sheet is to-day's own
+    for opts in ({"when_spent": "keep"}, {"layout": "hero"}, {"layout": "year"}):
+        r = server.fetch({**options, **opts}, settings, ctx=ctx)
+        assert not any(s.get("kept") for s in r["species"]), opts
+        assert "from the collection" not in r["period"]
