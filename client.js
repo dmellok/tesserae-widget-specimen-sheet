@@ -134,7 +134,8 @@ function buildArgs(d) {
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
   let layout = ['cluster', 'grid', 'hero'].includes(d.layout) ? d.layout : 'cluster';
   if (layout === 'hero') { specimens = specimens.slice(0, 1); label *= 1.9; layout = 'cluster'; }
-  return { specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, layout, facing: 'inward', zoom: Math.max(0.4, Math.min(1, (Number(d.scale) || 100) / 100)) };
+  const packer = ['spiral', 'voids'].includes(d.packing) ? d.packing : 'balanced';
+  return { specimens, ratio: w / h, size: 1400, label, paper: d.paper, ink, layout, packer, facing: 'inward', zoom: Math.max(0.4, Math.min(1, (Number(d.scale) || 100) / 100)) };
 }
 
 /* Whether a finished sheet has anything on it: a sample of its pixels against the paper. A

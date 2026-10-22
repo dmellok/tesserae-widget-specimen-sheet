@@ -11,7 +11,9 @@ folder at commit `9976c817b4d7105123daa4906272cc8b14c27ed1`.
   L. A. Fuertes, J. G. Keulemans, F. Levaillant, C. R. Bree, P. F. von Siebold, W. Swainson,
   J. Cassin, J. F. Naumann, C. J. Temminck, Edward Lear and R. B. Sharpe; the source
   `ATTRIBUTION.md` in that repository lists each work and where its scan came from.
-- Code: MIT. No Fugleramme code is used here.
+- Code: MIT. The Spiral and Voids packings in `static/pack.js` are adapted from Fugleramme's
+  `render/packing.py` and the size search in `render/collage.py`; its copyright and permission
+  notice are kept at the head of that part of the file.
 
 What this widget ships is only `classic.json`, an index (file name, source page, trimmed
 bounding box, size) built by `tools/build_classic.py` from that repository's `manifest.json` and

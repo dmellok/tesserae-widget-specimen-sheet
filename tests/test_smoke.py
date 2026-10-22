@@ -2096,3 +2096,49 @@ def test_a_spent_budget_fills_the_sheet_from_the_collection(
         r = server.fetch({**options, **opts}, settings, ctx=ctx)
         assert not any(s.get("kept") for s in r["species"]), opts
         assert "from the collection" not in r["period"]
+
+
+def test_fugleramme_packings_keep_specimens_apart_and_on_the_page():
+    script = (
+        f"import('file://{ROOT}/static/pack.js').then((m) => {{"
+        " const blob = (w, h, s) => { const d = new Uint8Array(w * h);"
+        "   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {"
+        "     const dx = (x - w * 0.45) / (w * 0.35), dy = (y - h * 0.45) / (h * 0.3);"
+        "     const head = ((x - w * 0.75) / (w * 0.13)) ** 2 + ((y - h * 0.25) / (h * 0.13)) ** 2 < 1;"
+        "     if (dx * dx + dy * dy < 1 || head || (Math.abs(x - w * 0.45) < 2 && y > h * 0.7)) d[y * w + x] = 1; }"
+        "   return { w, h, data: d }; };"
+        " for (const packer of ['spiral', 'voids']) for (const [W, H] of [[1400, 840], [840, 1400]]) {"
+        "   const its = Array.from({ length: 14 }, (_, i) => ({ mask: blob(160 + (i * 37) % 140, 130 + (i * 53) % 110, i),"
+        "     factor: 0.6 + (i % 5) / 5, lines: ['Bird ' + i], flippable: true, sci: 'Avis ' + i }));"
+        "   const out = m.packSheet(its, W, H, 13 / H, { packer });"
+        "   const occ = new Uint8Array(W * H);"
+        "   out.forEach((p, i) => { if (!p) throw new Error(packer + ' left one off');"
+        "     const k = its[i].mask;"
+        "     for (let y = 0; y < k.h; y++) for (let x = 0; x < k.w; x++) { if (!k.data[y * k.w + x]) continue;"
+        "       const sx = p.flip ? k.w - 1 - x : x;"
+        "       const X = Math.floor(p.x + (sx + 0.5) * p.w / k.w), Y = Math.floor(p.y + (y + 0.5) * p.h / k.h);"
+        "       if (X < 0 || Y < 0 || X >= W || Y >= H) throw new Error(packer + ' off the page');"
+        "       if (occ[Y * W + X] && occ[Y * W + X] !== i + 1) throw new Error(packer + ' overlap');"
+        "       occ[Y * W + X] = i + 1; } });"
+        "   const same = m.packSheet(its, W, H, 13 / H, { packer });"
+        "   if (JSON.stringify(same) !== JSON.stringify(out)) throw new Error(packer + ' not repeatable'); }"
+        " console.log('ok'); })"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert out.returncode == 0, out.stderr
+
+
+def test_packing_option_reaches_the_page(tmp_path):
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    assert server.fetch(MELBOURNE, {}, ctx=ctx)["packing"] == "balanced"
+    got = server.fetch({**MELBOURNE, "packing": "voids"}, {}, ctx=ctx)
+    assert got["packing"] == "voids"
+    assert (
+        server.fetch({**MELBOURNE, "packing": "nonsense"}, {}, ctx=ctx)["packing"]
+        == "balanced"
+    )

@@ -2,7 +2,7 @@
   "tesserae_compat": "1.x",
   "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1655,6 +1655,33 @@
           "label": "Year list: every species this year, to-day's in ink"
         }
       ]
+    },
+    {
+      "name": "packing",
+      "type": "select",
+      "label": "Packing",
+      "default": "balanced",
+      "show_if": {
+        "layout": [
+          "cluster",
+          "hero"
+        ]
+      },
+      "choices": [
+        {
+          "value": "balanced",
+          "label": "Balanced: grown to fill the page"
+        },
+        {
+          "value": "spiral",
+          "label": "Spiral: out from the middle (Fugleramme)"
+        },
+        {
+          "value": "voids",
+          "label": "Voids: the emptiest paper first (Fugleramme)"
+        }
+      ],
+      "help": "How the cluster is packed. Balanced packs from the middle and then grows each specimen into the room left. Spiral and Voids are Fugleramme's packers: Spiral sets each specimen, largest first, on the first free spot out from the middle, for a round cluster; Voids sets each on the emptiest paper it fits, so the sheet fills to the corners."
     },
     {
       "name": "hero_note",

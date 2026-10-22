@@ -110,6 +110,7 @@ SHEET_MAX = 32
 # and the order of a numbered key.
 ORDERS = ("most", "rarest", "latest", "mix")
 ARRANGEMENTS = ("sheet", "scene")
+PACKINGS = ("balanced", "spiral", "voids")
 # when the day's painting budget is spent: the species that could not be painted
 # give way to paintings already kept in the style, at random or the rarest first
 SPENT = ("keep", "random", "rare")
@@ -1318,6 +1319,7 @@ def fetch(
     text_scale = int(_choice(options.get("text_size"), TEXT_SCALES)) / 100
     paper = _choice(options.get("paper"), PAPERS)
     layout = _choice(options.get("layout"), LAYOUTS)
+    packing = _choice(options.get("packing"), PACKINGS)
     marks = _choice(options.get("marks"), MARKS)
     tally = _choice(options.get("tally"), TALLY)
     day_pages = _choice(options.get("day_pages"), ("off", "on"))
@@ -1411,6 +1413,7 @@ def fetch(
             "paper": paper,
             "scale": scale,
             "layout": layout,
+            "packing": packing,
             "panel": levels,
             "footer": footer,
             "header": header,
