@@ -20,7 +20,7 @@ Each specimen is cut out of its picture and the cut-outs are packed onto one she
 
 Captions are measured, not guessed, and a page carries what it can: every line, wrapped, on a tall page; the name alone on a middling one or when many specimens would stack too much caption; none on a small cell, where a caption would be wider than its specimen.
 
-![Eleven birds](screenshots/extra-1.png)
+![The dawn chorus in classic plates](screenshots/extra-1.png)
 
 **How many** is a slider from 2 to 32 specimens, and **Scale** runs from 40 to 250%: below 100 it packs the arrangement into the middle of the page with wider margins, above 100 it shows fewer, bigger specimens (the first by Order; 200% shows about a quarter as many). **Layout** is a cluster, a grid with a cell each, or a hero: one specimen alone, the first by Order, with the others named beneath. A hero can carry **a note about the specimen** (a sentence or two from Wikipedia) under the picture, and have **an ornate rule frame** drawn round it, or, with AI paintings on, **an ornate backdrop painted in the style**: a plate of its own, the specimen large on a patterned or foliate ground within an ornamental border, shown whole. **Order** picks which species make the sheet when more were heard or recorded than fit: the most heard, the rarest (new arrivals first), the latest, or a daily mix. **Labels** are captions (the lines you pick: name, scientific name, count, last seen, new or returning, observer, length) or none. **Title line** puts the place, the period and the date above the page, below it, or nowhere, so the specimens get the room.
 
