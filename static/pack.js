@@ -36,6 +36,15 @@ export function wrapLabel(text, max = WRAP_AT) {
   if (t.length <= max + 2) return t;
   const out = [];
   let cur = '';
+  // a line of facts ("1099 calls · last 11:48") breaks only between its facts, and a little
+  // later than a name does, so "last" is never left apart from its time
+  if (t.includes(' · ')) {
+    for (const s of t.split(' · ')) {
+      if (cur && (cur + ' · ' + s).length > max + 8) { out.push(cur + ' ·'); cur = s; } else cur = cur ? cur + ' · ' + s : s;
+    }
+    if (cur) out.push(cur);
+    return out.join('\n');
+  }
   for (const w of t.split(' ')) {
     if (cur && (cur + ' ' + w).length > max) { out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
   }
