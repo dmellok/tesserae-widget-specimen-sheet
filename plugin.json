@@ -2,9 +2,9 @@
   "tesserae_compat": "1.x",
   "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "kind": "widget",
-  "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard to-day), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
+  "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard, over a window you pick), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
   "supports": {
     "sizes": [
@@ -26,19 +26,19 @@
       "type": "select",
       "label": "Source",
       "default": "birdnet_go",
-      "help": "BirdNET-Go hears the birds to-day. iNaturalist is what people have found near a place lately. GBIF is what has been recorded near a place in this month of the year (it lags by weeks, so it is seasonal, not news).",
+      "help": "BirdNET-Go is what the microphone heard, over the window you pick. iNaturalist is what people have found near a place lately. GBIF is what has been recorded near a place in this month of the year (it lags by weeks, so it is seasonal, not news).",
       "choices": [
         {
           "value": "birdnet_go",
-          "label": "BirdNET-Go (heard to-day)"
+          "label": "BirdNET-Go"
         },
         {
           "value": "inaturalist",
-          "label": "iNaturalist (found nearby lately)"
+          "label": "iNaturalist"
         },
         {
           "value": "gbif",
-          "label": "GBIF (recorded here this month of the year)"
+          "label": "GBIF"
         }
       ]
     },
@@ -53,31 +53,84 @@
       }
     },
     {
-      "name": "token",
-      "type": "string",
-      "label": "BirdNET-Go bearer token (normally blank)",
-      "default": "",
-      "secret": true,
-      "help": "BirdNET-Go's reads need no login, even with Basic Authentication on. Fill this only for a reverse proxy or build that wants a bearer token.",
+      "name": "window",
+      "type": "select",
+      "label": "Window",
+      "default": "today",
+      "help": "Which detections make the page, as Fugleramme groups them. Today is BirdNET-Go's day as it fills, with its hours. Last week is the last seven days by date. The rolling windows count back from now: under a day off BirdNET-Go's newest detections, longer from its species summary, keeping only the birds last heard inside the window. The demo garden keeps only to-day.",
       "show_if": {
-        "source": "birdnet_go",
-        "url": {
-          "not": ""
+        "source": "birdnet_go"
+      },
+      "choices": [
+        {
+          "value": "0.25",
+          "label": "Last 15 minutes"
+        },
+        {
+          "value": "0.5",
+          "label": "Last 30 minutes"
+        },
+        {
+          "value": "1",
+          "label": "Last hour"
+        },
+        {
+          "value": "3",
+          "label": "Last 3 hours"
+        },
+        {
+          "value": "6",
+          "label": "Last 6 hours"
+        },
+        {
+          "value": "12",
+          "label": "Last 12 hours"
+        },
+        {
+          "value": "today",
+          "label": "Today"
+        },
+        {
+          "value": "24",
+          "label": "Last 24 hours"
+        },
+        {
+          "value": "72",
+          "label": "Last 3 days"
+        },
+        {
+          "value": "week",
+          "label": "Last week"
+        },
+        {
+          "value": "720",
+          "label": "Last 30 days"
+        },
+        {
+          "value": "0",
+          "label": "All time"
         }
-      }
+      ]
     },
     {
       "name": "location",
       "type": "location_search",
       "label": "Place",
       "default": "",
-      "help": "For iNaturalist and GBIF, the place to look around. For BirdNET-Go, the clock, sunrise and sunset, and the demo garden. Falls back to the app-level location."
+      "help": "For iNaturalist and GBIF, the place to look around. For BirdNET-Go, the clock, sunrise and sunset, and which demo garden. Falls back to the app-level location, so BirdNET-Go with an address can leave it empty."
     },
     {
       "name": "radius_km",
       "type": "select",
       "label": "Within",
       "default": "10",
+      "help": "How far round the place to look.",
+      "show_if": {
+        "source": [
+          "inaturalist",
+          "gbif"
+        ]
+      },
       "choices": [
         {
           "value": "2",
@@ -99,23 +152,7 @@
           "value": "50",
           "label": "50 km"
         }
-      ],
-      "show_if": {
-        "source": [
-          "inaturalist",
-          "gbif"
-        ]
-      }
-    },
-    {
-      "name": "user_login",
-      "type": "string",
-      "label": "Only this iNaturalist user (optional)",
-      "default": "",
-      "help": "An iNaturalist username. Set it to your own to see what you have catalogued, near the place or, with no place, anywhere.",
-      "show_if": {
-        "source": "inaturalist"
-      }
+      ]
     },
     {
       "name": "kinds_inat",
@@ -585,74 +622,36 @@
       ]
     },
     {
-      "name": "window",
-      "type": "select",
-      "label": "Period",
-      "default": "today",
-      "help": "To-day is BirdNET-Go's day as it fills. This week is the last seven days together, from BirdNET-Go's species summary.",
-      "choices": [
-        {
-          "value": "today",
-          "label": "To-day"
-        },
-        {
-          "value": "week",
-          "label": "This week"
-        }
-      ],
-      "show_if": {
-        "source": "birdnet_go"
-      }
-    },
-    {
       "name": "days",
       "type": "select",
-      "label": "Looking back",
+      "label": "Window",
       "default": "30d",
+      "help": "How far back iNaturalist's observations go.",
+      "show_if": {
+        "source": "inaturalist"
+      },
       "choices": [
         {
           "value": "7d",
-          "label": "A week"
+          "label": "Last week"
         },
         {
           "value": "14d",
-          "label": "Two weeks"
+          "label": "Last 2 weeks"
         },
         {
           "value": "30d",
-          "label": "A month"
+          "label": "Last 30 days"
         },
         {
           "value": "90d",
-          "label": "Three months"
+          "label": "Last 3 months"
         },
         {
           "value": "365d",
-          "label": "A year"
+          "label": "Last year"
         }
-      ],
-      "show_if": {
-        "source": "inaturalist"
-      }
-    },
-    {
-      "name": "quality",
-      "type": "select",
-      "label": "Observations",
-      "default": "research",
-      "choices": [
-        {
-          "value": "research",
-          "label": "Research grade: the community agrees on the species"
-        },
-        {
-          "value": "",
-          "label": "Any with a species, agreed or not"
-        }
-      ],
-      "show_if": {
-        "source": "inaturalist"
-      }
+      ]
     },
     {
       "name": "count",
@@ -662,324 +661,137 @@
       "min": 2,
       "max": 32,
       "step": 1,
-      "help": "Specimens on the sheet, picked by Order. The more there are, the smaller each is; Scale below can shrink the whole arrangement further."
+      "help": "Specimens on the sheet, picked by Which species. The more there are, the smaller each is; Scale can shrink the whole arrangement further.",
+      "show_if": {
+        "layout": {
+          "not": "year"
+        }
+      }
     },
     {
-      "name": "order",
+      "name": "layout",
       "type": "select",
-      "label": "Order",
-      "default": "most",
-      "help": "Which species make the sheet when more were heard or recorded than fit, and their order: the most heard, the rarest (new arrivals first), the latest, or a daily mix.",
+      "label": "Layout",
+      "default": "cluster",
+      "help": "A cluster packed from the middle out, each specimen as large as the page allows; a grid with a cell each; a hero: one specimen alone, with the others named beneath; or the year list: every species the sheet has shown this year, the earliest arrivals first, to-day's in ink.",
       "choices": [
         {
-          "value": "most",
-          "label": "Most heard or recorded"
+          "value": "cluster",
+          "label": "Cluster"
         },
         {
-          "value": "rarest",
-          "label": "Rarest here"
+          "value": "grid",
+          "label": "Grid"
+        },
+        {
+          "value": "hero",
+          "label": "Hero: one specimen"
+        },
+        {
+          "value": "year",
+          "label": "Year list"
+        }
+      ]
+    },
+    {
+      "name": "hero_bird",
+      "type": "select",
+      "label": "Which specimen",
+      "default": "order",
+      "help": "The one the hero shows. The first by Which species, as before; or Fugleramme's single plates: the bird heard last, or the newest arrival (of the window's birds, the one first heard most lately in the station's whole record, with the day it arrived); or the most heard, or the rarest, in the window.",
+      "show_if": {
+        "layout": "hero"
+      },
+      "choices": [
+        {
+          "value": "order",
+          "label": "The first by Which species"
         },
         {
           "value": "latest",
-          "label": "Most recently heard or seen"
+          "label": "The latest heard"
         },
         {
-          "value": "mix",
-          "label": "Mix, a different pick each day"
+          "value": "arrival",
+          "label": "The newest arrival"
+        },
+        {
+          "value": "most",
+          "label": "The most heard"
+        },
+        {
+          "value": "rarest",
+          "label": "The rarest"
         }
       ]
     },
     {
-      "name": "marks",
+      "name": "hero_note",
+      "type": "boolean",
+      "label": "A note beneath",
+      "default": true,
+      "help": "A sentence or two on the species from Wikipedia, under the picture.",
+      "show_if": {
+        "layout": "hero"
+      }
+    },
+    {
+      "name": "hero_frame",
       "type": "select",
-      "label": "Marks",
-      "default": "off",
-      "help": "A small mark on a specimen: new, for a species new here or back after an absence; rare, for one on the sheet on few of the days the widget has logged (one in twenty at most, once it has logged a fortnight).",
+      "label": "Around the specimen",
+      "default": "plain",
+      "help": "The painted backdrop asks fal.ai for a plate of its own: the specimen large on a patterned or foliate ground within an ornamental border, in the style chosen, shown whole. One painting per species and style; needs AI paintings on.",
+      "show_if": {
+        "layout": "hero"
+      },
       "choices": [
         {
-          "value": "off",
-          "label": "None"
+          "value": "plain",
+          "label": "Plain paper"
         },
         {
-          "value": "new",
-          "label": "New arrivals and returns"
+          "value": "ornate",
+          "label": "An ornate rule frame, drawn on the page"
         },
         {
-          "value": "rare",
-          "label": "Rare here"
-        },
-        {
-          "value": "both",
-          "label": "Both"
+          "value": "painted",
+          "label": "An ornate backdrop painted in the style (AI paintings)"
         }
       ]
     },
     {
-      "name": "tally",
-      "type": "select",
-      "label": "How many, as",
-      "default": "digits",
-      "help": "The count in the caption as figures, or as tally strokes in fives.",
-      "choices": [
-        {
-          "value": "digits",
-          "label": "Figures"
-        },
-        {
-          "value": "strokes",
-          "label": "Tally strokes"
-        }
-      ],
+      "name": "spotlight",
+      "type": "boolean",
+      "label": "Spotlight the latest bird",
+      "default": false,
+      "help": "As Fugleramme does: the bird heard last held large in the middle of the page, at six tenths of its short side, with its name larger, and the rest packed round it. Any packing.",
       "show_if": {
-        "labels": "caption"
+        "layout": "cluster"
       }
     },
     {
-      "name": "day_pages",
+      "name": "packing",
       "type": "select",
-      "label": "Dawn and dusk",
-      "default": "off",
-      "help": "From an hour before sunrise to two and a half after, a dawn chorus page: the morning's birds in the order they started, with sunrise and the first song. From an hour before sunset to an hour after, an evening page: the last songs, latest first. Uses the cell's (or the app's) location.",
+      "label": "Packing",
+      "default": "balanced",
+      "help": "How the cluster is packed. Balanced packs from the middle and then grows each specimen into the room left. Spiral and Voids are Fugleramme's packers: Spiral sets each specimen, largest first, on the first free spot out from the middle, for a round cluster; Voids sets each on the emptiest paper it fits, so the sheet fills to the corners.",
+      "show_if": {
+        "layout": "cluster"
+      },
       "choices": [
         {
-          "value": "off",
-          "label": "Off"
+          "value": "balanced",
+          "label": "Balanced: grown to fill the page"
         },
         {
-          "value": "on",
-          "label": "Dawn chorus and evening pages"
+          "value": "spiral",
+          "label": "Spiral: out from the middle"
+        },
+        {
+          "value": "voids",
+          "label": "Voids: the emptiest paper first"
         }
-      ],
-      "show_if": {
-        "source": "birdnet_go"
-      }
-    },
-    {
-      "name": "exclude",
-      "type": "textarea",
-      "label": "Leave out",
-      "default": "",
-      "help": "Species to leave off the sheet, one per line: a common or scientific name, a genus (Columba drops every pigeon in it), a kind (Insecta, insects, Birds) or a pattern such as *gull. An excluded species frees its place for the next. Case and accents don't matter."
-    },
-    {
-      "name": "min_confidence",
-      "type": "select",
-      "label": "Minimum confidence",
-      "default": "70",
-      "help": "Detections BirdNET is less sure of than this are left out.",
-      "choices": [
-        {
-          "value": "50",
-          "label": "50%"
-        },
-        {
-          "value": "60",
-          "label": "60%"
-        },
-        {
-          "value": "70",
-          "label": "70%"
-        },
-        {
-          "value": "80",
-          "label": "80%"
-        },
-        {
-          "value": "90",
-          "label": "90%"
-        }
-      ],
-      "show_if": {
-        "source": "birdnet_go",
-        "url": {
-          "not": ""
-        }
-      }
-    },
-    {
-      "name": "names",
-      "type": "select",
-      "label": "Bird names",
-      "default": "birdnet",
-      "help": "Common names come from BirdNET-Go in whatever language it is set to. Pick a language to take them from iNaturalist instead; they are looked up once per bird and kept.",
-      "choices": [
-        {
-          "value": "birdnet",
-          "label": "As BirdNET-Go sends them"
-        },
-        {
-          "value": "en",
-          "label": "English"
-        },
-        {
-          "value": "de",
-          "label": "Deutsch"
-        },
-        {
-          "value": "fr",
-          "label": "Français"
-        },
-        {
-          "value": "es",
-          "label": "Español"
-        },
-        {
-          "value": "it",
-          "label": "Italiano"
-        },
-        {
-          "value": "nl",
-          "label": "Nederlands"
-        },
-        {
-          "value": "pt",
-          "label": "Português"
-        },
-        {
-          "value": "sv",
-          "label": "Svenska"
-        },
-        {
-          "value": "da",
-          "label": "Dansk"
-        },
-        {
-          "value": "nb",
-          "label": "Norsk"
-        },
-        {
-          "value": "fi",
-          "label": "Suomi"
-        },
-        {
-          "value": "pl",
-          "label": "Polski"
-        },
-        {
-          "value": "cs",
-          "label": "Čeština"
-        },
-        {
-          "value": "ja",
-          "label": "日本語"
-        },
-        {
-          "value": "zh",
-          "label": "中文"
-        },
-        {
-          "value": "ru",
-          "label": "Русский"
-        }
-      ],
-      "show_if": {
-        "source": "birdnet_go",
-        "url": {
-          "not": ""
-        }
-      }
-    },
-    {
-      "name": "names_place",
-      "type": "select",
-      "label": "Bird names: region",
-      "default": "",
-      "help": "Prefers the names used in this country, where iNaturalist has them.",
-      "choices": [
-        {
-          "value": "",
-          "label": "Anywhere"
-        },
-        {
-          "value": "6744",
-          "label": "Australia"
-        },
-        {
-          "value": "6803",
-          "label": "New Zealand"
-        },
-        {
-          "value": "6857",
-          "label": "United Kingdom"
-        },
-        {
-          "value": "6718",
-          "label": "Ireland"
-        },
-        {
-          "value": "1",
-          "label": "United States"
-        },
-        {
-          "value": "6712",
-          "label": "Canada"
-        },
-        {
-          "value": "6986",
-          "label": "South Africa"
-        },
-        {
-          "value": "6681",
-          "label": "India"
-        },
-        {
-          "value": "7207",
-          "label": "Germany"
-        },
-        {
-          "value": "6753",
-          "label": "France"
-        },
-        {
-          "value": "6774",
-          "label": "Spain"
-        },
-        {
-          "value": "6973",
-          "label": "Italy"
-        },
-        {
-          "value": "7506",
-          "label": "Netherlands"
-        },
-        {
-          "value": "6737",
-          "label": "Japan"
-        },
-        {
-          "value": "6878",
-          "label": "Brazil"
-        }
-      ],
-      "show_if": {
-        "names": {
-          "not": "birdnet"
-        }
-      }
-    },
-    {
-      "name": "night",
-      "type": "select",
-      "label": "After dark",
-      "default": "off",
-      "help": "Uses sunrise and sunset for the cell's (or the app's) location. Asleep shows the moon and the last bird heard once nothing has called for 90 minutes after dark. Night birds keeps only the birds heard since sunset on the sheet after dark.",
-      "choices": [
-        {
-          "value": "off",
-          "label": "Nothing special"
-        },
-        {
-          "value": "asleep",
-          "label": "The garden asleep when it goes quiet"
-        },
-        {
-          "value": "owls",
-          "label": "Only the night's birds after dark"
-        }
-      ],
-      "show_if": {
-        "source": "birdnet_go"
-      }
+      ]
     },
     {
       "name": "pictures",
@@ -1003,6 +815,7 @@
       "type": "select",
       "label": "Style",
       "default": "gould",
+      "help": "The style every painting is made in. Build my own composes one from the picks below and your own words; each combination is a style of its own, painted once per species and kept.",
       "show_if": {
         "pictures": "gen"
       },
@@ -1089,8 +902,7 @@
           "value": "builder",
           "label": "Build my own"
         }
-      ],
-      "help": "The style every painting is made in. Build my own composes one from the picks below and your own words; each combination is a style of its own, painted once per species and kept."
+      ]
     },
     {
       "name": "build_medium",
@@ -1369,20 +1181,646 @@
       "type": "string",
       "label": "Your own words",
       "default": "",
+      "help": "Optional words added to the style, for example: with a little gold leaf on the wing edges. The bird is always painted alone with its perch, with no background.",
       "show_if": {
         "pictures": "gen",
         "style": "builder"
+      }
+    },
+    {
+      "name": "paper",
+      "type": "select",
+      "label": "Paper",
+      "default": "cream",
+      "choices": [
+        {
+          "value": "cream",
+          "label": "Cream"
+        },
+        {
+          "value": "white",
+          "label": "White"
+        },
+        {
+          "value": "aged",
+          "label": "Aged"
+        }
+      ]
+    },
+    {
+      "name": "order",
+      "type": "select",
+      "label": "Which species, when there are more",
+      "default": "most",
+      "help": "Fugleramme's rankings, and the order of the sheet: the most calls (observations, records) in the window; the fewest in the window; the fewest in the station's whole record (BirdNET-Go; elsewhere the fewest days in this widget's own log); the latest heard or seen; or a mix that changes each day.",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "most",
+          "label": "The most heard"
+        },
+        {
+          "value": "rarest",
+          "label": "The rarest in the window"
+        },
+        {
+          "value": "rarest_ever",
+          "label": "The rarest all time"
+        },
+        {
+          "value": "latest",
+          "label": "The latest heard"
+        },
+        {
+          "value": "mix",
+          "label": "A different mix each day"
+        }
+      ]
+    },
+    {
+      "name": "marks",
+      "type": "select",
+      "label": "Marks",
+      "default": "off",
+      "help": "A small mark on a specimen: new, for a species new here or back after an absence; rare, for one on the sheet on few of the days the widget has logged (one in twenty at most, once it has logged a fortnight).",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "off",
+          "label": "None"
+        },
+        {
+          "value": "new",
+          "label": "New arrivals and returns"
+        },
+        {
+          "value": "rare",
+          "label": "Rare here"
+        },
+        {
+          "value": "both",
+          "label": "Both"
+        }
+      ]
+    },
+    {
+      "name": "labels",
+      "type": "select",
+      "label": "Labels",
+      "default": "caption",
+      "help": "Captions under each specimen, or the page alone. A small cell carries the name only, or none, so the specimens keep their size.",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "caption",
+          "label": "Captions under each specimen"
+        },
+        {
+          "value": "none",
+          "label": "None: the page alone"
+        }
+      ]
+    },
+    {
+      "name": "label_lines",
+      "type": "multiselect",
+      "label": "Label lines",
+      "default": [
+        "name",
+        "count"
+      ],
+      "help": "In this order. The count says calls, observations or records to suit the source; with BirdNET-Go it says when each was last heard. Last seen and the observer are for iNaturalist and GBIF; new or returning for BirdNET-Go.",
+      "show_if": {
+        "labels": "caption"
       },
-      "help": "Optional words added to the style, for example: with a little gold leaf on the wing edges. The bird is always painted alone with its perch, with no background."
+      "advanced": true,
+      "choices": [
+        {
+          "value": "name",
+          "label": "Name"
+        },
+        {
+          "value": "sci",
+          "label": "Scientific name"
+        },
+        {
+          "value": "count",
+          "label": "How many"
+        },
+        {
+          "value": "last",
+          "label": "Last seen"
+        },
+        {
+          "value": "flag",
+          "label": "New or returning"
+        },
+        {
+          "value": "who",
+          "label": "Observer (iNaturalist, GBIF)"
+        },
+        {
+          "value": "size",
+          "label": "Length, L 38 cm (birds)"
+        }
+      ]
+    },
+    {
+      "name": "tally",
+      "type": "select",
+      "label": "Count as",
+      "default": "digits",
+      "help": "The count in the caption as figures, or as tally strokes in fives.",
+      "show_if": {
+        "labels": "caption"
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "digits",
+          "label": "Figures"
+        },
+        {
+          "value": "strokes",
+          "label": "Tally strokes"
+        }
+      ]
+    },
+    {
+      "name": "text_size",
+      "type": "select",
+      "label": "Text size",
+      "default": "100",
+      "show_if": {
+        "labels": {
+          "not": "none"
+        }
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "60",
+          "label": "60%"
+        },
+        {
+          "value": "80",
+          "label": "80%"
+        },
+        {
+          "value": "100",
+          "label": "100%"
+        },
+        {
+          "value": "125",
+          "label": "125%"
+        },
+        {
+          "value": "150",
+          "label": "150%"
+        }
+      ]
+    },
+    {
+      "name": "sizing",
+      "type": "select",
+      "label": "Sizes",
+      "default": "compact",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "true",
+          "label": "True to life: a crow large, a wren small"
+        },
+        {
+          "value": "compact",
+          "label": "Close to life, narrower: the page packs tighter"
+        },
+        {
+          "value": "same",
+          "label": "All alike"
+        }
+      ]
+    },
+    {
+      "name": "scale",
+      "type": "slider",
+      "label": "Scale",
+      "default": 100,
+      "min": 40,
+      "max": 250,
+      "step": 5,
+      "unit": "%",
+      "help": "How big the specimens are. 100% runs the arrangement out to the margins. Less packs it into the middle of the page with more paper round it. More makes each one bigger by showing fewer of them, the first by Which species: 200% shows about a quarter as many.",
+      "advanced": true
+    },
+    {
+      "name": "panel",
+      "type": "select",
+      "label": "Panel",
+      "default": "colour",
+      "help": "What the panel can show. Pictures are converted and contrast-stretched to match; on black and white the type is thickened.",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "colour",
+          "label": "Colour"
+        },
+        {
+          "value": "gray16",
+          "label": "16 greys"
+        },
+        {
+          "value": "gray4",
+          "label": "4 greys"
+        },
+        {
+          "value": "mono",
+          "label": "Black and white"
+        }
+      ]
+    },
+    {
+      "name": "header",
+      "type": "select",
+      "label": "Title line",
+      "default": "top",
+      "help": "Where the title line (the place, the period and the date) goes. Below or hidden gives the specimens the room.",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "top",
+          "label": "Above the page"
+        },
+        {
+          "value": "bottom",
+          "label": "Below the page"
+        },
+        {
+          "value": "hidden",
+          "label": "Hidden: the page alone"
+        }
+      ]
+    },
+    {
+      "name": "footer",
+      "type": "select",
+      "label": "Foot of the page",
+      "default": "show",
+      "advanced": true,
+      "choices": [
+        {
+          "value": "show",
+          "label": "Status and credits"
+        },
+        {
+          "value": "credits",
+          "label": "Credits only"
+        },
+        {
+          "value": "hide",
+          "label": "Nothing"
+        }
+      ]
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "label": "Title",
+      "default": "",
+      "help": "Blank uses the garden, the place or the username.",
+      "advanced": true
+    },
+    {
+      "name": "exclude",
+      "type": "textarea",
+      "label": "Leave out",
+      "default": "",
+      "help": "Species to leave off the sheet, one per line: a common or scientific name, a genus (Columba drops every pigeon in it), a kind (Insecta, insects, Birds) or a pattern such as *gull. An excluded species frees its place for the next. Case and accents don't matter.",
+      "advanced": true
+    },
+    {
+      "name": "min_confidence",
+      "type": "select",
+      "label": "Minimum confidence",
+      "default": "70",
+      "help": "Detections BirdNET is less sure of than this are left out.",
+      "show_if": {
+        "source": "birdnet_go",
+        "url": {
+          "not": ""
+        }
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "50",
+          "label": "50%"
+        },
+        {
+          "value": "60",
+          "label": "60%"
+        },
+        {
+          "value": "70",
+          "label": "70%"
+        },
+        {
+          "value": "80",
+          "label": "80%"
+        },
+        {
+          "value": "90",
+          "label": "90%"
+        }
+      ]
+    },
+    {
+      "name": "names",
+      "type": "select",
+      "label": "Bird names",
+      "default": "birdnet",
+      "help": "Common names come from BirdNET-Go in whatever language it is set to. Pick a language to take them from iNaturalist instead; they are looked up once per bird and kept.",
+      "show_if": {
+        "source": "birdnet_go",
+        "url": {
+          "not": ""
+        }
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "birdnet",
+          "label": "As BirdNET-Go sends them"
+        },
+        {
+          "value": "en",
+          "label": "English"
+        },
+        {
+          "value": "de",
+          "label": "Deutsch"
+        },
+        {
+          "value": "fr",
+          "label": "Français"
+        },
+        {
+          "value": "es",
+          "label": "Español"
+        },
+        {
+          "value": "it",
+          "label": "Italiano"
+        },
+        {
+          "value": "nl",
+          "label": "Nederlands"
+        },
+        {
+          "value": "pt",
+          "label": "Português"
+        },
+        {
+          "value": "sv",
+          "label": "Svenska"
+        },
+        {
+          "value": "da",
+          "label": "Dansk"
+        },
+        {
+          "value": "nb",
+          "label": "Norsk"
+        },
+        {
+          "value": "fi",
+          "label": "Suomi"
+        },
+        {
+          "value": "pl",
+          "label": "Polski"
+        },
+        {
+          "value": "cs",
+          "label": "Čeština"
+        },
+        {
+          "value": "ja",
+          "label": "日本語"
+        },
+        {
+          "value": "zh",
+          "label": "中文"
+        },
+        {
+          "value": "ru",
+          "label": "Русский"
+        }
+      ]
+    },
+    {
+      "name": "names_place",
+      "type": "select",
+      "label": "Names as used in",
+      "default": "",
+      "help": "Prefers the names used in this country, where iNaturalist has them.",
+      "show_if": {
+        "names": {
+          "not": "birdnet"
+        }
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "",
+          "label": "Anywhere"
+        },
+        {
+          "value": "6744",
+          "label": "Australia"
+        },
+        {
+          "value": "6803",
+          "label": "New Zealand"
+        },
+        {
+          "value": "6857",
+          "label": "United Kingdom"
+        },
+        {
+          "value": "6718",
+          "label": "Ireland"
+        },
+        {
+          "value": "1",
+          "label": "United States"
+        },
+        {
+          "value": "6712",
+          "label": "Canada"
+        },
+        {
+          "value": "6986",
+          "label": "South Africa"
+        },
+        {
+          "value": "6681",
+          "label": "India"
+        },
+        {
+          "value": "7207",
+          "label": "Germany"
+        },
+        {
+          "value": "6753",
+          "label": "France"
+        },
+        {
+          "value": "6774",
+          "label": "Spain"
+        },
+        {
+          "value": "6973",
+          "label": "Italy"
+        },
+        {
+          "value": "7506",
+          "label": "Netherlands"
+        },
+        {
+          "value": "6737",
+          "label": "Japan"
+        },
+        {
+          "value": "6878",
+          "label": "Brazil"
+        }
+      ]
+    },
+    {
+      "name": "night",
+      "type": "select",
+      "label": "After dark",
+      "default": "off",
+      "help": "Uses sunrise and sunset for the cell's (or the app's) location. Asleep shows the moon and the last bird heard once nothing has called for 90 minutes after dark. Night birds keeps only the birds heard since sunset on the sheet after dark.",
+      "show_if": {
+        "source": "birdnet_go"
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "off",
+          "label": "Nothing special"
+        },
+        {
+          "value": "asleep",
+          "label": "The garden asleep when it goes quiet"
+        },
+        {
+          "value": "owls",
+          "label": "Only the night's birds after dark"
+        }
+      ]
+    },
+    {
+      "name": "day_pages",
+      "type": "select",
+      "label": "Dawn and dusk",
+      "default": "off",
+      "help": "From an hour before sunrise to two and a half after, a dawn chorus page: the morning's birds in the order they started, with sunrise and the first song. From an hour before sunset to an hour after, an evening page: the last songs, latest first. Uses the cell's (or the app's) location. Reads only the birds heard to-day.",
+      "show_if": {
+        "source": "birdnet_go"
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "off",
+          "label": "Off"
+        },
+        {
+          "value": "on",
+          "label": "Dawn chorus and evening pages"
+        }
+      ]
+    },
+    {
+      "name": "quality",
+      "type": "select",
+      "label": "Observations",
+      "default": "research",
+      "help": "Research grade is where the community agrees on the species. Any takes every observation with a species, agreed or not.",
+      "show_if": {
+        "source": "inaturalist"
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "research",
+          "label": "Research grade only"
+        },
+        {
+          "value": "",
+          "label": "Any with a species"
+        }
+      ]
+    },
+    {
+      "name": "user_login",
+      "type": "string",
+      "label": "Only this iNaturalist user",
+      "default": "",
+      "help": "Optional. An iNaturalist username. Set it to your own to see what you have catalogued, near the place or, with no place, anywhere.",
+      "show_if": {
+        "source": "inaturalist"
+      },
+      "advanced": true
+    },
+    {
+      "name": "token",
+      "type": "string",
+      "label": "Bearer token",
+      "default": "",
+      "secret": true,
+      "help": "Normally blank. BirdNET-Go's reads need no login, even with Basic Authentication on. Fill this only for a reverse proxy or build that wants a bearer token.",
+      "show_if": {
+        "source": "birdnet_go",
+        "url": {
+          "not": ""
+        }
+      },
+      "advanced": true
+    },
+    {
+      "name": "model",
+      "type": "select",
+      "label": "Model",
+      "default": "nano_banana",
+      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away. Left on Nano Banana, the ink-and-wash and stained-glass styles are painted with GPT Image 2 (about US$0.05), since Nano Banana keeps them too close to the photo.",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "advanced": true,
+      "choices": [
+        {
+          "value": "nano_banana",
+          "label": "Nano Banana (about US$0.04)"
+        },
+        {
+          "value": "nano_banana_pro",
+          "label": "Nano Banana Pro (about US$0.15)"
+        }
+      ]
     },
     {
       "name": "pose",
       "type": "select",
       "label": "Pose",
       "default": "mixed",
+      "help": "How the birds are painted. A perched bird sits on a plant native to the cell's location when the place is known. Changing the pose paints every bird again, within the daily limit; the earlier paintings stay on the paintings page.",
       "show_if": {
         "pictures": "gen"
       },
+      "advanced": true,
       "choices": [
         {
           "value": "mixed",
@@ -1396,38 +1834,18 @@
           "value": "flight",
           "label": "All in flight"
         }
-      ],
-      "help": "How the birds are painted. A perched bird sits on a plant native to the cell's location when the place is known. Changing the pose paints every bird again, within the daily limit; the earlier paintings stay on the paintings page."
-    },
-    {
-      "name": "model",
-      "type": "select",
-      "label": "Model",
-      "default": "nano_banana",
-      "show_if": {
-        "pictures": "gen"
-      },
-      "help": "All on fal.ai, all painting from a photo of the species. Nano Banana is faithful and cheap; Nano Banana Pro follows an unusual instruction better and draws finer detail; FLUX.1 Kontext Pro adheres most strongly to a style; GPT Image 2 is a good likeness with a narrower range; Seedream 4 is the budget one. Each model keeps its own paintings, so switching never throws any away. Left on Nano Banana, the ink-and-wash and stained-glass styles are painted with GPT Image 2 (about US$0.05), since Nano Banana keeps them too close to the photo.",
-      "choices": [
-        {
-          "value": "nano_banana",
-          "label": "Nano Banana (about US$0.04)"
-        },
-        {
-          "value": "nano_banana_pro",
-          "label": "Nano Banana Pro (about US$0.15)"
-        }
       ]
     },
     {
       "name": "unpainted",
       "type": "select",
-      "label": "Until a species is painted",
+      "label": "Until painted",
       "default": "show",
+      "help": "Show the classic plate or the record's photo while a painting is on its way, or leave the species off the sheet until it is painted, so every picture on the page is in the style.",
       "show_if": {
         "pictures": "gen"
       },
-      "help": "Show the classic plate or the record's photo while a painting is on its way, or leave the species off the sheet until it is painted, so every picture on the page is in the style.",
+      "advanced": true,
       "choices": [
         {
           "value": "show",
@@ -1442,12 +1860,13 @@
     {
       "name": "when_spent",
       "type": "select",
-      "label": "When the day's budget is spent",
+      "label": "When the budget is spent",
       "default": "keep",
+      "help": "Once to-day's painting budget is spent, the species that could not be painted give way to paintings this widget already kept in the same style, cut out like the rest: a different handful each hour, or those on the sheet on the fewest days first. Their labels say when each was last on the sheet, the title line says how many are from the collection, and they are never counted as seen to-day. Nothing is painted for them; one never cut out before is cut once, from the cut-out budget. The cluster and the grid only: a hero and the year list stay as they are.",
       "show_if": {
         "pictures": "gen"
       },
-      "help": "Once to-day's painting budget is spent, the species that could not be painted give way to paintings this widget already kept in the same style, cut out like the rest: a different handful each hour, or those on the sheet on the fewest days first. Their labels say when each was last on the sheet, the title line says how many are from the collection, and they are never counted as seen to-day. Nothing is painted for them; one never cut out before is cut once, from the cut-out budget. The cluster and the grid only: a hero and the year list stay as they are.",
+      "advanced": true,
       "choices": [
         {
           "value": "keep",
@@ -1466,21 +1885,24 @@
     {
       "name": "dapper",
       "type": "boolean",
-      "label": "One dapper specimen a day",
+      "label": "A dapper specimen a day",
       "default": false,
+      "help": "One species a day, picked by the date, is painted in a small hat (a top hat, a bowler, a beret, a fez, a crown) in whatever style the sheet is in; its own painting, kept beside the plain one.",
       "show_if": {
         "pictures": "gen"
       },
-      "help": "One species a day, picked by the date, is painted in a small hat (a top hat, a bowler, a beret, a fez, a crown) in whatever style the sheet is in; its own painting, kept beside the plain one."
+      "advanced": true
     },
     {
       "name": "arrangement",
       "type": "select",
       "label": "Arrangement",
       "default": "sheet",
+      "help": "A scene asks fal.ai to repaint the whole sheet as one picture with one background, once every specimen on it is painted and cut out; until then the sheet shows. One painting per scene, again when the line-up changes.",
       "show_if": {
         "pictures": "gen"
       },
+      "advanced": true,
       "choices": [
         {
           "value": "sheet",
@@ -1490,8 +1912,7 @@
           "value": "scene",
           "label": "A scene: the sheet repainted as one picture"
         }
-      ],
-      "help": "A scene asks fal.ai to repaint the whole sheet as one picture with one background, once every specimen on it is painted and cut out; until then the sheet shows. One painting per scene, again when the line-up changes."
+      ]
     },
     {
       "name": "scene",
@@ -1499,10 +1920,6 @@
       "label": "The scene",
       "default": "",
       "placeholder": "Pick an example, then change the words as you like",
-      "show_if": {
-        "pictures": "gen",
-        "arrangement": "scene"
-      },
       "presets": [
         {
           "label": "A Victorian vignette",
@@ -1549,7 +1966,12 @@
           "value": "all in flight together across an open sky"
         }
       ],
-      "help": "Where the specimens are gathered, in your own words. Blank is the Victorian vignette."
+      "help": "Where the specimens are gathered, in your own words. Blank is the Victorian vignette.",
+      "show_if": {
+        "pictures": "gen",
+        "arrangement": "scene"
+      },
+      "advanced": true
     },
     {
       "name": "scene_fidelity",
@@ -1560,6 +1982,7 @@
         "pictures": "gen",
         "arrangement": "scene"
       },
+      "advanced": true,
       "choices": [
         {
           "value": "free",
@@ -1576,10 +1999,12 @@
       "type": "select",
       "label": "Repaint the scene at most every",
       "default": "3",
+      "help": "When the line-up changes, the scene is painted again, at about US$0.04 a time, no more often than this.",
       "show_if": {
         "pictures": "gen",
         "arrangement": "scene"
       },
+      "advanced": true,
       "choices": [
         {
           "value": "1",
@@ -1597,311 +2022,7 @@
           "value": "24",
           "label": "day"
         }
-      ],
-      "help": "When the line-up changes, the scene is painted again, at about US$0.04 a time, no more often than this."
-    },
-    {
-      "name": "sizing",
-      "type": "select",
-      "label": "Sizes",
-      "default": "compact",
-      "choices": [
-        {
-          "value": "true",
-          "label": "True to life: a crow large, a wren small"
-        },
-        {
-          "value": "compact",
-          "label": "Close to life, narrower: the page packs tighter"
-        },
-        {
-          "value": "same",
-          "label": "All alike"
-        }
       ]
-    },
-    {
-      "name": "scale",
-      "type": "slider",
-      "label": "Scale",
-      "default": 100,
-      "min": 40,
-      "max": 250,
-      "step": 5,
-      "unit": "%",
-      "help": "How big the birds are. 100% runs the arrangement out to the margins. Less packs it into the middle of the page with more paper round it. More makes each bird bigger by showing fewer of them, the first by Order: 200% shows about a quarter as many."
-    },
-    {
-      "name": "layout",
-      "type": "select",
-      "label": "Layout",
-      "default": "cluster",
-      "help": "A cluster packed from the middle out, each specimen as large as the page allows; a grid with a cell each; or a hero: one specimen alone, the first by Order, with the others named beneath; or the year list: every species the sheet has shown this year, the earliest arrivals first, to-day's in ink and the rest faded, with the days each was on the sheet.",
-      "choices": [
-        {
-          "value": "cluster",
-          "label": "Cluster"
-        },
-        {
-          "value": "grid",
-          "label": "Grid"
-        },
-        {
-          "value": "hero",
-          "label": "Hero: one specimen, the first by Order"
-        },
-        {
-          "value": "year",
-          "label": "Year list: every species this year, to-day's in ink"
-        }
-      ]
-    },
-    {
-      "name": "packing",
-      "type": "select",
-      "label": "Packing",
-      "default": "balanced",
-      "show_if": {
-        "layout": [
-          "cluster",
-          "hero"
-        ]
-      },
-      "choices": [
-        {
-          "value": "balanced",
-          "label": "Balanced: grown to fill the page"
-        },
-        {
-          "value": "spiral",
-          "label": "Spiral: out from the middle (Fugleramme)"
-        },
-        {
-          "value": "voids",
-          "label": "Voids: the emptiest paper first (Fugleramme)"
-        }
-      ],
-      "help": "How the cluster is packed. Balanced packs from the middle and then grows each specimen into the room left. Spiral and Voids are Fugleramme's packers: Spiral sets each specimen, largest first, on the first free spot out from the middle, for a round cluster; Voids sets each on the emptiest paper it fits, so the sheet fills to the corners."
-    },
-    {
-      "name": "hero_note",
-      "type": "boolean",
-      "label": "A note about the specimen beneath",
-      "default": true,
-      "show_if": {
-        "layout": "hero"
-      },
-      "help": "A sentence or two on the species from Wikipedia, under the picture."
-    },
-    {
-      "name": "hero_frame",
-      "type": "select",
-      "label": "Around the specimen",
-      "default": "plain",
-      "show_if": {
-        "layout": "hero"
-      },
-      "choices": [
-        {
-          "value": "plain",
-          "label": "Plain paper"
-        },
-        {
-          "value": "ornate",
-          "label": "An ornate rule frame, drawn on the page"
-        },
-        {
-          "value": "painted",
-          "label": "An ornate backdrop painted in the style (AI paintings)"
-        }
-      ],
-      "help": "The painted backdrop asks fal.ai for a plate of its own: the specimen large on a patterned or foliate ground within an ornamental border, in the style chosen, shown whole. One painting per species and style; needs AI paintings on."
-    },
-    {
-      "name": "labels",
-      "type": "select",
-      "label": "Labels",
-      "default": "caption",
-      "choices": [
-        {
-          "value": "caption",
-          "label": "Captions under each specimen"
-        },
-        {
-          "value": "none",
-          "label": "None: the page alone"
-        }
-      ],
-      "help": "Captions under each specimen, or the page alone. A small cell carries the name only, or none, so the specimens keep their size."
-    },
-    {
-      "name": "label_lines",
-      "type": "multiselect",
-      "label": "Label lines",
-      "default": [
-        "name",
-        "count"
-      ],
-      "help": "In this order. The count says calls, observations or records to suit the source.",
-      "choices": [
-        {
-          "value": "name",
-          "label": "Name"
-        },
-        {
-          "value": "sci",
-          "label": "Scientific name"
-        },
-        {
-          "value": "count",
-          "label": "How many"
-        },
-        {
-          "value": "last",
-          "label": "Last seen (iNaturalist, GBIF)"
-        },
-        {
-          "value": "flag",
-          "label": "New or returning (BirdNET-Go)"
-        },
-        {
-          "value": "who",
-          "label": "Observer (iNaturalist, GBIF)"
-        },
-        {
-          "value": "size",
-          "label": "Length, L 38 cm (birds)"
-        }
-      ],
-      "show_if": {
-        "labels": "caption"
-      }
-    },
-    {
-      "name": "text_size",
-      "type": "select",
-      "label": "Text size",
-      "default": "100",
-      "choices": [
-        {
-          "value": "60",
-          "label": "60%"
-        },
-        {
-          "value": "80",
-          "label": "80%"
-        },
-        {
-          "value": "100",
-          "label": "100%"
-        },
-        {
-          "value": "125",
-          "label": "125%"
-        },
-        {
-          "value": "150",
-          "label": "150%"
-        }
-      ],
-      "show_if": {
-        "labels": {
-          "not": "none"
-        }
-      }
-    },
-    {
-      "name": "paper",
-      "type": "select",
-      "label": "Paper",
-      "default": "cream",
-      "choices": [
-        {
-          "value": "cream",
-          "label": "Cream"
-        },
-        {
-          "value": "white",
-          "label": "White"
-        },
-        {
-          "value": "aged",
-          "label": "Aged"
-        }
-      ]
-    },
-    {
-      "name": "panel",
-      "type": "select",
-      "label": "Panel",
-      "default": "colour",
-      "help": "What the panel can show. Pictures are converted and contrast-stretched to match; on black and white the type is thickened.",
-      "choices": [
-        {
-          "value": "colour",
-          "label": "Colour"
-        },
-        {
-          "value": "gray16",
-          "label": "16 greys"
-        },
-        {
-          "value": "gray4",
-          "label": "4 greys"
-        },
-        {
-          "value": "mono",
-          "label": "Black and white"
-        }
-      ]
-    },
-    {
-      "name": "header",
-      "type": "select",
-      "label": "Title line",
-      "default": "top",
-      "choices": [
-        {
-          "value": "top",
-          "label": "Above the page"
-        },
-        {
-          "value": "bottom",
-          "label": "Below the page"
-        },
-        {
-          "value": "hidden",
-          "label": "Hidden: the page alone"
-        }
-      ],
-      "help": "Where the title line (the place, the period and the date) goes. Below or hidden gives the specimens the room."
-    },
-    {
-      "name": "footer",
-      "type": "select",
-      "label": "Foot of the page",
-      "default": "show",
-      "choices": [
-        {
-          "value": "show",
-          "label": "Status and credits"
-        },
-        {
-          "value": "credits",
-          "label": "Credits only"
-        },
-        {
-          "value": "hide",
-          "label": "Nothing"
-        }
-      ]
-    },
-    {
-      "name": "title",
-      "type": "string",
-      "label": "Title",
-      "default": "",
-      "help": "Blank uses the garden, the place or the username."
     },
     {
       "name": "refresh_min",
@@ -1909,6 +2030,7 @@
       "label": "Ask the source every",
       "default": "15",
       "help": "GBIF's answer is seasonal and kept for a month regardless.",
+      "advanced": true,
       "choices": [
         {
           "value": "5",

@@ -75,7 +75,7 @@ function packOffThread(args, onCut) {
    lines, page shape and look. The same key means the same sheet. */
 const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
 function keyOf(a) {
-  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.cut_box ? x.cut_box.join(',') : ''}|${x.factor}|${x.on_paper ? 1 : 0}${x.classic ? 'c' : ''}|${(x.lines || []).join('/')}`);
+  const parts = a.specimens.map((x) => `${x.name}|${x.sci}|${x.src ? x.src.length : 0}|${x.cut ? x.cut.length : 0}|${x.cut_box ? x.cut_box.join(',') : ''}|${x.factor}|${x.on_paper ? 1 : 0}${x.classic ? 'c' : ''}${x.spot ? 's' : ''}|${(x.lines || []).join('/')}`);
   return `ss3:${a.ratio.toFixed(4)}:${a.size}:${a.label.toFixed(4)}:${a.paper}:${a.layout}:${a.zoom}:${fnv(parts.join(';'))}`;
 }
 const SHEETS = new Map();
@@ -136,7 +136,7 @@ function buildArgs(d) {
     name: s.name, sci: s.sci, src: s.pic ? s.pic.src : null, cut: s.pic ? s.pic.cut || null : null, cut_box: cutBox(s.pic),
     on_paper: !!(s.pic && s.pic.on_paper), classic: !!(s.pic && s.pic.classic), whole: false, factor: Number(s.factor) || 1, aspect: Number(s.pic && s.pic.aspect) || 0.8,
     paper: hexRgb(s.pic && s.pic.paper), neutral: false,
-    lines: d.labels === 'none' ? [] : (s.lines || [s.name]),
+    lines: d.labels === 'none' ? [] : (s.lines || [s.name]), spot: !!s.spot,
   }));
   let label = Math.max(0.017, 13 / h) * (d.text_scale || 1);
   const ink = d.panel === 'colour' ? '#2a2116' : '#000000';
@@ -214,7 +214,8 @@ function sheet(d, made) {
     const lines = m.lines || [];
     if (!lines.length) return '';
     const s = bySci[m.sci || m.name] || { name: m.name, sci: m.sci };
-    return `<span class="sh-l" style="left:${(m.at[0] * 100).toFixed(2)}%;top:${(m.at[1] * 100).toFixed(2)}%">${captionOf(s, lines, d)}</span>`;
+    const big = Number(m.big) > 1 ? `;font-size:calc(var(--lf) * ${(Number(m.big) * 100).toFixed(0)}cqh)` : '';
+    return `<span class="sh-l" style="left:${(m.at[0] * 100).toFixed(2)}%;top:${(m.at[1] * 100).toFixed(2)}%${big}">${captionOf(s, lines, d)}</span>`;
   }).join('');
   // a mark sits at the top right of its specimen's box
   const marks = made.items.map((m) => {

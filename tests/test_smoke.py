@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import subprocess
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -2370,3 +2371,367 @@ def test_a_long_hero_note_shows_whole_lines_above_the_also_line(tmp_path):
             b.close()
     finally:
         srv.shutdown()
+
+
+# ----------------------------------------------------------------------
+# Fugleramme's window, rankings, hero choice and spotlight (0.14)
+# ----------------------------------------------------------------------
+
+_MEL_TZ = __import__("zoneinfo").ZoneInfo("Australia/Melbourne")
+
+
+def _station(now: datetime):
+    """A BirdNET-Go station as its API answers, around ``now``: a feed of detections with
+    time stamps, a species summary that filters on whole dates (rounded outwards, as the
+    real one is), and the whole record when asked without dates."""
+    from datetime import timedelta
+
+    def at(minutes_ago: float) -> str:
+        return (now - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
+
+    feed = []
+    # (common, scientific, minutes ago, confidence, verified)
+    calls = [
+        ("Australian Magpie", "Gymnorhina tibicen", 2, 0.9, "unverified"),
+        ("Australian Magpie", "Gymnorhina tibicen", 20, 0.9, "unverified"),
+        ("Australian Magpie", "Gymnorhina tibicen", 40, 0.9, "unverified"),
+        ("Noisy Miner", "Manorina melanocephala", 10, 0.8, "unverified"),
+        ("Noisy Miner", "Manorina melanocephala", 50, 0.5, "unverified"),  # too unsure
+        ("Rock Dove", "Columba livia", 30, 0.9, "false_positive"),  # struck out
+        ("Spotted Dove", "Spilopelia chinensis", 55, 0.9, "unverified"),
+        ("Silver Gull", "Chroicocephalus novaehollandiae", 90, 0.9, "unverified"),
+    ]
+    for i, (common, sci, ago, conf, verified) in enumerate(calls):
+        feed.append(
+            {
+                "id": 100 - i,
+                "timestamp": at(ago),
+                "commonName": common,
+                "scientificName": sci,
+                "confidence": conf,
+                "verified": verified,
+            }
+        )
+    feed.sort(key=lambda d: d["timestamp"], reverse=True)
+    # (common, scientific, count in range, first heard (minutes ago), last heard (minutes ago))
+    summary = [
+        ("Australian Magpie", "Gymnorhina tibicen", 300, 60 * 24 * 40, 2),
+        ("Noisy Miner", "Manorina melanocephala", 120, 60 * 24 * 20, 10),
+        ("Spotted Dove", "Spilopelia chinensis", 9, 60 * 24 * 30, 55),
+        ("Silver Gull", "Chroicocephalus novaehollandiae", 4, 60 * 24 * 10, 90),
+        # last heard four days ago: in a week, not in three days
+        ("Little Corella", "Cacatua sanguinea", 2, 60 * 24 * 50, 60 * 24 * 4),
+        # first heard here three hours ago: new
+        ("Gang-gang Cockatoo", "Callocephalon fimbriatum", 1, 180, 180),
+    ]
+    # the whole record: the magpie is common, the gull rare
+    ever = {
+        "Gymnorhina tibicen": 5000,
+        "Manorina melanocephala": 3000,
+        "Spilopelia chinensis": 900,
+        "Chroicocephalus novaehollandiae": 6,
+        "Cacatua sanguinea": 40,
+        "Callocephalon fimbriatum": 1,
+    }
+    asked: list[str] = []
+
+    def rows(start: str | None):
+        out = []
+        for common, sci, n, first, last in summary:
+            last_at = now - timedelta(minutes=last)
+            if start and last_at.strftime("%Y-%m-%d") < start:
+                continue
+            out.append(
+                {
+                    "common_name": common,
+                    "scientific_name": sci,
+                    "count": n if start else ever[sci],
+                    "first_heard": at(first),
+                    "last_heard": at(last),
+                    "max_confidence": 0.9,
+                    "thumbnail_url": f"/api/v2/media/image/{sci}",
+                }
+            )
+        return out
+
+    def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
+        asked.append(url)
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        if "/detections/recent" in url:
+            return json.dumps(feed[: int(q.get("limit", ["20"])[0])]).encode(), None
+        if "/species/summary" in url:
+            return json.dumps(rows(q.get("start_date", [None])[0])).encode(), None
+        if "/species/daily" in url:
+            return json.dumps(BIRDNET_DAILY).encode(), None
+        if accept == "image/*":
+            return _jpeg(), None
+        return None, "unreachable"
+
+    return fake_http, asked
+
+
+def _station_fetch(tmp_path, **opts):
+    now = datetime.now(_MEL_TZ)
+    fake, asked = _station(now)
+    with patch.object(N, "http", side_effect=fake):
+        r = server.fetch(
+            {**MELBOURNE, "url": "birdnet.local", "count": 10, **opts},
+            {},
+            ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480},
+        )
+    return r, asked, now
+
+
+def test_a_window_under_a_day_is_counted_off_the_feed(tmp_path):
+    r, asked, _now = _station_fetch(tmp_path, window="1")
+    assert r["state"] == "ok" and r["period"] == "heard in the last hour"
+    assert any("/detections/recent?limit=1000" in u for u in asked)
+    by = {s["sci"]: s for s in r["species"]}
+    # the magpie's three calls; the miner's unsure one and the struck-out dove left out;
+    # the gull heard 90 minutes ago is outside the hour
+    assert by["Gymnorhina tibicen"]["count"] == 3
+    assert by["Manorina melanocephala"]["count"] == 1
+    assert "Columba livia" not in by and "Chroicocephalus novaehollandiae" not in by
+    assert " · last " in by["Gymnorhina tibicen"]["lines"][1]
+    r, _asked, _now = _station_fetch(tmp_path / "b", window="0.25")
+    assert {s["sci"] for s in r["species"]} == {
+        "Gymnorhina tibicen",
+        "Manorina melanocephala",
+    }
+
+
+def test_a_short_feed_falls_back_to_the_summary(tmp_path, monkeypatch):
+    # a feed that fills its page without reaching back to the cutoff would count short
+    monkeypatch.setattr(S, "WINDOW_SCAN", 3)
+    r, asked, now = _station_fetch(tmp_path, window="1")
+    assert any(
+        f"/species/summary?start_date={now:%Y-%m-%d}" in u
+        or "/species/summary?start_date=" in u
+        for u in asked
+    )
+    by = {s["sci"]: s for s in r["species"]}
+    assert by["Gymnorhina tibicen"]["count"] == 300  # the summary's, over the dates
+
+
+def test_longer_windows_round_the_dates_outward_and_keep_the_last_heard(tmp_path):
+    from datetime import timedelta
+
+    r, asked, now = _station_fetch(tmp_path, window="72")
+    start = (now - timedelta(hours=72)).strftime("%Y-%m-%d")
+    assert any(
+        f"/species/summary?start_date={start}&end_date={now:%Y-%m-%d}" in u
+        for u in asked
+    )
+    names = {s["sci"] for s in r["species"]}
+    # last heard four days ago: the dates take it in, last_heard leaves it out
+    assert "Cacatua sanguinea" not in names and "Gymnorhina tibicen" in names
+    assert r["period"] == "heard in the last 3 days"
+    r, _asked, now = _station_fetch(tmp_path / "w", window="168")
+    assert r["species"]  # not a value the option offers: falls back to to-day
+    r, asked, now = _station_fetch(tmp_path / "all", window="0")
+    assert any(u.endswith("/species/summary") for u in asked)
+    by = {s["sci"]: s for s in r["species"]}
+    assert by["Cacatua sanguinea"]["count"] == 40 and r["period"] == "heard all time"
+    corella = by["Cacatua sanguinea"]["lines"][1]
+    when = (now - timedelta(days=4)).date()
+    assert corella == f"40 calls · last {S._day_words(when.isoformat(), now.date())}"
+    # first heard three hours ago: new here
+    assert by["Callocephalon fimbriatum"]["flag"] == "new"
+    assert by["Gymnorhina tibicen"]["flag"] == ""
+
+
+def test_today_and_week_keep_their_old_answers(tmp_path, offline):
+    r = _fetch(tmp_path, offline, url="birdnet.local")
+    assert offline[0].startswith(
+        "http://birdnet.local/api/v2/analytics/species/daily?min_confidence=70"
+    )
+    assert r["species"][0]["lines"][1] == "52 calls · last 17:40"
+    r = _fetch(tmp_path, offline, url="birdnet.local", window="week")
+    assert r["species"][0]["lines"][1] == "52 calls this week"
+
+
+def test_fuglerammes_rankings(tmp_path):
+    def sheet(order, window="24"):
+        r, _a, _n = _station_fetch(
+            tmp_path / f"{order}{window}", order=order, window=window, count=3
+        )
+        return [s["sci"] for s in r["species"]]
+
+    # the most heard in the window
+    assert sheet("most") == [
+        "Gymnorhina tibicen",
+        "Manorina melanocephala",
+        "Spilopelia chinensis",
+    ]
+    # the rarest in the window: the fewest calls in it
+    assert sheet("rarest") == [
+        "Callocephalon fimbriatum",
+        "Chroicocephalus novaehollandiae",
+        "Spilopelia chinensis",
+    ]
+    # the rarest all time: the fewest calls in the whole record
+    assert sheet("rarest_ever") == [
+        "Callocephalon fimbriatum",
+        "Chroicocephalus novaehollandiae",
+        "Spilopelia chinensis",
+    ]
+    # the latest heard, across days
+    assert sheet("latest") == [
+        "Gymnorhina tibicen",
+        "Manorina melanocephala",
+        "Spilopelia chinensis",
+    ]
+    # under a day the whole record decides the rarest all time: the gull (6 ever)
+    # before the dove (900 ever), though the dove has fewer calls in the hour
+    assert sheet("rarest_ever", "3") == [
+        "Chroicocephalus novaehollandiae",
+        "Spilopelia chinensis",
+        "Manorina melanocephala",
+    ]
+
+
+def test_rarest_ever_without_a_record_falls_back_to_the_log(tmp_path, offline):
+    r = _fetch(tmp_path, offline, source="inaturalist", order="rarest_ever")
+    counts = [s["count"] for s in r["species"]]
+    assert counts == sorted(counts)
+
+
+def test_hero_choices(tmp_path):
+    def hero(pick, **kw):
+        r, _a, _n = _station_fetch(
+            tmp_path / pick, layout="hero", hero_bird=pick, window="24", **kw
+        )
+        return r["species"][0]
+
+    assert hero("order")["sci"] == "Gymnorhina tibicen"  # the first by the order
+    assert hero("order", order="rarest")["sci"] == "Callocephalon fimbriatum"
+    assert hero("latest")["sci"] == "Gymnorhina tibicen"
+    assert hero("most")["sci"] == "Gymnorhina tibicen"
+    assert hero("rarest")["sci"] == "Callocephalon fimbriatum"
+    arrival = hero("arrival")
+    assert arrival["sci"] == "Callocephalon fimbriatum"
+    assert arrival["lines"][-1].startswith("first heard ")
+    # an unknown value, and an old cell without one, keep the first by the order
+    assert hero("nonsense", order="rarest")["sci"] == "Callocephalon fimbriatum"
+
+
+def test_hero_choices_in_the_demo_garden(tmp_path, offline):
+    for pick in ("latest", "arrival", "most", "rarest"):
+        r = _fetch(tmp_path, offline, layout="hero", hero_bird=pick)
+        rows = r["species"]
+        assert r["state"] == "ok" and rows, pick
+    r = _fetch(tmp_path, offline, layout="hero", hero_bird="arrival")
+    assert r["species"][0]["flag"] == "new"
+
+
+def test_spotlight_takes_the_latest_bird_onto_the_page(tmp_path):
+    r, _a, _n = _station_fetch(
+        tmp_path, spotlight=True, order="rarest", count=2, window="24"
+    )
+    spot = [s for s in r["species"] if s.get("spot")]
+    # the magpie is the most heard, so the rarest leave it off; the spotlight brings it on
+    assert [s["sci"] for s in spot] == ["Gymnorhina tibicen"] and r["spotlight"]
+    assert len(r["species"]) == 2
+    r, _a, _n = _station_fetch(tmp_path / "off", order="rarest", count=2, window="24")
+    assert not any(s.get("spot") for s in r["species"]) and not r["spotlight"]
+    r, _a, _n = _station_fetch(tmp_path / "grid", spotlight=True, layout="grid")
+    assert not any(s.get("spot") for s in r["species"])
+
+
+def test_spotlight_packs_the_pinned_specimen_in_the_middle():
+    script = (
+        f"import('file://{ROOT}/static/pack.js').then((m) => {{"
+        " const blob = (w, h) => { const d = new Uint8Array(w * h);"
+        "   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {"
+        "     const dx = (x - w * 0.45) / (w * 0.35), dy = (y - h * 0.45) / (h * 0.3);"
+        "     const head = ((x - w * 0.75) / (w * 0.13)) ** 2 + ((y - h * 0.25) / (h * 0.13)) ** 2 < 1;"
+        "     if (dx * dx + dy * dy < 1 || head) d[y * w + x] = 1; }"
+        "   return { w, h, data: d }; };"
+        " for (const packer of ['balanced', 'spiral', 'voids']) for (const [W, H] of [[1400, 933], [840, 1400]]) {"
+        "   const its = Array.from({ length: 10 }, (_, i) => ({ mask: blob(160 + (i * 37) % 140, 130 + (i * 53) % 110),"
+        "     factor: 0.6 + (i % 5) / 5, lines: ['Bird ' + i], flippable: true, sci: 'Avis ' + i }));"
+        "   const out = m.packSheet(its, W, H, 13 / H, { packer, pin: 3, budget: 800 });"
+        "   const p = out[3];"
+        "   if (!p || !p.pinned || p.capScale !== 1.5) throw new Error(packer + ' pin not marked');"
+        "   const share = Math.max(p.w, p.h) / Math.min(W, H);"
+        "   if (share < 0.5 || share > 0.61) throw new Error(packer + ' pin share ' + share);"
+        "   const cx = (p.x + p.w / 2) / W, cy = (p.y + p.h / 2) / H;"
+        "   if (Math.abs(cx - 0.5) > 0.02 || Math.abs(cy - 0.5) > 0.02) throw new Error(packer + ' pin off centre ' + cx + ',' + cy);"
+        "   if (out.some((q, i) => i !== 3 && (!q || q.pinned || Math.max(q.w, q.h) >= Math.max(p.w, p.h)))) throw new Error(packer + ' rest not smaller');"
+        "   const occ = new Uint8Array(W * H);"
+        "   out.forEach((q, i) => { const k = its[i].mask;"
+        "     for (let y = 0; y < k.h; y++) for (let x = 0; x < k.w; x++) { if (!k.data[y * k.w + x]) continue;"
+        "       const sx = q.flip ? k.w - 1 - x : x;"
+        "       const X = Math.floor(q.x + (sx + 0.5) * q.w / k.w), Y = Math.floor(q.y + (y + 0.5) * q.h / k.h);"
+        "       if (X < 0 || Y < 0 || X >= W || Y >= H) throw new Error(packer + ' off the page');"
+        "       if (occ[Y * W + X] && occ[Y * W + X] !== i + 1) throw new Error(packer + ' overlap');"
+        "       occ[Y * W + X] = i + 1; } });"
+        "   const plain = m.packSheet(its, W, H, 13 / H, { packer, budget: 800 });"
+        "   const off = m.packSheet(its, W, H, 13 / H, { packer, pin: -1, budget: 800 });"
+        "   if (packer !== 'balanced' && JSON.stringify(plain) !== JSON.stringify(off)) throw new Error(packer + ' pin -1 changed the page');"
+        "   if (plain.some((q) => q && (q.pinned || q.capScale))) throw new Error(packer + ' unpinned page marked'); }"
+        " console.log('ok'); })"
+    )
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert out.returncode == 0, out.stderr
+
+
+def test_options_in_fuglerammes_shape():
+    m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    opts = m["cell_options"]
+    names = [o["name"] for o in opts]
+    by = {o["name"]: o for o in opts}
+    always = [o["name"] for o in opts if not o.get("show_if") and not o.get("advanced")]
+    assert always == ["source", "location", "layout", "pictures", "paper"]
+    for o in opts:
+        assert o.get("advanced", True) is True, f"{o['name']} advanced must be true"
+        for key, want in (o.get("show_if") or {}).items():
+            assert key in by, f"{o['name']} shows on unknown option {key}"
+            values = {c["value"] for c in by[key].get("choices", [])}
+            want = want["not"] if isinstance(want, dict) else want
+            for v in want if isinstance(want, list) else [want]:
+                if values:
+                    assert v in values, (
+                        f"{o['name']} shows on {key}={v!r}, not a choice"
+                    )
+        assert ":" not in o["label"] and "(" not in o["label"], o["label"]
+    # the advanced ones come last
+    first_adv = next(i for i, o in enumerate(opts) if o.get("advanced"))
+    assert all(o.get("advanced") for o in opts[first_adv:])
+    for n in (
+        "order",
+        "marks",
+        "exclude",
+        "min_confidence",
+        "refresh_min",
+        "model",
+        "title",
+    ):
+        assert by[n].get("advanced"), n
+    assert by["hero_bird"]["show_if"] == {"layout": "hero"}
+    assert by["hero_bird"]["default"] == "order"
+    assert by["spotlight"]["show_if"] == {"layout": "cluster"}
+    assert by["spotlight"]["default"] is False
+    assert [c["value"] for c in by["window"]["choices"]] == [
+        "0.25", "0.5", "1", "3", "6", "12", "today", "24", "72", "week", "720", "0",
+    ]  # fmt: skip
+    assert {"most", "rarest", "rarest_ever", "latest", "mix"} == {
+        c["value"] for c in by["order"]["choices"]
+    }
+    # nothing a saved cell holds is renamed: every 0.13.0 option, value and default stands
+    old = json.loads(
+        (ROOT / "tests" / "options_v0_13_0.json").read_text(encoding="utf-8")
+    )
+    for name, was in old.items():
+        assert name in by, f"{name} was removed"
+        o = by[name]
+        assert o["type"] == was["type"] and o.get("default") == was["default"], name
+        values = [c["value"] for c in o.get("choices", [])]
+        assert set(was["values"]) <= set(values), f"{name} lost a value"
+    assert set(names) - set(old) == {"hero_bird", "spotlight"}
+    assert "—" not in json.dumps(m, ensure_ascii=False)

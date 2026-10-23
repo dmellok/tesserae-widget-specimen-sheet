@@ -22,12 +22,14 @@ function drawMount(ctx, x, y, w, h, ink, W) {
 }
 
 /* Each specimen's spot on a W x H page: packed, or a cell each for the grid layout. ``zoom``
-   under 1 packs into the middle that share of the page. */
+   under 1 packs into the middle that share of the page. A specimen marked ``spot`` is held
+   large in the middle of a packed page with the rest round it. */
 function spots(items, W, H, label, { layout, packer, facing, fast, zoom }) {
   if (layout === 'grid') return gridSpots(items, W, H, label);
   const k = Math.max(0.3, Math.min(1, Number(zoom) || 1));
   const w = W * k, h = H * k;
-  const got = packSheet(items, w, h, label / k, { facing, fast, packer });
+  const pin = items.findIndex((it) => it.spot);
+  const got = packSheet(items, w, h, label / k, pin >= 0 ? { facing, fast, packer, pin } : { facing, fast, packer });
   if (k === 1) return got;
   const dx = (W - w) / 2, dy = (H - h) / 2;
   return got.map((s) => s && { ...s, x: s.x + dx, y: s.y + dy, cap: [s.cap[0] + dx, s.cap[1] + dy] });
@@ -67,7 +69,7 @@ function draw(items, placed, W, H, paper, ink) {
       ctx.restore();
     }
     slots[b.idx] = { x, y, w, h, on_paper: !!b.on_paper };
-    shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', flip: !!s.flip, box: [x / W, y / H, w / W, h / H], at: [s.cap[0] / W, s.cap[1] / H], lines: s.lines });
+    shown.push({ name: b.name, sci: b.sci, mount: b.blend === 'mount', flip: !!s.flip, box: [x / W, y / H, w / W, h / H], at: [s.cap[0] / W, s.cap[1] / H], lines: s.lines, ...(s.pinned ? { big: s.capScale } : {}) });
   });
   return { sheet, shown, slots, paper: `rgb(${bg.join(',')})` };
 }

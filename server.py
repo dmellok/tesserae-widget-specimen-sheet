@@ -25,7 +25,7 @@ import time
 import unicodedata
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone, tzinfo
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -63,7 +63,23 @@ LIVE_S = (
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 
 SOURCES = S.SOURCES
-WINDOWS = ("today", "week")
+# BirdNET-Go's window: to-day as it fills, the last seven days by date, and Fugleramme's
+# rolling windows in hours (0 is all time)
+WINDOWS = ("today", "week", "0.25", "0.5", "1", "3", "6", "12", "24", "72", "720", "0")
+WINDOW_WORDS = {
+    "today": "to-day",
+    "week": "this week",
+    "0.25": "in the last 15 minutes",
+    "0.5": "in the last 30 minutes",
+    "1": "in the last hour",
+    "3": "in the last 3 hours",
+    "6": "in the last 6 hours",
+    "12": "in the last 12 hours",
+    "24": "in the last 24 hours",
+    "72": "in the last 3 days",
+    "720": "in the last 30 days",
+    "0": "all time",
+}
 DAYS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90, "365d": 365}
 RADII = ("10", "2", "5", "25", "50")
 QUALITIES = ("research", "")
@@ -108,7 +124,12 @@ PICTURES = ("free", "gen")
 SHEET_MAX = 32
 # Which species make the sheet when more were heard or recorded than fit,
 # and the order of a numbered key.
-ORDERS = ("most", "rarest", "latest", "mix")
+# Fugleramme's four rankings (heard, rarest, rarest_ever, last_heard) under the widget's own
+# values, and the daily mix.
+ORDERS = ("most", "rarest", "latest", "mix", "rarest_ever")
+# The hero's specimen: the first by the order, or one of Fugleramme's single plates (the latest
+# heard, the newest arrival), the most heard or the rarest.
+HERO_BIRDS = ("order", "latest", "arrival", "most", "rarest")
 ARRANGEMENTS = ("sheet", "scene")
 PACKINGS = ("balanced", "spiral", "voids")
 # when the day's painting budget is spent: the species that could not be painted
@@ -266,11 +287,13 @@ def _order_rows(
     today: str,
 ) -> None:
     """Sort the rows for the Order option, in place. Most and least go by
-    the count; rarest by the fewest days heard in the rarity log (BirdNET-Go)
-    or the fewest records (the others); latest by the time last heard or the
-    date last seen; newest puts the day's new arrivals and returns first;
-    alpha A to Z; mix shuffles with the day as the seed, so the pick changes
-    daily and holds for the day."""
+    the count; rarest by the fewest calls, observations or records in the
+    window; rarest_ever by the fewest calls in the station's whole record
+    (BirdNET-Go), else the fewest days in the widget's own log, then the
+    window's count; latest by the time last heard or the date last seen;
+    newest puts the day's new arrivals and returns first; alpha A to Z; mix
+    shuffles with the day as the seed, so the pick changes daily and holds
+    for the day. The first four are Fugleramme's rankings."""
 
     def name(r: dict[str, Any]) -> str:
         return str(r.get("name") or "").lower()
@@ -284,13 +307,7 @@ def _order_rows(
         rows.sort(key=name)
     elif order == "latest" or (order == "newest" and source != "birdnet_go"):
         if source == "birdnet_go":
-            rows.sort(
-                key=lambda r: (
-                    -(_minutes(r.get("last") or "") or 0),
-                    -r["count"],
-                    name(r),
-                )
-            )
+            rows.sort(key=lambda r: (-_heard_at(r), -r["count"], name(r)))
         else:
             rows.sort(key=lambda r: (-r["count"], name(r)))
             rows.sort(key=when, reverse=True)
@@ -300,10 +317,15 @@ def _order_rows(
             key=lambda r: (rank.get(str(r.get("flag") or ""), 2), -r["count"], name(r))
         )
     elif order == "rarest":
-        heard = _days_heard(data_dir) if source == "birdnet_go" else {}
+        rows.sort(key=lambda r: (r["count"], name(r)))
+    elif order == "rarest_ever":
+        # a resident heard twice to-day is not a rarity; a first-timer is
+        heard = _days_heard(data_dir)
         rows.sort(
             key=lambda r: (
-                heard.get(str(r.get("sci") or r.get("name") or ""), 0),
+                r["ever"]
+                if isinstance(r.get("ever"), int)
+                else heard.get(str(r.get("sci") or r.get("name") or ""), 0),
                 r["count"],
                 name(r),
             )
@@ -313,6 +335,62 @@ def _order_rows(
         random.Random(f"{today}|{source}").shuffle(rows)
     else:
         rows.sort(key=lambda r: (-r["count"], name(r)))
+
+
+def _heard_at(r: dict[str, Any]) -> float:
+    """When a row was last heard or seen, as a sortable number: its time stamp, else the
+    minutes of its HH:MM (a row with neither sorts oldest)."""
+    iso = str(r.get("last_iso") or "")
+    if iso:
+        with contextlib.suppress(ValueError):
+            at = datetime.fromisoformat(iso)
+            return (
+                at.timestamp()
+                if at.tzinfo
+                else (at - datetime(1970, 1, 1)).total_seconds()
+            )
+    return float(_minutes(r.get("last") or "") or 0)
+
+
+def _latest_row(
+    rows: list[dict[str, Any]], recent: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """The bird heard last: the species of the newest detection on the page's rows (as
+    Fugleramme's latest page has it), else the row last heard or seen."""
+    for d in recent:
+        for r in rows:
+            if (d.get("sci") and r.get("sci") == d["sci"]) or (
+                not d.get("sci") and r.get("name") == d.get("name")
+            ):
+                return r
+    return max(rows, key=_heard_at) if rows else None
+
+
+def _arrival_row(
+    rows: list[dict[str, Any]], data_dir: Path
+) -> tuple[dict[str, Any] | None, str]:
+    """The newest arrival among the rows, and when it arrived (an ISO date or time): the one
+    first heard most lately in the station's whole record (Fugleramme's arrival page, kept to
+    the window's birds), else the one the widget's own log met most lately, a bird new to-day
+    or back after an absence first."""
+    if not rows:
+        return None, ""
+    known = [r for r in rows if r.get("first_ever")]
+    if known:
+        r = max(known, key=lambda r: (str(r["first_ever"]), _heard_at(r)))
+        return r, str(r["first_ever"])
+    _days, seen = _log_seen(data_dir)
+
+    def met(r: dict[str, Any]) -> str:
+        hits = seen.get(str(r.get("sci") or r.get("name") or ""), [])
+        return min(hits) if hits else ""
+
+    rank = {"new": 2, "back": 1}
+    r = max(
+        rows,
+        key=lambda r: (rank.get(str(r.get("flag") or ""), 0), met(r), _heard_at(r)),
+    )
+    return r, met(r)
 
 
 def _log_seen(data_dir: Path) -> tuple[list[str], dict[str, list[str]]]:
@@ -1240,8 +1318,29 @@ def _count_text(r: dict[str, Any], source: str, window: str) -> str:
     return f"{n} obs."
 
 
+def _last_words(r: dict[str, Any], window: str, today: str) -> str:
+    """' · last 17:40' after a BirdNET-Go count: the time when it was last heard to-day, the
+    day when before; nothing when the row does not say when."""
+    if not r.get("last") or r.get("year_days"):
+        return ""
+    if window == "today":
+        return f" · last {r['last']}"
+    iso = str(r.get("last_iso") or "")
+    if not re.match(r"\d{4}-\d{2}-\d{2}T", iso):
+        return ""
+    if iso[:10] == today:
+        return f" · last {r['last']}"
+    return (
+        f" · last {S._day_words(iso[:10], date.fromisoformat(today))}" if today else ""
+    )
+
+
 def _label_lines(
-    r: dict[str, Any], lines: tuple[str, ...], source: str, window: str
+    r: dict[str, Any],
+    lines: tuple[str, ...],
+    source: str,
+    window: str,
+    today: str = "",
 ) -> list[str]:
     out: list[str] = []
     for line in lines:
@@ -1251,13 +1350,8 @@ def _label_lines(
             out.append(r["sci"])
         elif line == "count":
             bit = _count_text(r, source, window)
-            if (
-                source == "birdnet_go"
-                and window == "today"
-                and r.get("last")
-                and not r.get("year_days")
-            ):
-                bit += f" · last {r['last']}"
+            if source == "birdnet_go":
+                bit += _last_words(r, window, today)
             out.append(bit)
         elif line == "last" and source != "birdnet_go" and r.get("last"):
             out.append(r["last"])
@@ -1270,6 +1364,8 @@ def _label_lines(
             out.append(f"by {r['who']}")
         elif line == "size" and r.get("size_cm"):
             out.append(f"L {int(r['size_cm'])} cm")
+    if r.get("arrived"):
+        out.append(r["arrived"])
     return out
 
 
@@ -1317,6 +1413,8 @@ def fetch(
         count = max(2, round(count / (scale / 100) ** 2))
     order = str(options.get("order") or "most")
     order = order if order in ORDERS else "most"
+    hero_bird = _choice(options.get("hero_bird"), HERO_BIRDS)
+    spotlight = options.get("spotlight") in (True, "true", "True", 1, "1", "on")
     sizing = _choice(options.get("sizing"), SIZINGS)
     labels = _choice(options.get("labels"), LABELS)
     picked = options.get("label_lines")
@@ -1451,6 +1549,8 @@ def fetch(
             "scene": None,
             "hero_frame": hero_frame if layout == "hero" else "plain",
             "hero_note": hero_note,
+            "window": window if source == "birdnet_go" else "",
+            "spotlight": False,
         }
         base_out.update(kw)
         return base_out
@@ -1462,19 +1562,29 @@ def fetch(
     demo = False
     stale: str | None = None
     if source == "birdnet_go":
-        period = "this week" if window == "week" else "to-day"
+        period = WINDOW_WORDS[window]
+        # the station's whole record, for the rarest all time and the newest arrival
+        life = order == "rarest_ever" or (layout == "hero" and hero_bird == "arrival")
         if not base:
             demo = True
             region = S.demo_region(*(place[:2] if place else (None, None)))
-            raw = S.demo_birdnet(region, now)
+            raw = S.demo_birdnet(region, now, S.window_hours(window))
             title = title or "Demo garden"
         else:
-            slug = hashlib.sha1(f"{base}|{min_conf}|{window}".encode()).hexdigest()[:12]
+            slug = hashlib.sha1(
+                f"{base}|{min_conf}|{window}{'|life' if life else ''}".encode()
+            ).hexdigest()[:12]
             raw, err = _cached_rows(
                 data_dir / f"result_{slug}.json",
                 refresh_min * 60,
                 lambda: S.from_birdnet(
-                    base, token, min_conf, window, now.strftime("%Y-%m-%d")
+                    base,
+                    token,
+                    min_conf,
+                    window,
+                    now.strftime("%Y-%m-%d"),
+                    now=now,
+                    life=life,
                 ),
             )
             if raw is None:
@@ -1567,10 +1677,24 @@ def fetch(
     sky = _sky(place, now) if source == "birdnet_go" else {"dark": False}
     asleep = None
     day_page = None
-    if day_pages == "on" and source == "birdnet_go" and rows:
-        day_page = _day_page(rows, sky, now)
-    if night != "off" and sky.get("dark") and rows:
-        latest = max(rows, key=lambda r: _minutes(r.get("last") or "") or 0)
+    # a longer window carries birds last heard on other days: the dawn, dusk and night
+    # pages read only to-day's clock times
+    heard_today = [
+        r
+        for r in rows
+        if not str(r.get("last_iso") or "")[:10]
+        or str(r.get("last_iso"))[:10] == today_str
+    ]
+    if day_pages == "on" and source == "birdnet_go" and heard_today:
+        if len(heard_today) == len(rows):
+            day_page = _day_page(rows, sky, now)
+        else:
+            sung = list(heard_today)
+            day_page = _day_page(sung, sky, now)
+            if day_page:
+                rows[:] = sung + [r for r in rows if r not in sung]
+    if night != "off" and sky.get("dark") and heard_today:
+        latest = max(heard_today, key=lambda r: _minutes(r.get("last") or "") or 0)
         last_min = _minutes(latest.get("last") or "")
         quiet = (
             (now.hour * 60 + now.minute - last_min) if last_min is not None else None
@@ -1578,7 +1702,7 @@ def fetch(
         if night == "owls":
             sunset = int(sky.get("sunset_min") or 0)
             night_rows = [
-                r for r in rows if (_minutes(r.get("last") or "") or 0) >= sunset
+                r for r in heard_today if (_minutes(r.get("last") or "") or 0) >= sunset
             ]
             if night_rows:
                 rows = night_rows
@@ -1595,11 +1719,50 @@ def fetch(
                 "last": latest["name"],
             }
 
+    recent = (
+        raw.get("recent") if isinstance(raw, dict) and source == "birdnet_go" else []
+    )
+    recent = recent if isinstance(recent, list) else []
+    arrived = ""
+    if layout == "hero" and hero_bird != "order" and rows:
+        # the hero: Fugleramme's latest bird or newest arrival, or the most heard or the
+        # rarest, ahead of the rest (who are named beneath in the order's order)
+        pick: dict[str, Any] | None
+        if hero_bird == "latest":
+            pick = _latest_row(rows, recent)
+        elif hero_bird == "arrival":
+            pick, when = _arrival_row(rows, data_dir)
+            with contextlib.suppress(ValueError):
+                if pick is not None and when:
+                    verb = "heard" if source == "birdnet_go" else "seen here"
+                    arrived = f"first {verb} {S._day_words(when[:10], today)}"
+        elif hero_bird == "most":
+            pick = max(rows, key=lambda r: (r["count"], -_heard_at(r)))
+        else:
+            pick = min(rows, key=lambda r: (r["count"], -_heard_at(r)))
+        if pick is not None:
+            rows.remove(pick)
+            rows.insert(0, pick)
+    spot = None
+    if spotlight and layout == "cluster" and rows:
+        # Fugleramme's spotlight: the bird heard last, held large in the middle; it takes a
+        # place on the page ahead of the order
+        spot = _latest_row(rows, recent)
+        if spot is not None and rows.index(spot) >= count:
+            rows.remove(spot)
+            rows.insert(max(0, count - 1), spot)
+
     year = None
     if layout == "year":
         rows, year = _year_rows(data_dir, rows, today_str, source)
         count = YEAR_MAX
     shown = [dict(r) for r in rows[:count]]
+    if arrived and shown:
+        shown[0]["arrived"] = arrived
+    if spot is not None:
+        for r in shown:
+            if r.get("sci") == spot.get("sci") and r.get("name") == spot.get("name"):
+                r["spot"] = True
     if not ctx.get("preview"):
         _note_shown(data_dir, shown)
     if not rows:
@@ -1739,10 +1902,11 @@ def fetch(
                 tuple(x for x in lines if x in ("name", "sci", "size")),
                 source,
                 window,
+                today_str,
             ) + [r["kept_line"]]
             continue
         r["count_text"] = _count_text(r, source, window)
-        r["lines"] = _label_lines(r, lines, source, window)
+        r["lines"] = _label_lines(r, lines, source, window, today_str)
         if tally == "strokes":
             r["tally_line"] = r["count_text"]
             r["tally"] = int(r.get("year_days") or r.get("count") or 0)
@@ -1842,6 +2006,7 @@ def fetch(
         demo=demo,
         sheet=stored_sheet(data_dir, cell_id),
         scene=scene_out,
+        spotlight=any(r.get("spot") for r in shown),
         **_live(mask_states, art, cuts),
     )
 
