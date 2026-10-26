@@ -1152,6 +1152,9 @@ def _from_collection(
             kind = str(meta.get("kind") or "Aves")
             if meta.get("style") != style or not sci or kind not in kinds:
                 continue
+            # a painting from an older prompt (a photo restyled, not posed afresh) stays off
+            if int(meta.get("prompt_version") or 1) != P.PROMPT_VERSION:
+                continue
             row = {"name": str(meta.get("name") or sci), "sci": sci, "kind": kind}
             slug = N.slug(sci)
             if slug in exclude or is_excluded(row, rules):

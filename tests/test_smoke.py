@@ -892,10 +892,10 @@ def offline_paint(offline_masks):
 
 def test_keys_poses_and_dapper():
     assert P.key_for("Gymnorhina tibicen", "gould") in (
-        "gymnorhina_tibicen--gould--p2",
-        "gymnorhina_tibicen--gould--p2--flight",
+        "gymnorhina_tibicen--gould--p3",
+        "gymnorhina_tibicen--gould--p3--flight",
     )
-    assert P.key_for("Amanita muscaria", "gould", "Fungi").endswith("--gould--p2")
+    assert P.key_for("Amanita muscaria", "gould", "Fungi").endswith("--gould--p3")
     assert P.key_for("Gymnorhina tibicen", "hats", dapper=True).endswith("--dapper")
     scis = ["Gymnorhina tibicen", "Columba livia", "Spilopelia chinensis"]
     pick = P.dapper_pick(scis, "2026-10-15")
@@ -1438,6 +1438,36 @@ def test_perched_birds_keep_a_leafy_branch_and_flying_birds_have_none(tmp_path):
         text = P.prompt_for(job, tmp_path)
         # only the pose line may name a branch, and only to rule it out
         assert text.count("branch") == 1 and "no branch" in text, style
+
+
+def test_a_bird_is_posed_afresh_not_the_photo_restyled(tmp_path):
+    job = {
+        "key": "x--gould--p3",
+        "style": "gould",
+        "name": "Wren",
+        "sci": "Troglodytes troglodytes",
+        "kind": "Aves",
+    }
+    text = P.prompt_for(job, tmp_path)
+    assert P.attitude("Troglodytes troglodytes", False) in text
+    assert "must differ from the reference photo" in text
+    assert "Do not trace, restyle or redraw the photo" in text
+    # the pose comes first, before what the photo is kept for
+    assert text.index("is drawn") < text.index("for identity only")
+    names = (
+        "Turdus merula",
+        "Corvus coronoides",
+        "Anas superciliosa",
+        "Dacelo novaeguineae",
+    )
+    assert len({P.attitude(n, False) for n in names}) > 1, "a sheet mixes its attitudes"
+    plate = P.prompt_for({**job, "ref_used": "plate"}, tmp_path)
+    assert "photo" not in plate.split(" About the subject")[0]
+    moth = P.prompt_for(
+        {**job, "kind": "Insecta", "name": "Bogong Moth", "sci": "Agrotis infusa"},
+        tmp_path,
+    )
+    assert "must differ" not in moth and "draw it again" not in moth
 
 
 # ----------------------------------------------------------------------
@@ -1993,8 +2023,20 @@ def test_a_spent_budget_fills_the_sheet_from_the_collection(
                 "sci": sci,
                 "kind": kind,
                 "credit": f"AI painting of the {name}",
+                "prompt_version": P.PROMPT_VERSION,
             },
         )
+    P.ART.keep(  # nor one from an older prompt, the photo restyled
+        "cacatua_galerita--engraving",
+        tmp_path,
+        _jpeg(),
+        {
+            "style": "engraving",
+            "name": "Sulphur-crested Cockatoo",
+            "sci": "Cacatua galerita",
+            "prompt_version": 1,
+        },
+    )
     P.ART.keep(  # another style is not this page's
         P.key_for("Cacatua galerita", "gould"),
         tmp_path,

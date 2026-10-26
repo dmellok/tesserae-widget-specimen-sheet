@@ -279,7 +279,7 @@ BATCH_PARALLEL = 3
 _PARALLEL = BATCH_PARALLEL
 _PER_FETCH = PER_FETCH
 STOPPED = "stopped"
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 # A style reworded after it shipped gets a revision here; its paintings are
 # keyed with it, so only that style is painted again.
 STYLE_REVISIONS: dict[str, int] = {
@@ -936,18 +936,46 @@ GEN_WHOLE = (
 )
 
 # A fresh illustration of the species in the style, the photo for identity only: asked to
-# "paint the bird in the photo" the model restyles the photo, pose, crop and lighting and all.
+# "paint the bird in the photo" the model restyles the photo, pose, crop and lighting and all,
+# and told only that the pose is its own it still keeps the photo's. So the prompt opens with a
+# pose of its own (an attitude picked by species) and says twice not to trace the photo.
 GEN = (
-    "Draw the {name} ({sci}) afresh as {style}: a new illustration of the species in that "
-    "style, not the photo restyled. The reference photo is for identity only, its colours, "
-    "markings, bill, feet and proportions kept exactly; the composition, pose and lighting "
-    "are the illustration's own: {pose}. The {kind} alone on plain, pure white paper with a "
-    "clear margin all round and nothing else on the page: no shadow, wash, vignette, ground, "
-    "sky, scenery, other creatures, text, border or signature. The style says how the {kind} "
-    "and its perch are drawn and nothing else: no background, backdrop, frame, roundel, "
-    "halo, panel, pattern, sunburst or ornament round or behind them."
-    "{outline}{about}{dapper}"
+    "A new illustration of the {name} ({sci}) as {style}. The {kind} is drawn {attitude}"
+    "{pose}.{repose} Do not trace, restyle or redraw the photo: its pose, angle, crop, perch, "
+    "lighting and background are not used at all. The photo is for identity only, its "
+    "colours, markings, bill, feet and proportions kept exactly. The {kind} alone on plain, "
+    "pure white paper with a clear margin all round and nothing else on the page: no shadow, "
+    "wash, vignette, ground, sky, scenery, other creatures, text, border or signature. The "
+    "style says how the {kind} and its perch are drawn and nothing else: no background, "
+    "backdrop, frame, roundel, halo, panel, pattern, sunburst or ornament round or behind "
+    "them.{again}{outline}{about}{dapper}"
 )
+REPOSE = " This pose and viewing angle are required: they must differ from the reference photo's."
+AGAIN = (
+    " If the result would look like the photo with a filter on it, draw it again in the "
+    "pose above."
+)
+# A bird's attitude on the sheet, picked by species so a page holds a mix of them and a
+# species keeps its own from one painting to the next.
+ATTITUDES = {
+    "perched": (
+        "facing left in three-quarter view, its head turned back over its shoulder",
+        "facing right in clean side profile, tail cocked up, bill a little open in song",
+        "seen from the front in three-quarter view, head tilted to one side, looking out",
+        "leaning forward and down as if to reach a berry or an insect, tail raised behind it",
+        "facing left, upright and alert, one wing lifted a little as it settles",
+        "facing right, turned half away so its back and wing markings show, head looking back",
+        "preening, its head turned to its wing, facing left",
+        "crouched low and fluffed against the cold, facing right, head drawn in",
+    ),
+    "flight": (
+        "banking to the left, seen a little from below, wings swept high",
+        "gliding to the right with its wings level and fully spread",
+        "on the downstroke, wings below its body, heading left",
+        "coming in to land, wings raised and spread, feet reaching forward, facing right",
+        "rising steeply to the left, tail fanned",
+    ),
+}
 # A white bird on white paper is lost to the cut-out: it gets a contour line.
 OUTLINE = (
     " A white or very pale {kind} is drawn with a fine, clear dark contour line along its whole "
@@ -1105,6 +1133,14 @@ def style_of(style: str | None) -> tuple[str, str]:
 
 def flies(sci: str) -> bool:
     return int(hashlib.sha1(sci.encode()).hexdigest()[:4], 16) % 3 == 0
+
+
+def attitude(sci: str, flying: bool) -> str:
+    """A bird's attitude, picked by species (not by the hash that picks who flies)."""
+    pick = ATTITUDES["flight" if flying else "perched"]
+    return pick[
+        int(hashlib.sha1(f"pose|{sci}".encode()).hexdigest()[:6], 16) % len(pick)
+    ]
 
 
 PLANT_REGIONS: tuple[tuple[str, float, float, float, float, tuple[str, ...]], ...] = (
@@ -1602,6 +1638,7 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         "{camera}", camera_for(job.get("sci") or "")
     )
     words = about(job.get("sci") or "", data_dir)
+    bird = job.get("kind") == "Aves"
     gen = (
         GEN_HERO
         if job.get("hero")
@@ -1620,6 +1657,9 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
         sci=job.get("sci") or "",
         style=how,
         pose=pose,
+        attitude=f"{attitude(job.get('sci') or '', flying)}, " if bird else "",
+        repose=REPOSE if bird else "",
+        again=AGAIN if bird else "",
         about=f" About the subject: {words}" if words else "",
         dapper=DAPPER.format(kind=noun) if job["key"].endswith("--dapper") else "",
         # a cut-out subject needs its edge even when it is white; a whole plate does not
@@ -1629,8 +1669,11 @@ def prompt_for(job: dict[str, Any], data_dir: Path) -> str:
     )
     used = job.get("ref_used")
     if used == "plate":
-        text = text.replace("reference photo", "reference plate").replace(
-            "as in the photo", "as in the plate"
+        text = (
+            text.replace("reference photo", "reference plate")
+            .replace("the photo", "the plate")
+            .replace("The photo", "The plate")
+            .replace("as in the photo", "as in the plate")
         )
         text += PLATE_NOTE
     elif used == "both":
