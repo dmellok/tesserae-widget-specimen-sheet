@@ -2775,5 +2775,5 @@ def test_options_in_fuglerammes_shape():
         assert o["type"] == was["type"] and o.get("default") == was["default"], name
         values = [c["value"] for c in o.get("choices", [])]
         assert set(was["values"]) <= set(values), f"{name} lost a value"
-    assert set(names) - set(old) == {"hero_bird", "spotlight"}
+    assert set(names) - set(old) == {"hero_bird", "spotlight", "plates", "reference"}
     assert "—" not in json.dumps(m, ensure_ascii=False)

@@ -40,3 +40,28 @@ photograph, used as the reference picture:
 
 The samples are adaptations of that photograph and carry the same licence, CC BY-SA 3.0, with
 the same credit.
+
+
+## Bird stickers
+
+The bird stickers are **huashu-bird-sticker** by Huashu (花叔), <https://github.com/alchaincyf/huashu-bird-sticker>:
+one transparent sticker with a white edge for each of the 11,064 living bird species of the IOC
+World Bird List v15.2, drawn by an image model from a reference photograph (or a board of
+several) and reviewed against it for field marks. The repository records the reference, its
+author and licence per species; the reference photographs are not included there and not used
+here.
+
+- Stickers: PolyForm Shield 1.0.0 (<https://polyformproject.org/licenses/shield/1.0.0/>),
+  copyright 2026 Huashu (alchaincyf). Any use, including commercial, is permitted except a
+  product that competes with the licensor's line of business, Mingji (鸣迹), a bird-watching
+  notebook and bird identification app with an illustrated field guide. Required notice:
+  "Copyright (c) 2026 Huashu (alchaincyf), https://github.com/alchaincyf/huashu-bird-sticker".
+- Index data (`data/species.json`, from which `stickers.json` here is built): MIT.
+
+What this widget ships is only `stickers.json`, an index (family folder, file stem and review
+score per species) built by `tools/build_stickers.py` from that repository's `data/species.json`
+at the pinned revision. A sticker is downloaded from that revision the first time a species needs
+it and kept in the widget's data folder; it is resized and, for greyscale and black-and-white
+panels, converted. The credit "Bird stickers by Huashu, huashu-bird-sticker
+(github.com/alchaincyf/huashu-bird-sticker)" is printed at the foot of any sheet that shows one.
+A painting made with a sticker as its reference picture is credited to the sticker as well.

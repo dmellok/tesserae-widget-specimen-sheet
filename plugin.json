@@ -2,7 +2,7 @@
   "tesserae_compat": "1.x",
   "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard, over a window you pick), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -1816,7 +1816,7 @@
       "type": "select",
       "label": "Pose",
       "default": "mixed",
-      "help": "How the birds are painted. A perched bird sits on a plant native to the cell's location when the place is known. Changing the pose paints every bird again, within the daily limit; the earlier paintings stay on the paintings page.",
+      "help": "How the birds are painted. A perched bird sits on a plant native to the cell's location when the place is known. Changing the pose paints every bird again, within the daily limit; the earlier paintings stay on the paintings page. Varied draws each bird's pose anew for every sheet, about a third in flight, so a bird is not always shown in the one pose it was first painted in; a pose not painted yet shows the bird's other kept pose while it paints, and each bird ends up painted twice.",
       "show_if": {
         "pictures": "gen"
       },
@@ -1833,6 +1833,10 @@
         {
           "value": "flight",
           "label": "All in flight"
+        },
+        {
+          "value": "varied",
+          "label": "Varied: each bird drawn afresh for every sheet"
         }
       ]
     },
@@ -2053,6 +2057,56 @@
           "label": "3 hours"
         }
       ]
+    },
+    {
+      "name": "plates",
+      "type": "select",
+      "label": "Plates",
+      "default": "classic",
+      "show_if": {
+        "pictures": "free"
+      },
+      "help": "Classic plates are Fugleramme's cut-outs from nineteenth-century books, 706 species; a bird without one gets the record's photo. Bird stickers are huashu-bird-sticker's illustrations, one for every living bird species, drawn from a photograph and reviewed for field marks; they come with a white sticker edge and are free except in a birding app.",
+      "choices": [
+        {
+          "value": "classic",
+          "label": "Classic plates, photos where there is none"
+        },
+        {
+          "value": "classic_stickers",
+          "label": "Classic plates, bird stickers where there is none"
+        },
+        {
+          "value": "stickers",
+          "label": "Bird stickers for every bird"
+        }
+      ],
+      "advanced": true
+    },
+    {
+      "name": "reference",
+      "type": "select",
+      "label": "Painted from",
+      "default": "photo",
+      "show_if": {
+        "pictures": "gen"
+      },
+      "help": "What the painter is shown. The record's photo keeps the bird as it was seen. A bird sticker (huashu-bird-sticker) gives a clean, reviewed likeness when the photo is poor or missing. Both hands over the photo and the sticker where the model takes two pictures.",
+      "choices": [
+        {
+          "value": "photo",
+          "label": "The record's photo"
+        },
+        {
+          "value": "sticker",
+          "label": "Its bird sticker"
+        },
+        {
+          "value": "sticker_photo",
+          "label": "Photo and sticker"
+        }
+      ],
+      "advanced": true
     }
   ],
   "settings": [

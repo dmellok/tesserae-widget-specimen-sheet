@@ -50,6 +50,7 @@ K = _sibling("kinds")
 S = _sibling("sources")
 M = _sibling("masks")
 C = _sibling("classic")
+ST = _sibling("stickers")
 P = _sibling("paint")
 
 try:
@@ -121,6 +122,8 @@ NAME_LOCALES = (
 PICTURE_PX = 700
 HERO_PX = 1400
 PICTURES = ("free", "gen")
+PLATES = ("classic", "classic_stickers", "stickers")
+REFERENCES = ("photo", "sticker", "sticker_photo")
 SHEET_MAX = 32
 # Which species make the sheet when more were heard or recorded than fit,
 # and the order of a numbered key.
@@ -965,6 +968,48 @@ def _unpainted_hint(n: int, art: Any, has_key: bool) -> str:
     return f"Painting {many}. The sheet fills in as each one finishes."
 
 
+def _sticker_plate(sci: str, data_dir: Path, levels: str) -> dict[str, Any] | None:
+    """The sheet's picture of a species from its bird sticker: the sticker's
+    own alpha kept as its cut (so no cut-out job is ever needed) and a flat
+    copy on paper, the same shape a classic plate takes."""
+    entry = ST.lookup(sci)
+    if not entry:
+        return None
+    key = ST.key_of(entry)
+    cut_path = M.folder(data_dir) / f"{key}.png"
+    colour = data_dir / "img" / f"{key}.jpg"
+    bird_path = data_dir / "img" / f"{key}.bird"
+    bird = 0.9
+    if cut_path.exists() and colour.exists():
+        try:
+            raw = colour.read_bytes()
+            bird = float(bird_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+    else:
+        got = ST.files(sci, data_dir, N.cached_get, ST.PLATE_PX, C.PAPER)
+        if not got:
+            return None
+        raw, png, bird = got
+        N.write(cut_path, png)
+        N.write(colour, raw)
+        N.write(bird_path, str(bird).encode())
+    src = N.render(raw, ST.PLATE_PX, None, colour, levels)
+    if not src:
+        return None
+    return {
+        "src": src,
+        "kind": "plate",
+        "on_paper": False,
+        "credit": ST.CREDIT,
+        "key": key,
+        "aspect": N.aspect_of(src),
+        "file": str(colour),
+        "bird": bird,
+        "sticker": True,
+    }
+
+
 def _attach_pictures(
     rows: list[dict[str, Any]],
     base: str,
@@ -975,6 +1020,7 @@ def _attach_pictures(
     gen: dict[str, Any] | None = None,
     classic: bool = False,
     budget_s: float = 7.0,
+    plates: str = "classic",
 ) -> dict[str, int]:
     """Each row's best picture to-day, up the ladder: its AI painting when
     one is kept (``gen`` carries the style, the custom words, the day's
@@ -996,17 +1042,29 @@ def _attach_pictures(
             return None
         dapper = row["sci"] == gen.get("dapper_sci")
         hero = bool(gen.get("hero_sci")) and row["sci"] == gen["hero_sci"]
-        key = P.key_for(
-            row["sci"],
-            gen["style"],
-            row.get("kind") or "Aves",
-            dapper,
-            gen.get("model", P.DEFAULT_MODEL),
-            gen.get("pose", "mixed"),
-            P.perch_for(row["sci"], gen.get("plants") or []),
-            hero,
-            str(row.get("fine") or ""),
-        )
+        pose = str(gen.get("pose", "mixed"))
+        other = ""
+        if pose == "varied" and (row.get("kind") or "Aves") == "Aves":
+            # drawn afresh for each sheet, about a third in flight, so a bird is
+            # not always shown in the one pose it was first painted in; while
+            # the drawn pose paints, the other pose stands in when it is kept
+            pose = "flight" if (gen.get("rng") or random).random() < 1 / 3 else "perched"
+            other = "perched" if pose == "flight" else "flight"
+
+        def key_in(p: str) -> str:
+            return P.key_for(
+                row["sci"],
+                gen["style"],
+                row.get("kind") or "Aves",
+                dapper,
+                gen.get("model", P.DEFAULT_MODEL),
+                p,
+                P.perch_for(row["sci"], gen.get("plants") or []),
+                hero,
+                str(row.get("fine") or ""),
+            )
+
+        key = key_in(pose)
         gen.setdefault("keys", []).append(key)
         payload, title = _paint_payload(row, gen)
         got = art.request(key, payload, title=title)
@@ -1020,6 +1078,12 @@ def _attach_pictures(
                 pic["whole"] = hero
                 return pic
             return None
+        if other:
+            pic = _painting(key_in(other), data_dir, levels, HERO_PX if hero else PICTURE_PX)
+            if pic:
+                states["painted"] = states.get("painted", 0) + 1
+                pic["whole"] = hero
+                return pic
         st = {"painting": "running"}.get(got.state, got.state)
         states["paint_" + st] = states.get("paint_" + st, 0) + 1
         return None
@@ -1031,9 +1095,21 @@ def _attach_pictures(
         if time.time() > deadline:
             states["deferred"] = states.get("deferred", 0) + 1
             return None
+        # the plates option: classic plates then the pack then a photo; stickers
+        # for every bird; or classic plates with a sticker where there is none
+        bird = row.get("kind", "Aves") == "Aves"
+        if plates == "stickers":
+            return (bird and _sticker_plate(row["sci"], data_dir, levels)) or _photo(
+                row, base, token, data_dir, levels
+            )
         return (
             (classic and C.plate(row["sci"], data_dir, levels))
             or _plate(row["sci"], pack, data_dir, levels)
+            or (
+                plates == "classic_stickers"
+                and bird
+                and _sticker_plate(row["sci"], data_dir, levels)
+            )
             or _photo(row, base, token, data_dir, levels)
         )
 
@@ -1446,6 +1522,8 @@ def fetch(
     token = str(options.get("token") or "").strip()
     fal_key = str((settings or {}).get("fal_api_key") or "").strip()
     pictures = _choice(options.get("pictures"), PICTURES)
+    plates = _choice(options.get("plates"), PLATES)
+    reference = _choice(options.get("reference"), REFERENCES)
     style = str(options.get("style") or "gould")
     how = ""
     if style == "builder":
@@ -1460,7 +1538,7 @@ def fetch(
         _choice(options.get("when_spent"), SPENT) if pictures == "gen" else "keep"
     )
     dapper = options.get("dapper") in (True, "true", "True", 1, "1", "on")
-    pose = _choice(options.get("pose"), ("mixed", "perched", "flight"))
+    pose = _choice(options.get("pose"), ("mixed", "perched", "flight", "varied"))
     hero_note = options.get("hero_note", True) not in (
         False,
         "false",
@@ -1802,11 +1880,12 @@ def fetch(
             "how": how,
             "model": model,
             "only_painted": only_painted,
-            "ref_mode": "photo",
+            "ref_mode": reference,
             "pose": pose,
             "plants": P.plants_for(*place[:2]) if place else [],
             "art": art,
             "keys": [],
+            "rng": random.Random(),
             "hero_sci": (shown[0].get("sci") or "")
             if layout == "hero" and hero_frame == "painted"
             else "",
@@ -1822,7 +1901,7 @@ def fetch(
     # cut-outs are cheap and start even from a preview, a few at a time
     cuts = M.CUTS.open({**ctx, "settled": True}, settings, subject=subject)
     mask_states = _attach_pictures(
-        shown, base, token, data_dir, levels, cuts, gen, True
+        shown, base, token, data_dir, levels, cuts, gen, True, plates=plates
     )
     if gen and art is not None:
         # one line in the server log per fetch, so a panel without paintings can be read:

@@ -41,6 +41,7 @@ N = _sibling("net")
 K = _sibling("kinds")
 S = _sibling("sources")
 C = _sibling("classic")
+ST = _sibling("stickers")
 
 try:
     from app import artwork  # Tesserae 0.463+: the pictures a widget makes and keeps
@@ -1602,12 +1603,12 @@ def references(
     mode = str(job.get("ref_mode") or "photo")
     flying = "--flight" in str(job.get("key") or "")
     plate = None
-    if (
-        mode != "photo"
-        and not flying
-        and job.get("sci")
-        and job.get("kind", "Aves") == "Aves"
-    ):
+    bird = bool(job.get("sci")) and job.get("kind", "Aves") == "Aves"
+    if mode in ("sticker", "sticker_photo") and not flying and bird:
+        # the sticker stands in for the plate: a reviewed likeness of the species
+        plate = ST.reference(job["sci"], data_dir, N.cached_get)
+        mode = "plate" if mode == "sticker" else "both"
+    elif mode != "photo" and not flying and bird:
         plate = C.reference(job["sci"], data_dir)
     if plate is None:
         return ([photo], "photo", photo_credit) if photo else ([], "photo", "")
