@@ -2777,3 +2777,69 @@ def test_options_in_fuglerammes_shape():
         assert set(was["values"]) <= set(values), f"{name} lost a value"
     assert set(names) - set(old) == {"hero_bird", "spotlight", "plates", "reference"}
     assert "—" not in json.dumps(m, ensure_ascii=False)
+
+
+def test_values_from_before_the_cut_read_as_their_successors(tmp_path, offline):
+    """A cell set up on 0.4.4 keeps the values it saved. The sheet reads each
+    as the nearest current choice, not the first, and the manifest lists the
+    same under the choice's ``aliases`` so the editor shows the successor."""
+    old = {
+        "layout": "band",
+        "order": "newest",
+        "labels": "key",
+        "sizing": "busy",
+        "scene": "wire",
+        "style_mode": "prebuilt",
+        "art_style": "audubon",
+        "model": "flux_kontext",
+    }
+    new = server.modern(old)
+    assert new["layout"] == "grid" and new["order"] == "rarest_ever"
+    assert new["labels"] == "caption" and new["sizing"] == "compact"
+    assert new["scene"] == "sitting in a row along a telephone wire against the sky"
+    assert new["style"] == "audubon" and new["model"] == "flux_kontext"
+    assert (
+        server.modern({"style_mode": "builder", "art_style": "gould"})["style"]
+        == "builder"
+    )
+    assert server.modern({"art_style": "anime"})["style"] == "gould"
+    assert server.modern({"style": "mucha", "art_style": "anime"})["style"] == "mucha"
+    assert server.modern({"layout": "grid", "scene": "auto"}) == {
+        "layout": "grid",
+        "scene": "",
+    }
+    r = _fetch(tmp_path, offline, layout="column", sizing="busy")
+    assert r["layout"] == "grid" and r["sizing"] == "compact"
+
+    m = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    by = {o["name"]: o for o in m["cell_options"]}
+    aliases = {
+        name: {
+            a: c["value"] for c in o.get("choices", []) for a in c.get("aliases", [])
+        }
+        for name, o in by.items()
+        if any(c.get("aliases") for c in o.get("choices", []))
+    }
+    assert aliases == server.LEGACY
+    for name, table in aliases.items():
+        values = {c["value"] for c in by[name]["choices"]}
+        assert set(table.values()) <= values and not set(table) & values, name
+    # an old scene's words are one of the examples, so the two never drift apart
+    presets = {p["value"] for p in by["scene"]["presets"]}
+    listed = {
+        "branch",
+        "tree",
+        "birdbath",
+        "wire",
+        "feeder",
+        "meadow",
+        "sky",
+        "wetland",
+        "garden",
+        "floor",
+    }
+    assert {server.LEGACY_SCENES[k] for k in listed} <= presets
+    # every model the painter knows is on offer, with its cost
+    assert [c["value"] for c in by["model"]["choices"]] == list(server.P.MODELS)
+    for c in by["model"]["choices"]:
+        assert server.P.MODELS[c["value"]]["cost"] in c["label"]

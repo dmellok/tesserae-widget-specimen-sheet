@@ -138,6 +138,65 @@ PACKINGS = ("balanced", "spiral", "voids")
 # when the day's painting budget is spent: the species that could not be painted
 # give way to paintings already kept in the style, at random or the rarest first
 SPENT = ("keep", "random", "rare")
+# Values a sheet set up before 0.5.0 may still hold, and the current value each
+# stands for. The manifest lists the same under each choice's ``aliases``, so the
+# editor (Tesserae 0.499.3 and later) selects the successor and writes it on the
+# next save; until then the sheet reads the old value as that successor, not as
+# the first choice.
+LEGACY: dict[str, dict[str, str]] = {
+    "layout": {
+        "packed": "cluster",
+        "scatter": "cluster",
+        "band": "grid",
+        "column": "grid",
+    },
+    "order": {"least": "rarest", "newest": "rarest_ever", "alpha": "most"},
+    "labels": {"tag": "caption", "key": "caption"},
+    "sizing": {"busy": "compact"},
+}
+# The scene was a pick from a list and is a line of words: an old id becomes the
+# words of its example (the manifest's presets), and ``auto`` the blank vignette.
+LEGACY_SCENES = {
+    "auto": "",
+    "branch": "all perched along one shared branch",
+    "tree": "perched through the branches of one tree",
+    "birdbath": "gathered round a stone bird bath in a garden",
+    "wire": "sitting in a row along a telephone wire against the sky",
+    "feeder": "gathered at and around a hanging bird feeder",
+    "meadow": "on the ground and low stems of a wildflower meadow",
+    "sky": "all in flight together across an open sky",
+    "wetland": "among reeds and still water at the edge of a wetland",
+    "garden": "in a cottage garden, on a fence, shrubs and a path",
+    "floor": "growing together on a forest floor among leaf litter, moss and a few fallen twigs",
+    "log": "on and around a fallen mossy log on the forest floor",
+    "bank": "on a woodland bank among roots, moss and leaf litter",
+    "bed": "in a garden bed among the plants",
+}
+
+
+def modern(options: dict[str, Any]) -> dict[str, Any]:
+    """The options as the current manifest would save them.
+
+    A cell keeps what it saved; a value from before 0.5.0 reads as the nearest
+    current choice. The style was two options (``style_mode`` and ``art_style``)
+    and is one, so a cell without ``style`` takes it from those."""
+    out = dict(options)
+    for name, table in LEGACY.items():
+        value = out.get(name)
+        if isinstance(value, str) and value in table:
+            out[name] = table[value]
+    scene = out.get("scene")
+    if isinstance(scene, str) and scene in LEGACY_SCENES:
+        out["scene"] = LEGACY_SCENES[scene]
+    if "style" not in out and ("style_mode" in out or "art_style" in out):
+        art = str(out.get("art_style") or "")
+        if out.get("style_mode") == "builder":
+            out["style"] = "builder"
+        else:
+            out["style"] = art if art in P.STYLES else "gould"
+    return out
+
+
 SPENT_LAYOUTS = ("cluster", "grid")
 KEPT_BY_S = 4.5  # past this far into a fetch, a kept painting never cut out waits
 SCENE_WORDS_GROUNDED = (
@@ -1048,7 +1107,9 @@ def _attach_pictures(
             # drawn afresh for each sheet, about a third in flight, so a bird is
             # not always shown in the one pose it was first painted in; while
             # the drawn pose paints, the other pose stands in when it is kept
-            pose = "flight" if (gen.get("rng") or random).random() < 1 / 3 else "perched"
+            pose = (
+                "flight" if (gen.get("rng") or random).random() < 1 / 3 else "perched"
+            )
             other = "perched" if pose == "flight" else "flight"
 
         def key_in(p: str) -> str:
@@ -1079,7 +1140,9 @@ def _attach_pictures(
                 return pic
             return None
         if other:
-            pic = _painting(key_in(other), data_dir, levels, HERO_PX if hero else PICTURE_PX)
+            pic = _painting(
+                key_in(other), data_dir, levels, HERO_PX if hero else PICTURE_PX
+            )
             if pic:
                 states["painted"] = states.get("painted", 0) + 1
                 pic["whole"] = hero
@@ -1479,6 +1542,7 @@ def fetch(
     options: dict[str, Any], settings: dict[str, Any], *, ctx: dict[str, Any]
 ) -> dict[str, Any]:
     started_at = time.time()
+    options = modern(options)
     source = _choice(options.get("source"), SOURCES)
     window = _choice(options.get("window"), WINDOWS)
     days = DAYS.get(str(options.get("days") or ""), 30)

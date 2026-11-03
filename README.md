@@ -36,6 +36,8 @@ The window, the rankings, the hero's single plates and the spotlight all follow 
 
 After dark, with BirdNET-Go, the page can show the garden asleep (the moon, when it went quiet, the last bird heard) or keep only the night's birds.
 
+A sheet set up before 0.5.0 keeps the values it saved and reads each as the choice it became: a packed or scattered page is the cluster, a band or a column the grid, least heard is the rarest, newest the rarest all time, tags and a numbered key are captions, and a scene picked from the old list is its example's words. The editor shows the successor and writes it on the next save (Tesserae 0.499.3 and later). FLUX.1 Kontext Pro, GPT Image 2 and Seedream 4 are back on the **Model** list, having been painting all along for any sheet left on one.
+
 ## Pictures
 
 Up the ladder, for each species: an AI painting when one is kept, else a classic plate (Fugleramme's, about 700 species, cut already), else a plate from the bundled pack, else the record's own photo (or, for a bird, the first openly licensed iNaturalist photo). Plates and paintings on plain paper are cut by their edges, so a bird keeps its branch; a photo is a soft oval unless the model cuts it out.

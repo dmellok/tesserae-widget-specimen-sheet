@@ -2,7 +2,7 @@
   "tesserae_compat": "1.x",
   "tesserae_min": "0.463.0",
   "name": "Specimen Sheet",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "kind": "widget",
   "description": "The birds and wildlife around the panel, cut out and packed onto one printed page, each as large as the page allows. From BirdNET-Go (what the microphone heard, over a window you pick), iNaturalist (what people found nearby lately) or GBIF (what is recorded here in this month of the year). Classic plates and the records' own photos, or AI paintings in twelve styles or one you build; a demo garden until BirdNET-Go is set up.",
   "icon": "ph-feather",
@@ -677,11 +677,19 @@
       "choices": [
         {
           "value": "cluster",
-          "label": "Cluster"
+          "label": "Cluster",
+          "aliases": [
+            "packed",
+            "scatter"
+          ]
         },
         {
           "value": "grid",
-          "label": "Grid"
+          "label": "Grid",
+          "aliases": [
+            "band",
+            "column"
+          ]
         },
         {
           "value": "hero",
@@ -1217,15 +1225,24 @@
       "choices": [
         {
           "value": "most",
-          "label": "The most heard"
+          "label": "The most heard",
+          "aliases": [
+            "alpha"
+          ]
         },
         {
           "value": "rarest",
-          "label": "The rarest in the window"
+          "label": "The rarest in the window",
+          "aliases": [
+            "least"
+          ]
         },
         {
           "value": "rarest_ever",
-          "label": "The rarest all time"
+          "label": "The rarest all time",
+          "aliases": [
+            "newest"
+          ]
         },
         {
           "value": "latest",
@@ -1273,7 +1290,11 @@
       "choices": [
         {
           "value": "caption",
-          "label": "Captions under each specimen"
+          "label": "Captions under each specimen",
+          "aliases": [
+            "tag",
+            "key"
+          ]
         },
         {
           "value": "none",
@@ -1393,7 +1414,10 @@
         },
         {
           "value": "compact",
-          "label": "Close to life, narrower: the page packs tighter"
+          "label": "Close to life, narrower: the page packs tighter",
+          "aliases": [
+            "busy"
+          ]
         },
         {
           "value": "same",
@@ -1808,6 +1832,18 @@
         {
           "value": "nano_banana_pro",
           "label": "Nano Banana Pro (about US$0.15)"
+        },
+        {
+          "value": "flux_kontext",
+          "label": "FLUX.1 Kontext Pro (about US$0.04)"
+        },
+        {
+          "value": "gpt_image",
+          "label": "GPT Image 2 (about US$0.05)"
+        },
+        {
+          "value": "seedream",
+          "label": "Seedream 4 (about US$0.03)"
         }
       ]
     },
