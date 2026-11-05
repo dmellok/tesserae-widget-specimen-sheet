@@ -4,7 +4,7 @@
 
 The classic plates are the cut-out bird artwork of **Fugleramme** by Arne Giacomo,
 <https://github.com/arnegiacomo/fugleramme>, taken from the `assets/artwork/classic/birds`
-folder at commit `9976c817b4d7105123daa4906272cc8b14c27ed1`.
+folder at commit `3fae1edce3459aae1a8cca81fa793f74418203c8`.
 
 - Artwork: CC BY-SA 4.0 (<https://creativecommons.org/licenses/by-sa/4.0/>). The plates are
   cut from scans of works by John Gould, the von Wright brothers, J. J. Audubon, H. E. Dresser,

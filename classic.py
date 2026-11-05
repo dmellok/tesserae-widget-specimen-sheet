@@ -55,6 +55,13 @@ ARTISTS = {
     "temminck": "C. J. Temminck",
     "lear": "Edward Lear",
     "sharpe": "R. B. Sharpe",
+    "dekay": "J. E. DeKay",
+    "wilson": "Alexander Wilson",
+    "catesby": "Mark Catesby",
+    "baird": "S. F. Baird",
+    "nuttall": "Thomas Nuttall",
+    "horsfall": "R. B. Horsfall",
+    "brehm": "C. L. Brehm",
 }
 
 _INDEX: dict[str, Any] = {}
