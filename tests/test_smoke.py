@@ -1033,7 +1033,10 @@ def test_paintings_need_a_key_and_respect_the_cap(tmp_path, offline_paint):
     options = {**MELBOURNE, "url": "birdnet.local", "pictures": "gen"}
     ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
     r = server.fetch(options, {}, ctx=ctx)
-    assert P.NOTE_NO_KEY in r["notices"] and not offline_paint
+    # The note is the widget's own on an older Tesserae and the host's (app.artwork,
+    # which also takes OpenAI and Gemini keys) on a newer one; both say a key is needed.
+    assert any(n.startswith("AI pictures need a") for n in r["notices"]), r["notices"]
+    assert not offline_paint
     assert r["species"][0]["pic"]["kind"] == "plate"
     N.write(
         tmp_path / "paintings" / "budget.json",
@@ -2655,6 +2658,19 @@ def test_hero_choices(tmp_path):
     assert arrival["lines"][-1].startswith("first heard ")
     # an unknown value, and an old cell without one, keep the first by the order
     assert hero("nonsense", order="rarest")["sci"] == "Callocephalon fimbriatum"
+
+
+def test_demo_garden_always_has_a_new_bird():
+    # At any hour of any day, not only once the day's pick has called (it failed before 6 am).
+    from datetime import datetime, timedelta
+
+    for region in S._DEMO:
+        for day in range(30):
+            for hour in range(24):
+                now = datetime(2026, 11, 1, hour, 7) + timedelta(days=day)
+                birds = S.demo_birdnet(region, now)["species"]
+                if birds:
+                    assert sum(b["new"] for b in birds) == 1, (region, now)
 
 
 def test_hero_choices_in_the_demo_garden(tmp_path, offline):

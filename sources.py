@@ -578,6 +578,11 @@ def demo_birdnet(
                 "thumb": "",
             }
         )
+    # The day's pick may not have called yet (early in the day, or a bird skipped
+    # to-day): the earliest bird heard stands in, so the new state always shows
+    # and does not move about as the day goes on.
+    if species and not any(s["new"] for s in species):
+        min(species, key=lambda s: (s["first"], s["name"]))["new"] = True
     log = [(m, n) for m, n in log if m >= cut]
     log.sort(reverse=True)
     recent = [
