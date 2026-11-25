@@ -2585,6 +2585,30 @@ def test_longer_windows_round_the_dates_outward_and_keep_the_last_heard(tmp_path
     assert by["Gymnorhina tibicen"]["flag"] == ""
 
 
+def test_the_summary_windows_keep_to_the_minimum_confidence(tmp_path):
+    # BirdNET-Go's species summary ignores min_confidence, so the widget filters on each
+    # row's max_confidence (0.9 at this station): the week, a rolling window and all time
+    for i, window in enumerate(("week", "72", "0")):
+        r, _asked, _now = _station_fetch(tmp_path / f"lo{i}", window=window)
+        assert "Gymnorhina tibicen" in {s["sci"] for s in r["species"]}, window
+        r, _asked, _now = _station_fetch(
+            tmp_path / f"hi{i}", window=window, min_confidence=95
+        )
+        assert not r.get("species"), window
+
+
+def test_a_summary_row_with_no_confidence_is_kept():
+    rows = [
+        {"common_name": "Rock Dove", "scientific_name": "Columba livia", "count": 3},
+        {"common_name": "Common Loon", "scientific_name": "Gavia immer", "count": 1,
+         "max_confidence": 0.76},
+        {"common_name": "Sandhill Crane", "scientific_name": "Antigone canadensis",
+         "count": 2, "max_confidence": 0.9},
+    ]
+    got = S._from_summary(rows, None, None, 90)
+    assert [s["name"] for s in got] == ["Rock Dove", "Sandhill Crane"]
+
+
 def test_today_and_week_keep_their_old_answers(tmp_path, offline):
     r = _fetch(tmp_path, offline, url="birdnet.local")
     assert offline[0].startswith(

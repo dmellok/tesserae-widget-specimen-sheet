@@ -184,14 +184,19 @@ def _thumb_of(sci: str) -> str:
 
 
 def _from_summary(
-    rows: list[Any], since: datetime | None, tz: Any
+    rows: list[Any], since: datetime | None, tz: Any, min_conf: int = 0
 ) -> list[dict[str, Any]]:
     """Species rows from BirdNET-Go's species summary. Its dates round outwards, so a row
     whose newest call is before ``since`` was not heard in the window (Fugleramme's
-    _heard_since); the counts still cover the rounded range."""
+    _heard_since); the counts still cover the rounded range. The summary takes no
+    min_confidence of its own, so a species whose best call is under ``min_conf`` is left
+    out here; a row with no max_confidence is kept."""
     out = []
     for r in rows:
         if not isinstance(r, dict) or not r.get("common_name"):
+            continue
+        best = r.get("max_confidence")
+        if best is not None and float(best or 0) * 100 < min_conf:
             continue
         last = _stamp(r.get("last_heard") or r.get("latest_heard"), tz)
         if since is not None and last is not None and last < since:
@@ -330,7 +335,7 @@ def from_birdnet(
             return None, _birdnet_err(err, base)
         if not isinstance(got, list):
             return None, "BirdNET-Go's species summary wasn't in the expected shape."
-        species = _from_summary(got, None, tz)
+        species = _from_summary(got, None, tz, min_conf)
     elif hours is None:
         got, err = N.get_json(
             f"{base}/api/v2/analytics/species/daily?min_confidence={min_conf}", token
@@ -388,7 +393,7 @@ def from_birdnet(
                     None,
                     "BirdNET-Go's species summary wasn't in the expected shape.",
                 )
-            species = _from_summary(got, since, tz)
+            species = _from_summary(got, since, tz, min_conf)
             if since is None:
                 life_rows = got
     if feed is None:
